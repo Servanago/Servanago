@@ -52,6 +52,8 @@ scoped to the zones you want to manage. The same token is used for certificate i
 |---|---|---|
 | `CLOUDFLARE_API_TOKEN` | yes | Token above. |
 | `CARETAKARR_HOST` | yes | Hostname the UI is served on. It gets its own certificate. |
+| `CARETAKARR_HOST_IP` | yes | Address `CARETAKARR_HOST` resolves to; Caretakarr creates and syncs that A record. Private IPv4 only: 10/8, 172.16/12, 192.168/16, or 100.64/10 (Tailscale). The same rule applies to every domain and route IP. |
+| `CARETAKARR_HOST_ZONE` | no | Cloudflare zone name for that record. Unset walks up the host's labels. |
 | `ACME_EMAIL` | yes | Let's Encrypt contact; a bare address. |
 | `ADMIN_PASSWORD` | no | Enables login. **Unset means the UI is open** (warning in the log and a red banner). |
 | `ACME_STAGING` | no | `true` uses the Let's Encrypt staging CA. |

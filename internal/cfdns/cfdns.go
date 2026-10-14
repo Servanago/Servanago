@@ -3,6 +3,7 @@ package cfdns
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -30,7 +31,32 @@ func (c *Client) ZoneID(ctx context.Context, name string) (string, error) {
 			return z.ID, nil
 		}
 	}
-	return "", fmt.Errorf("zone %s not found: the token cannot see it (needs Zone:Read on that zone)", name)
+	return "", fmt.Errorf("zone %s: %w (the token cannot see it; it needs Zone:Read on that zone)", name, ErrZoneNotFound)
+}
+
+// ErrZoneNotFound means the API answered but no visible zone has that name.
+var ErrZoneNotFound = errors.New("not found")
+
+// ZoneFor finds the zone holding host: override verbatim if set, else the closest enclosing zone,
+// trying host, then each parent down to two labels. API errors abort the walk; only not-found continues it.
+func (c *Client) ZoneFor(ctx context.Context, host, override string) (id, zone string, err error) {
+	if override != "" {
+		id, err = c.ZoneID(ctx, override)
+		return id, override, err
+	}
+	var tried []string
+	for name := host; strings.Count(name, ".") >= 1; {
+		tried = append(tried, name)
+		id, err := c.ZoneID(ctx, name)
+		if err == nil {
+			return id, name, nil
+		}
+		if !errors.Is(err, ErrZoneNotFound) {
+			return "", "", err
+		}
+		_, name, _ = strings.Cut(name, ".")
+	}
+	return "", "", fmt.Errorf("no Cloudflare zone found for %s (tried %s); set CARETAKARR_HOST_ZONE", host, strings.Join(tried, ", "))
 }
 
 // VerifyToken checks the API token is valid and active.

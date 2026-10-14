@@ -43,6 +43,11 @@ func parseRoute(v url.Values) (store.Route, error) {
 	if r.UpstreamPort, err = strconv.Atoi(strings.TrimSpace(v.Get("upstream_port"))); err != nil || r.UpstreamPort < 1 || r.UpstreamPort > 65535 {
 		return r, fmt.Errorf("port %q must be 1-65535", v.Get("upstream_port"))
 	}
+	if r.RecordIP = strings.TrimSpace(v.Get("record_ip")); r.RecordIP != "" {
+		if _, err := config.ValidateLANIP(r.RecordIP); err != nil {
+			return r, fmt.Errorf("record IP: %w", err)
+		}
+	}
 	r.TLSSkipVerify = v.Get("tls_skip_verify") != ""
 	r.Enabled = v.Get("enabled") != ""
 	r.Preset = v.Get("preset")
@@ -170,9 +175,13 @@ func (s *Server) editRoutePage(w http.ResponseWriter, r *http.Request) {
 }
 
 // checkRoute enforces domain existence and (domain, subdomain) uniqueness inside the apply transaction.
-func checkRoute(r *http.Request, tx *store.Store, rt store.Route) error {
-	if _, err := tx.GetDomain(r.Context(), rt.DomainID); err != nil {
+func (s *Server) checkRoute(r *http.Request, tx *store.Store, rt store.Route) error {
+	d, err := tx.GetDomain(r.Context(), rt.DomainID)
+	if err != nil {
 		return errors.New("unknown domain")
+	}
+	if host := rt.Subdomain + "." + d.Name; host == s.deps.Cfg.Host {
+		return fmt.Errorf("%s is the Caretakarr UI host; choose another subdomain", host)
 	}
 	all, err := tx.ListRoutes(r.Context())
 	if err != nil {
@@ -202,7 +211,7 @@ func (s *Server) createRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	var created store.Route
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		if err := checkRoute(r, tx, rt); err != nil {
+		if err := s.checkRoute(r, tx, rt); err != nil {
 			return err
 		}
 		var err error
@@ -240,14 +249,14 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 			return userError{http.StatusNotFound, "route not found"}
 		}
 		old, _ = dnsTargetOf(r, tx, cur)
-		// Overlay only the fields this form owns; the DNS override is edited elsewhere.
+		// Overlay only the fields this form owns.
 		cur.DomainID, cur.Subdomain, cur.Scheme = in.DomainID, in.Subdomain, in.Scheme
 		cur.UpstreamHost, cur.UpstreamPort = in.UpstreamHost, in.UpstreamPort
-		cur.TLSSkipVerify, cur.Enabled, cur.Preset = in.TLSSkipVerify, in.Enabled, in.Preset
+		cur.TLSSkipVerify, cur.Enabled, cur.Preset, cur.RecordIP = in.TLSSkipVerify, in.Enabled, in.Preset, in.RecordIP
 		if err := applyControls(&cur, r.PostForm); err != nil {
 			return err
 		}
-		if err := checkRoute(r, tx, cur); err != nil {
+		if err := s.checkRoute(r, tx, cur); err != nil {
 			return err
 		}
 		return tx.UpdateRoute(r.Context(), cur)

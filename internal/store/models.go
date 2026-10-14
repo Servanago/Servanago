@@ -212,3 +212,26 @@ func (s *Store) DeleteDNS(ctx context.Context, routeID int64) error {
 	}
 	return nil
 }
+
+// GetUIDNS and UpsertUIDNS manage the single DNS record row for CARETAKARR_HOST (RouteID is unused).
+func (s *Store) GetUIDNS(ctx context.Context) (DNSRecord, error) {
+	var d DNSRecord
+	err := s.q.QueryRowContext(ctx, `SELECT COALESCE(cf_record_id,''), COALESCE(content,''), owned, state,
+		COALESCE(error,''), COALESCE(synced_at,'') FROM ui_dns_record WHERE id=1`).
+		Scan(&d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt)
+	if err != nil {
+		return DNSRecord{}, fmt.Errorf("get ui dns record: %w", err)
+	}
+	return d, nil
+}
+
+func (s *Store) UpsertUIDNS(ctx context.Context, d DNSRecord) error {
+	_, err := s.q.ExecContext(ctx, `INSERT INTO ui_dns_record (id, cf_record_id, content, owned, state, error, synced_at)
+		VALUES (1,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET cf_record_id=excluded.cf_record_id,
+		content=excluded.content, owned=excluded.owned, state=excluded.state, error=excluded.error, synced_at=excluded.synced_at`,
+		nullStr(d.CFRecordID), nullStr(d.Content), d.Owned, d.State, nullStr(d.Error), nullStr(d.SyncedAt))
+	if err != nil {
+		return fmt.Errorf("upsert ui dns record: %w", err)
+	}
+	return nil
+}

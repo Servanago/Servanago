@@ -109,6 +109,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /routes/{id}", s.protected(s.editRoutePage))
 	mux.Handle("PUT /routes/{id}", s.protected(s.updateRoute))
 	mux.Handle("DELETE /routes/{id}", s.protected(s.deleteRoute))
+	mux.Handle("POST /host/dns/resync", s.protected(s.hostDNS(false)))
+	mux.Handle("POST /host/dns/takeover", s.protected(s.hostDNS(true)))
 	mux.Handle("POST /routes/{id}/toggle", s.protected(s.toggleRoute))
 	mux.Handle("POST /routes/{id}/dns/resync", s.protected(s.resyncDNS))
 	mux.Handle("POST /routes/{id}/dns/takeover", s.protected(s.takeOverDNS))
@@ -171,5 +173,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "dashboard", http.StatusOK, page{Title: "Dashboard", Data: struct {
 		Domains []domainRow
 		Routes  []routeRow
-	}{domains, routes}})
+		Host    *hostCard
+	}{domains, routes, s.hostCard(r.Context())}})
 }

@@ -24,6 +24,8 @@ One Docker container, one Go process, that lets self-hosters put their arr stack
 - `ACME_PROPAGATION_DELAY` (optional, unset = Caddy default), `ACME_PROPAGATION_TIMEOUT` (optional, unset = Caddy default): DNS-01 tuning, only emitted into the config when set. A working homelab config uses `2m` / `10m`.
 - `ACME_RESOLVERS` (default `1.1.1.1,8.8.8.8`).
 - `CARETAKARR_HOST` (required): hostname for the Caretakarr UI itself, e.g. `caretakarr.example.com`.
+- `CARETAKARR_HOST_IP` (required): the address `CARETAKARR_HOST` resolves to; Caretakarr manages that A record. IPv4 in 10/8, 172.16/12, 192.168/16 or 100.64/10 only. The same rule applies to every domain and route IP: Caretakarr never publishes public addresses. See `docs/DESIGN.md` §16.
+- `CARETAKARR_HOST_ZONE` (optional): Cloudflare zone name for that record; unset means walk up the host's labels.
 - `ADMIN_PASSWORD` (optional): enables UI login.
 - `ACME_EMAIL` (required): Let's Encrypt account contact (expiry and problem notices). Must parse as a valid address (`net/mail`). Caddy itself treats it as optional, Caretakarr requires it and fails fast at startup naming the variable.
 - `ACME_STAGING` (optional): use the Let's Encrypt staging CA.

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"html"
 	"net/http"
-	"net/netip"
 	"strconv"
 	"strings"
 
@@ -82,8 +81,8 @@ func (s *Server) addDomain(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	if a, err := netip.ParseAddr(ip); err != nil || !a.Is4() {
-		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("default IP %q must be an IPv4 address (A record)", ip))
+	if _, err := config.ValidateLANIP(ip); err != nil {
+		fail(w, http.StatusUnprocessableEntity, "default IP: "+err.Error())
 		return
 	}
 	if mode != "wildcard" && mode != "per_host" {

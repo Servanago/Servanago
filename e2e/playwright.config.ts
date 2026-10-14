@@ -22,6 +22,7 @@ export default defineConfig({
         CLOUDFLARE_API_TOKEN: 'e2e0000000000000000000000000000000000000',
         CLOUDFLARE_BASE_URL: 'http://127.0.0.1:28099',
         CARETAKARR_HOST: 'caretakarr.example.com',
+        CARETAKARR_HOST_IP: '192.168.25.165',
         ACME_EMAIL: 'e2e@example.com',
         ACME_STAGING: 'true',
         ADMIN_PASSWORD: 'e2e-pass',

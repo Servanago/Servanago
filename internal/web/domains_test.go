@@ -99,6 +99,8 @@ func TestAddDomainValidation(t *testing.T) {
 		{"ip literal", "10.0.0.1", "10.0.0.1", "wildcard", "IP literals"},
 		{"bad ip", "example.com", "999.1.1.1", "wildcard", "IPv4"},
 		{"ipv6", "example.com", "::1", "wildcard", "IPv4"},
+		{"public ip", "example.com", "8.8.8.8", "wildcard", "private"},
+		{"loopback", "example.com", "127.0.0.1", "wildcard", "private"},
 		{"bad mode", "example.com", "10.0.0.1", "banana", "cert_mode"},
 		{"uppercase normalised then ok-but-local", "FOO.LOCAL", "10.0.0.1", "wildcard", ".local"},
 	}

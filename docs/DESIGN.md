@@ -323,4 +323,80 @@ Caveat: embedded Caddy is process-global (`caddy.Load` uses package state). Inte
 
 ## 15. Explicit non-goals (v1)
 
-Orange-cloud records, DDNS/public-IP detection, multi-user accounts, path-based routing, import/export, `trusted_proxies` configuration, drift detection loop, non-Cloudflare DNS providers.
+Orange-cloud records, DDNS/public-IP detection, multi-user accounts, path-based routing, import/export, `trusted_proxies` configuration, drift detection loop, non-Cloudflare DNS providers, public-IP records, IPv6/AAAA.
+
+## 16. UI host record and LAN-only IPs
+
+Source: brainstorm of 2026-10-14. Servers with several addresses need `CARETAKARR_HOST` to resolve to a chosen one, so Caretakarr manages that A record itself. Issuance is unaffected (DNS-01 needs no IP) and Caddy keeps listening on all interfaces.
+
+### 16.1 Decisions
+| Topic | Decision |
+|---|---|
+| `CARETAKARR_HOST_IP` | Required. IPv4 in 10/8, 172.16/12, 192.168/16 or 100.64/10 (CGNAT, Tailscale). Anything else fails startup naming the variable. |
+| `CARETAKARR_HOST_ZONE` | Optional zone name override. Unset: walk labels up from the host, never below two labels, first zone the token can see. |
+| Same rule everywhere | Domain `default_ip` and route `record_ip` use the same validator. Public IPs are out of scope for the whole product. |
+| Record lifecycle | Same owned / adopt / conflict rules as routes. Reconciled in the background at each start and from dashboard buttons. Never deleted automatically. |
+| Collision | A route whose `subdomain.domain` equals `CARETAKARR_HOST` is rejected (the UI route always wins in Caddy, so it could never be served). |
+
+### 16.2 Components
+```mermaid
+flowchart LR
+  Env[CARETAKARR_HOST_IP / _ZONE] --> Cfg[config.Load<br/>ValidateLANIP]
+  Cfg --> Main
+  Main -->|goroutine at start| Sync[dnssync.ReconcileHost]
+  UI[Dashboard card<br/>Resync / Take over] --> Sync
+  Sync --> Zone[cfdns.ZoneFor<br/>walk up labels]
+  Sync --> Step[step: find / create / adopt / conflict]
+  Step --> CF[(Cloudflare)]
+  Sync --> Tbl[(ui_dns_record)]
+```
+
+- `config.ValidateLANIP(s) (netip.Addr, error)`: `Is4()` and (`IsPrivate()` or inside `100.64.0.0/10`). The error names the value and lists the allowed ranges. Test table covers every range boundary (`172.15.255.255` no, `172.16.0.0` yes, `172.31.255.255` yes, `172.32.0.0` no, `100.63.255.255` no, `100.64.0.0` yes, `100.127.255.255` yes, `100.128.0.0` no), loopback, link-local, unspecified, multicast, public, IPv6.
+- Call sites: `config.Load` (host IP), `addDomain` (replaces the current `Is4` check), and `parseRoute` for a new `record_ip` form field. That field has no UI today, and the edit handler comment already says the override is "edited elsewhere"; this adds it to the route form and overlays it in `updateRoute`.
+- `cfdns.ZoneFor(ctx, host, override) (zoneID, zoneName string, err)`. `ZoneID` gains a sentinel `ErrZoneNotFound`, so the walk continues only on not-found and aborts on API errors (bad token). Final error lists the names tried.
+- `dnssync.step` is reused unchanged. `ReconcileHost(ctx, takeOver bool)` resolves the zone, builds `name = CARETAKARR_HOST`, `want = CARETAKARR_HOST_IP`, runs `step` with the stored row, and upserts. Failures become `state=error`, never a returned error and never fatal, matching routes. `Syncer` receives `HostSpec{Name, IP, ZoneOverride}` at construction.
+- `ReconcileHost` runs in a goroutine in `main` next to `VerifyToken`, so startup and the bootstrap fallback never wait on Cloudflare.
+
+### 16.3 Data
+Migration `002_ui_dns.sql`. A route-independent twin of `dns_records`, constrained to one row:
+```sql
+CREATE TABLE ui_dns_record (
+  id           INTEGER PRIMARY KEY CHECK (id = 1),
+  cf_record_id TEXT,
+  content      TEXT,
+  owned        INTEGER NOT NULL DEFAULT 1,
+  state        TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','synced','error','conflict')),
+  error        TEXT,
+  synced_at    TEXT
+);
+```
+Store gets `GetUIDNS` / `UpsertUIDNS` reusing the `DNSRecord` struct (`RouteID` unused). The zone is re-resolved on every reconcile, so it is not stored. Chosen over making `dns_records.route_id` nullable: that would weaken the FK and cascade that routes rely on.
+
+### 16.4 Web
+- Dashboard card above the routes table: host, IP, state, error text, and Resync / Take over buttons (same states and wording as route rows).
+- `POST /host/dns/resync`, `POST /host/dns/takeover`, both CSRF-guarded and behind login, answering `HX-Redirect: /`.
+- `checkRoute` (inside the apply tx) rejects `subdomain + "." + domain.Name == cfg.Host` with 422 and a clear message.
+
+### 16.5 Edge cases
+- Host under an unmanaged zone: works, since the zone comes from Cloudflare, not from the domains table.
+- Host's zone is also a managed domain: routes there are unaffected apart from the collision rule.
+- Token lacks the zone: state `error` with the tried names; the UI still serves from the bootstrap/normal config.
+- Existing rows with public IPs (none expected): no crash. Reconcile does not re-validate stored rows; the dashboard may show a notice.
+- Owned record, IP changed in env, restart: updated. Adopted record: becomes `conflict`, never written.
+
+### 16.6 Test plan
+| Layer | Cases |
+|---|---|
+| `config` | `ValidateLANIP` boundary table; `CARETAKARR_HOST_IP` missing / public / IPv6 fails naming the variable; `CARETAKARR_HOST_ZONE` must be a suffix of the host |
+| `cfdns` | `ZoneFor`: found at each level, none found lists tried names, override used verbatim, API error aborts the walk |
+| `dnssync` | host record: create, adopt, conflict then take over, IP change on owned, adopted untouched, API error, idempotent resync, zone not found |
+| `store` | migration 002 on fresh and v1 DBs; one-row constraint |
+| `web` | card renders each state; resync and take over endpoints; collision rejection; `record_ip` accepted/rejected; domain add rejects public IP |
+| e2e | card shows synced; seeded conflict taken over; route named like the host is rejected |
+
+### 16.7 Risks
+| Risk | Level | Mitigation |
+|---|---|---|
+| A later need for public-IP records | low, accepted | The validator is one function; a switch would be additive |
+| Zone walk picks a parent zone the user did not intend | low | `CARETAKARR_HOST_ZONE` override; tried names shown on error |
+| Behavioral change for domains/routes (public IPs now rejected) | low | No installs yet; error message lists allowed ranges |

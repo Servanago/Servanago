@@ -2,6 +2,7 @@ package cfdns
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -86,5 +87,74 @@ func TestVerifyToken(t *testing.T) {
 		"GET /user/tokens/verify": reply(401, `{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}],"messages":[],"result":null}`)})
 	if err := bad.VerifyToken(context.Background()); err == nil || !strings.Contains(err.Error(), "Invalid API Token") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// zonesFor answers GET /zones?name=X with a zone only for names in have.
+func zonesFor(t *testing.T, have map[string]string, queried *[]string) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		name := r.URL.Query().Get("name")
+		*queried = append(*queried, name)
+		if id, ok := have[name]; ok {
+			_, _ = w.Write([]byte(`{"success":true,"errors":[],"messages":[],"result":[{"id":"` + id + `","name":"` + name + `"}],"result_info":{"page":1,"per_page":20,"count":1,"total_count":1}}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"success":true,"errors":[],"messages":[],"result":[],"result_info":{"page":1,"per_page":20,"count":0,"total_count":0}}`))
+	}
+}
+
+func TestZoneFor(t *testing.T) {
+	tests := []struct {
+		name, host, override string
+		have                 map[string]string
+		wantID, wantZone     string
+		wantQueried          []string
+		errHas               string
+	}{
+		{"parent zone", "caretakarr.lab.example.com", "", map[string]string{"example.com": "z1"}, "z1", "example.com",
+			[]string{"caretakarr.lab.example.com", "lab.example.com", "example.com"}, ""},
+		{"closest zone wins", "a.lab.example.com", "", map[string]string{"lab.example.com": "z2", "example.com": "z1"}, "z2", "lab.example.com",
+			[]string{"a.lab.example.com", "lab.example.com"}, ""},
+		{"host is the zone", "example.com", "", map[string]string{"example.com": "z1"}, "z1", "example.com", []string{"example.com"}, ""},
+		{"none found lists tried names", "a.example.com", "", map[string]string{}, "", "", []string{"a.example.com", "example.com"}, "a.example.com, example.com"},
+		{"override used verbatim", "a.lab.example.com", "example.com", map[string]string{"example.com": "z1", "lab.example.com": "z2"}, "z1", "example.com", []string{"example.com"}, ""},
+		{"override not found", "a.example.com", "example.com", map[string]string{}, "", "", []string{"example.com"}, "not found"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var queried []string
+			c := fake(t, map[string]func(http.ResponseWriter, *http.Request){"GET /zones": zonesFor(t, tt.have, &queried)})
+			id, zone, err := c.ZoneFor(context.Background(), tt.host, tt.override)
+			if tt.errHas != "" {
+				if err == nil || !strings.Contains(err.Error(), tt.errHas) {
+					t.Fatalf("want error containing %q, got %v", tt.errHas, err)
+				}
+			} else if err != nil || id != tt.wantID || zone != tt.wantZone {
+				t.Fatalf("got %q %q %v", id, zone, err)
+			}
+			if strings.Join(queried, ",") != strings.Join(tt.wantQueried, ",") {
+				t.Errorf("queried %v, want %v", queried, tt.wantQueried)
+			}
+		})
+	}
+}
+
+func TestZoneForAbortsOnAPIError(t *testing.T) {
+	calls := 0
+	c := fake(t, map[string]func(http.ResponseWriter, *http.Request){"GET /zones": func(w http.ResponseWriter, r *http.Request) {
+		calls++
+		reply(403, `{"success":false,"errors":[{"code":9109,"message":"Invalid access token"}],"messages":[],"result":null}`)(w, r)
+	}})
+	_, _, err := c.ZoneFor(context.Background(), "a.b.example.com", "")
+	if err == nil || !strings.Contains(err.Error(), "Invalid access token") || calls != 1 {
+		t.Fatalf("calls=%d err=%v", calls, err)
+	}
+}
+
+func TestZoneIDNotFoundIsSentinel(t *testing.T) {
+	var q []string
+	c := fake(t, map[string]func(http.ResponseWriter, *http.Request){"GET /zones": zonesFor(t, nil, &q)})
+	if _, err := c.ZoneID(context.Background(), "x.com"); !errors.Is(err, ErrZoneNotFound) {
+		t.Fatalf("%v", err)
 	}
 }

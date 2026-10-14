@@ -39,6 +39,9 @@ func TestParseRoute(t *testing.T) {
 		{"port too big", form("upstream_port", "65536"), "port"},
 		{"port text", form("upstream_port", "http"), "port"},
 		{"bad domain id", form("domain_id", "x"), "domain"},
+		{"record ip private", form("record_ip", "100.64.1.2"), ""},
+		{"record ip public", form("record_ip", "8.8.8.8"), "record IP"},
+		{"record ip garbage", form("record_ip", "nope"), "record IP"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -53,6 +56,16 @@ func TestParseRoute(t *testing.T) {
 				t.Fatalf("want error containing %q, got %v", tt.errHas, err)
 			}
 		})
+	}
+}
+
+func TestParseRouteRecordIP(t *testing.T) {
+	r, _ := parseRoute(form("record_ip", " 192.168.1.9 "))
+	if r.RecordIP != "192.168.1.9" {
+		t.Errorf("%q", r.RecordIP)
+	}
+	if r, _ := parseRoute(form()); r.RecordIP != "" {
+		t.Errorf("blank must stay blank (domain default): %q", r.RecordIP)
 	}
 }
 
@@ -128,5 +141,26 @@ func TestRouteLifecycle(t *testing.T) {
 	}
 	if rs, _ := s.deps.Store.ListRoutes(ctx); len(rs) != 0 {
 		t.Errorf("not deleted: %+v", rs)
+	}
+}
+
+func TestRouteCannotShadowUIHost(t *testing.T) {
+	s, d := routeServer(t)
+	s.deps.Cfg.Host = "sonarr.example.com"
+	w := s.do(req{method: "POST", path: "/routes", body: form("domain_id", itoa(d.ID)).Encode(), hdr: htmxPost})
+	if w.Code != 422 || !strings.Contains(w.Body.String(), "sonarr.example.com") {
+		t.Fatalf("create: %d %q", w.Code, w.Body.String())
+	}
+	if rs, _ := s.deps.Store.ListRoutes(context.Background()); len(rs) != 0 {
+		t.Fatalf("stored: %+v", rs)
+	}
+	// renaming an existing route onto the UI host is rejected too
+	other := form("domain_id", itoa(d.ID), "subdomain", "radarr")
+	if w := s.do(req{method: "POST", path: "/routes", body: other.Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("setup: %d", w.Code)
+	}
+	rs, _ := s.deps.Store.ListRoutes(context.Background())
+	if w := s.do(req{method: "PUT", path: "/routes/" + itoa(rs[0].ID), body: form("domain_id", itoa(d.ID)).Encode(), hdr: htmxPost}); w.Code != 422 {
+		t.Fatalf("rename onto UI host: %d", w.Code)
 	}
 }

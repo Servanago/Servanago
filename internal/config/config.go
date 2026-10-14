@@ -17,6 +17,8 @@ var cfToken = regexp.MustCompile(`^([A-Za-z0-9_-]{35,50}|cf(ut|at)_[A-Za-z0-9_-]
 type Config struct {
 	CloudflareToken    string
 	Host               string
+	HostIP             string // A record target for Host; private/CGNAT IPv4
+	HostZone           string // optional Cloudflare zone name for Host; empty = walk up labels
 	ACMEEmail          string
 	AdminPassword      string
 	Staging            bool
@@ -80,6 +82,8 @@ func Load(getenv func(string) string) (Config, error) {
 		HTTPSPort:          port("HTTPS_PORT", 443),
 		CloudflareToken:    req("CLOUDFLARE_API_TOKEN"),
 		Host:               req("CARETAKARR_HOST"),
+		HostIP:             req("CARETAKARR_HOST_IP"),
+		HostZone:           strings.ToLower(strings.TrimSpace(getenv("CARETAKARR_HOST_ZONE"))),
 		ACMEEmail:          req("ACME_EMAIL"),
 		AdminPassword:      getenv("ADMIN_PASSWORD"),
 		PropagationDelay:   dur("ACME_PROPAGATION_DELAY"),
@@ -106,6 +110,14 @@ func Load(getenv func(string) string) (Config, error) {
 		if err := ValidateDomain(c.Host); err != nil {
 			errs = append(errs, fmt.Errorf("CARETAKARR_HOST: %w", err))
 		}
+	}
+	if c.HostIP != "" {
+		if _, err := ValidateLANIP(c.HostIP); err != nil {
+			errs = append(errs, fmt.Errorf("CARETAKARR_HOST_IP: %w", err))
+		}
+	}
+	if c.HostZone != "" && c.Host != "" && c.Host != c.HostZone && !strings.HasSuffix(c.Host, "."+c.HostZone) || c.HostZone != "" && !strings.Contains(c.HostZone, ".") {
+		errs = append(errs, fmt.Errorf("CARETAKARR_HOST_ZONE: %q must be a zone containing %q (at least two labels)", c.HostZone, c.Host))
 	}
 	if c.ACMEEmail != "" {
 		// Bare address only: ParseAddress also accepts "Name <a@b>", which Caddy would pass through verbatim.

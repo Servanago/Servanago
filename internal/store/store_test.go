@@ -37,7 +37,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 	mustDomain(t, s, "example.com")
 	var v int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 1 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 2 {
 		t.Fatalf("user_version %d %v", v, err)
 	}
 	s.Close()
@@ -201,5 +201,30 @@ func TestListAndDeleteDNS(t *testing.T) {
 	}
 	if all, _ := s.ListDNS(ctx); len(all) != 1 || all[0].RouteID != b.ID {
 		t.Fatalf("%v", all)
+	}
+}
+
+func TestUIDNSRecord(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	if _, err := s.GetUIDNS(ctx); err == nil {
+		t.Fatal("want not found before upsert")
+	}
+	rec := DNSRecord{CFRecordID: "cf1", Content: "192.168.1.5", Owned: true, State: "synced", SyncedAt: "now"}
+	if err := s.UpsertUIDNS(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	rec.State, rec.Error, rec.Owned = "conflict", "points elsewhere", false
+	if err := s.UpsertUIDNS(ctx, rec); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetUIDNS(ctx)
+	if err != nil || got.State != "conflict" || got.Error != "points elsewhere" || got.Owned || got.CFRecordID != "cf1" {
+		t.Fatalf("%+v %v", got, err)
+	}
+	if err := s.UpsertUIDNS(ctx, DNSRecord{State: "weird"}); err == nil {
+		t.Error("bad state accepted")
+	}
+	if _, err := s.db.Exec("INSERT INTO ui_dns_record (id, state) VALUES (2, 'pending')"); err == nil {
+		t.Error("second row accepted")
 	}
 }

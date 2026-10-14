@@ -27,6 +27,17 @@
 {{define "content"}}
 <h1>Dashboard</h1>
 {{with .Data}}
+{{with .Host}}
+<article id="ui-host">
+<header>UI host</header>
+<p><strong>{{.Spec.Name}}</strong> → {{.Spec.IP}}
+<span class="dns-{{.DNS.State}}">{{.DNS.State}}</span>{{if .DNS.Error}}<br><small>{{.DNS.Error}}</small>{{end}}</p>
+{{if eq .DNS.State "conflict"}}<button class="outline" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing A record for {{.Spec.Name}}?">Take over</button>
+{{else if eq .DNS.State "error"}}<button class="outline" hx-post="/host/dns/resync" hx-target="#host-msg">Retry</button>
+{{else}}<button class="outline secondary" hx-post="/host/dns/resync" hx-target="#host-msg">Resync</button>{{end}}
+<p id="host-msg" role="alert"></p>
+</article>
+{{end}}
 {{if .Domains}}
 <h2>Routes</h2>
 <div id="routes" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "routes" .Routes}}</div>

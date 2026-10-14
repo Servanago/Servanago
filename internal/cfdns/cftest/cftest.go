@@ -25,11 +25,12 @@ type Fake struct {
 	next    int
 	writes  int
 	failMsg string
+	zones   map[string]string // zone name -> id
 }
 
 func New(t testing.TB) *Fake {
 	t.Helper()
-	f := &Fake{records: map[string]Record{}}
+	f := &Fake{records: map[string]Record{}, zones: map[string]string{}}
 	srv := httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(srv.Close)
 	f.URL = srv.URL
@@ -88,7 +89,15 @@ func (r Record) json() map[string]any {
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/") // zones/{z}/dns_records[/{id}]
+	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")                // zones/{z}/dns_records[/{id}]
+	if len(parts) == 1 && parts[0] == "zones" && r.Method == http.MethodGet { // zone lookup by name
+		res := []any{}
+		if id, ok := f.zones[strings.ToLower(r.URL.Query().Get("name"))]; ok {
+			res = append(res, map[string]any{"id": id, "name": r.URL.Query().Get("name")})
+		}
+		reply(w, 200, true, res, "")
+		return
+	}
 	if len(parts) < 3 || parts[0] != "zones" || parts[2] != "dns_records" {
 		http.NotFound(w, r)
 		return
@@ -162,3 +171,10 @@ func (f *Fake) Clear() {
 
 // Handler exposes the fake for mounting inside a larger test server.
 func (f *Fake) Handler() http.Handler { return http.HandlerFunc(f.serve) }
+
+// AddZone makes GET /zones?name=name find a zone.
+func (f *Fake) AddZone(name, id string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.zones[strings.ToLower(name)] = id
+}

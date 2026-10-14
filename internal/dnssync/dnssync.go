@@ -14,9 +14,10 @@ import (
 )
 
 type Syncer struct {
-	cf  *cfdns.Client
-	st  *store.Store
-	now func() time.Time
+	Host HostSpec // optional; see ReconcileHost
+	cf   *cfdns.Client
+	st   *store.Store
+	now  func() time.Time
 }
 
 func New(cf *cfdns.Client, st *store.Store) *Syncer { return &Syncer{cf: cf, st: st, now: time.Now} }
@@ -96,4 +97,29 @@ func (s *Syncer) Remove(ctx context.Context, zoneID string, rec store.DNSRecord)
 		return false, err
 	}
 	return true, nil
+}
+
+// HostSpec describes the record for CARETAKARR_HOST itself. A zero Name disables it.
+type HostSpec struct{ Name, IP, Zone string }
+
+// ReconcileHost syncs the UI host's A record with the same owned/adopt/conflict rules as routes.
+// Failures (including an unresolvable zone) are recorded as state "error", never returned.
+func (s *Syncer) ReconcileHost(ctx context.Context, takeOver bool) error {
+	if s.Host.Name == "" {
+		return nil
+	}
+	row, err := s.st.GetUIDNS(ctx)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	zone, _, err := s.cf.ZoneFor(ctx, s.Host.Name, s.Host.Zone)
+	var next store.DNSRecord
+	if err == nil {
+		next, err = s.step(ctx, zone, s.Host.Name, s.Host.IP, row, takeOver)
+	}
+	if err != nil {
+		next = row
+		next.State, next.Error = "error", err.Error()
+	}
+	return s.st.UpsertUIDNS(ctx, next)
 }

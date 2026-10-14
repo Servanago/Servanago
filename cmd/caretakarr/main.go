@@ -78,7 +78,16 @@ func run() error {
 	mon := probe.NewMonitor(st, net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.HTTPSPort)))
 	mon.LogError = caddylog.Sink.LastError
 	go mon.Run(ctx, 30*time.Second)
-	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dnssync.New(cf, st), Probe: mon,
+	dns := dnssync.New(cf, st)
+	dns.Host = dnssync.HostSpec{Name: cfg.Host, IP: cfg.HostIP, Zone: cfg.HostZone}
+	go func() { // never blocks startup; failures show on the dashboard card
+		ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+		if err := dns.ReconcileHost(ctx, false); err != nil {
+			slog.Error("ui host dns", "error", err)
+		}
+	}()
+	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dns, Probe: mon,
 		Docker: discovery.New(cfg.DockerSocket), Logs: caddylog.Sink})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

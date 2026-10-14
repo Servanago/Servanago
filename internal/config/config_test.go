@@ -9,7 +9,7 @@ import (
 func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
 func valid() map[string]string {
-	return map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "CARETAKARR_HOST": "caretakarr.example.com", "ACME_EMAIL": "me@example.com"}
+	return map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "CARETAKARR_HOST": "caretakarr.example.com", "ACME_EMAIL": "me@example.com", "CARETAKARR_HOST_IP": "192.168.25.165"}
 }
 
 func with(k, v string) map[string]string {
@@ -24,7 +24,11 @@ func TestLoadErrors(t *testing.T) {
 		env  map[string]string
 		want []string // substrings that must appear in the error
 	}{
-		{"all missing", nil, []string{"CLOUDFLARE_API_TOKEN", "CARETAKARR_HOST", "ACME_EMAIL"}},
+		{"all missing", nil, []string{"CLOUDFLARE_API_TOKEN", "CARETAKARR_HOST", "ACME_EMAIL", "CARETAKARR_HOST_IP"}},
+		{"host ip public", with("CARETAKARR_HOST_IP", "203.0.113.10"), []string{"CARETAKARR_HOST_IP", "private"}},
+		{"host ip ipv6", with("CARETAKARR_HOST_IP", "fd00::1"), []string{"CARETAKARR_HOST_IP"}},
+		{"zone not a suffix of host", with("CARETAKARR_HOST_ZONE", "other.org"), []string{"CARETAKARR_HOST_ZONE"}},
+		{"zone is a public suffix-ish single label", with("CARETAKARR_HOST_ZONE", "com"), []string{"CARETAKARR_HOST_ZONE"}},
 		{"missing email", map[string]string{"CLOUDFLARE_API_TOKEN": "t", "CARETAKARR_HOST": "h.example.com"}, []string{"ACME_EMAIL"}},
 		{"bad email", with("ACME_EMAIL", "not-an-email"), []string{"ACME_EMAIL"}},
 		{"display name form", with("ACME_EMAIL", "Name <a@b.co>"), []string{"ACME_EMAIL"}},
@@ -76,6 +80,18 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if c.PropagationDelay != 0 || c.PropagationTimeout != 0 {
 		t.Errorf("durations should be unset: %+v", c)
+	}
+}
+
+func TestHostRecordSettings(t *testing.T) {
+	c, err := Load(env(valid()))
+	if err != nil || c.HostIP != "192.168.25.165" || c.HostZone != "" {
+		t.Fatalf("%+v %v", c, err)
+	}
+	for _, z := range []string{"example.com", "caretakarr.example.com"} { // a zone may be the host itself
+		if c, err := Load(env(with("CARETAKARR_HOST_ZONE", z))); err != nil || c.HostZone != z {
+			t.Errorf("zone %q: %+v %v", z, c, err)
+		}
 	}
 }
 
