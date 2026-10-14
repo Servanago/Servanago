@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -149,5 +150,69 @@ func TestStateNotReusedWhenRouteIDIsReused(t *testing.T) {
 	}
 	if u, ok := m.Upstream(fresh); ok {
 		t.Fatalf("stale state served for a different upstream: %+v", u)
+	}
+}
+
+// P1: dials must overlap. The fake dial blocks until all routes are in flight, so a serial
+// sweep deadlocks into the error path instead of passing.
+func TestSweepDialsInParallel(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := context.Background()
+	d, _ := st.CreateDomain(ctx, store.Domain{Name: "example.com", ZoneID: "z", DefaultIP: "1.1.1.1", CertMode: "wildcard"})
+	const n = 10
+	for i := range n {
+		if _, err := st.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: "r" + strconv.Itoa(i), Scheme: "http", UpstreamHost: "10.9.9.9", UpstreamPort: 1000 + i, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	inflight, peak := 0, 0
+	all := make(chan struct{})
+	m := NewMonitor(st, "127.0.0.1:1")
+	m.Dial = func(ctx context.Context, addr string, _ time.Duration) error {
+		mu.Lock()
+		inflight++
+		if inflight > peak {
+			peak = inflight
+		}
+		if inflight == n {
+			close(all)
+		}
+		mu.Unlock()
+		select {
+		case <-all:
+			return nil
+		case <-time.After(3 * time.Second):
+			return errors.New("dials never overlapped")
+		}
+	}
+	m.Sweep(ctx)
+	routes, _ := st.ListRoutes(ctx)
+	for _, r := range routes {
+		if u, ok := m.Upstream(r); !ok || !u.Up {
+			t.Fatalf("%s: %+v %v (peak concurrency %d)", r.Subdomain, u, ok, peak)
+		}
+	}
+}
+
+func TestParallelBoundsConcurrency(t *testing.T) {
+	var mu sync.Mutex
+	cur, peak := 0, 0
+	Parallel(100, func(int) {
+		mu.Lock()
+		cur++
+		peak = max(peak, cur)
+		mu.Unlock()
+		time.Sleep(time.Millisecond)
+		mu.Lock()
+		cur--
+		mu.Unlock()
+	})
+	if peak > maxParallel || peak < 2 {
+		t.Fatalf("peak %d, want 2..%d", peak, maxParallel)
 	}
 }

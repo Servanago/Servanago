@@ -105,11 +105,17 @@ func (m *Monitor) Sweep(ctx context.Context) {
 	if err != nil {
 		return
 	}
-	next := make(map[int64]Upstream, len(routes))
+	var enabled []store.Route
 	for _, r := range routes {
 		if r.Enabled {
-			next[r.ID] = m.dialRoute(ctx, r)
+			enabled = append(enabled, r)
 		}
+	}
+	results := make([]Upstream, len(enabled))
+	Parallel(len(enabled), func(i int) { results[i] = m.dialRoute(ctx, enabled[i]) })
+	next := make(map[int64]Upstream, len(enabled))
+	for i, r := range enabled {
+		next[r.ID] = results[i]
 	}
 	m.mu.Lock()
 	m.up = next
@@ -167,4 +173,22 @@ func leaf(ctx context.Context, addr, host string) (CertInfo, error) {
 		return CertInfo{}, errors.New("no certificate presented")
 	}
 	return CertInfo{NotAfter: certs[0].NotAfter, Issuer: certs[0].Issuer.CommonName}, nil
+}
+
+const maxParallel = 16
+
+// Parallel runs fn(0..n-1) with at most maxParallel in flight and waits for all of them.
+// Probes spend their time waiting on dials, so serial loops scale with the slowest upstream times N.
+func Parallel(n int, fn func(i int)) {
+	var wg sync.WaitGroup
+	sem := make(chan struct{}, maxParallel)
+	for i := range n {
+		sem <- struct{}{}
+		wg.Add(1)
+		go func() {
+			defer func() { <-sem; wg.Done() }()
+			fn(i)
+		}()
+	}
+	wg.Wait()
 }

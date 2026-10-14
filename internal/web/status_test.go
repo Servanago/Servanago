@@ -2,11 +2,14 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http/httptest"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
@@ -83,5 +86,36 @@ func TestStatusRequiresLogin(t *testing.T) {
 	s := newServer(t, "pw")
 	if w := s.do(req{path: "/status"}); w.Code != 303 {
 		t.Fatalf("got %d", w.Code)
+	}
+}
+
+// P1 at the page level: a first dashboard load with many unreachable upstreams must probe them side by side.
+func TestStatusProbesUnknownRoutesInParallel(t *testing.T) {
+	s, _, d := newDNSServer(t)
+	const n = 8
+	for i := range n {
+		if _, err := s.deps.Store.CreateRoute(context.Background(), store.Route{DomainID: d.ID, Subdomain: "r" + strconv.Itoa(i), Scheme: "http", UpstreamHost: "10.9.9.9", UpstreamPort: 2000 + i, Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var mu sync.Mutex
+	inflight := 0
+	all := make(chan struct{})
+	s.deps.Probe.Dial = func(context.Context, string, time.Duration) error {
+		mu.Lock()
+		if inflight++; inflight == n {
+			close(all)
+		}
+		mu.Unlock()
+		select {
+		case <-all:
+			return nil
+		case <-time.After(3 * time.Second):
+			return errors.New("dials never overlapped")
+		}
+	}
+	body := s.do(req{path: "/status"}).Body.String()
+	if got := strings.Count(body, `class="up-up"`); got != n {
+		t.Fatalf("%d of %d routes up; the dials were serial", got, n)
 	}
 }

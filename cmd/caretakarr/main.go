@@ -94,7 +94,7 @@ func run() error {
 		defer cancel()
 		ui.VerifyToken(ctx)
 	}()
-	srv := &http.Server{Addr: cfg.UIListen, Handler: ui.Handler(), ReadHeaderTimeout: 10 * time.Second}
+	srv := newUIServer(cfg.UIListen, ui.Handler())
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
 	slog.Info("caretakarr started", "ui_listen", cfg.UIListen, "host", cfg.Host)
@@ -110,6 +110,13 @@ func run() error {
 		return fmt.Errorf("ui shutdown: %w", err)
 	}
 	return nil
+}
+
+// newUIServer bounds every phase of a connection: UI_LISTEN can be exposed for recovery, where a
+// slow client must not hold a connection open forever. WriteTimeout leaves room for a probe round.
+func newUIServer(addr string, h http.Handler) *http.Server {
+	return &http.Server{Addr: addr, Handler: h, ReadHeaderTimeout: 10 * time.Second, ReadTimeout: 30 * time.Second,
+		WriteTimeout: 60 * time.Second, IdleTimeout: 120 * time.Second}
 }
 
 // loopbackDial turns a listen address (maybe 0.0.0.0:8080) into the dial address Caddy proxies to.

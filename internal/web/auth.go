@@ -28,8 +28,9 @@ type authn struct {
 	key      []byte // per boot: a restart logs everyone out
 	now      func() time.Time
 
-	mu       sync.Mutex
-	failures map[string][]time.Time
+	mu        sync.Mutex
+	failures  map[string][]time.Time // attempts per client IP within throttleWindow
+	lastSweep time.Time
 }
 
 func newAuthn(password string) *authn {
@@ -49,10 +50,16 @@ func (a *authn) sign(exp string) string {
 	return hex.EncodeToString(m.Sum(nil))
 }
 
-func (a *authn) newCookie() *http.Cookie {
+func (a *authn) newCookie(secure bool) *http.Cookie {
 	exp := strconv.FormatInt(a.now().Add(sessionTTL).Unix(), 10)
 	return &http.Cookie{Name: sessionCookieName, Value: exp + "." + a.sign(exp), Path: "/",
-		MaxAge: int(sessionTTL.Seconds()), HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode}
+		MaxAge: int(sessionTTL.Seconds()), HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode}
+}
+
+// secureRequest reports whether the browser reached us over TLS: directly, or via Caddy on loopback.
+// Marking cookies Secure on plain HTTP would make the browser drop them and break the UI_LISTEN recovery listener.
+func secureRequest(r *http.Request) bool {
+	return r.TLS != nil || (loopbackPeer(r) && r.Header.Get("X-Forwarded-Proto") == "https")
 }
 
 func (a *authn) valid(r *http.Request) bool {
@@ -73,37 +80,61 @@ func (a *authn) checkPassword(p string) bool {
 	return subtle.ConstantTimeCompare(h[:], a.passHash[:]) == 1
 }
 
-// blocked reports whether ip has used up its failed-attempt budget in the window.
-func (a *authn) blocked(ip string) bool {
+// attempt reserves one login attempt for ip and reports whether the budget allowed it. Checking and
+// recording happen under one lock, so parallel requests cannot all slip past the limit.
+func (a *authn) attempt(ip string) bool {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	cutoff := a.now().Add(-throttleWindow)
+	now := a.now()
+	cutoff := now.Add(-throttleWindow)
+	if now.Sub(a.lastSweep) >= time.Minute { // drop IPs that never came back
+		for k, ts := range a.failures {
+			if len(ts) == 0 || !ts[len(ts)-1].After(cutoff) {
+				delete(a.failures, k)
+			}
+		}
+		a.lastSweep = now
+	}
 	recent := a.failures[ip][:0]
 	for _, t := range a.failures[ip] {
 		if t.After(cutoff) {
 			recent = append(recent, t)
 		}
 	}
-	a.failures[ip] = recent
-	return len(recent) >= maxFailures
+	if len(recent) >= maxFailures {
+		a.failures[ip] = recent
+		return false
+	}
+	a.failures[ip] = append(recent, now)
+	return true
 }
 
-func (a *authn) fail(ip string) {
+// clear forgets ip's attempts after a successful login.
+func (a *authn) clear(ip string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.failures[ip] = append(a.failures[ip], a.now())
+	delete(a.failures, ip)
 }
 
-// clientIP trusts X-Forwarded-For only from a loopback peer (Caddy in this process).
-func clientIP(r *http.Request) string {
+func loopbackPeer(r *http.Request) bool {
 	host, _, err := net.SplitHostPort(r.RemoteAddr)
 	if err != nil {
 		host = r.RemoteAddr
 	}
-	if ip := net.ParseIP(host); ip != nil && ip.IsLoopback() {
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
+}
+
+// clientIP trusts X-Forwarded-For only from a loopback peer (Caddy in this process).
+func clientIP(r *http.Request) string {
+	if loopbackPeer(r) {
 		if first, _, _ := strings.Cut(r.Header.Get("X-Forwarded-For"), ","); strings.TrimSpace(first) != "" {
 			return strings.TrimSpace(first)
 		}
+	}
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
 	return host
 }
@@ -153,22 +184,22 @@ func (s *Server) loginPage(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
-	if s.auth.blocked(ip) {
+	if !s.auth.attempt(ip) {
 		http.Error(w, "Too many attempts. Try again later.", http.StatusTooManyRequests)
 		return
 	}
 	if !s.auth.checkPassword(r.PostFormValue("password")) {
-		s.auth.fail(ip)
 		http.Error(w, "Wrong password.", http.StatusUnauthorized)
 		return
 	}
-	http.SetCookie(w, s.auth.newCookie())
+	s.auth.clear(ip)
+	http.SetCookie(w, s.auth.newCookie(secureRequest(r)))
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Path: "/", MaxAge: -1, HttpOnly: true, Secure: true, SameSite: http.SameSiteStrictMode})
+	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode})
 	w.Header().Set("HX-Redirect", "/login")
 	w.WriteHeader(http.StatusNoContent)
 }

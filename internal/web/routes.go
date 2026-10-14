@@ -90,18 +90,23 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	for i, x := range rs {
 		d, ok := byRoute[x.ID]
 		rows[i] = routeRow{Route: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: d, HasDNS: ok}
-		if x.Enabled && s.deps.Probe != nil {
-			rows[i].Probed = true
-			u, known := s.deps.Probe.Upstream(x)
-			if !known {
-				ctx, cancel := detached(r)
-				u = s.deps.Probe.Check(ctx, x)
-				cancel()
-			}
-			rows[i].Upstream = map[bool]string{true: "up", false: "down"}[u.Up]
-			rows[i].Cert = s.deps.Probe.Cert(r.Context(), rows[i].Host)
-		}
+		rows[i].Probed = x.Enabled && s.deps.Probe != nil
 	}
+	// Probes wait on the network, so run them side by side; each goroutine writes only its own row.
+	probe.Parallel(len(rows), func(i int) {
+		row := &rows[i]
+		if !row.Probed {
+			return
+		}
+		u, known := s.deps.Probe.Upstream(row.Route)
+		if !known {
+			ctx, cancel := detached(r)
+			u = s.deps.Probe.Check(ctx, row.Route)
+			cancel()
+		}
+		row.Upstream = map[bool]string{true: "up", false: "down"}[u.Up]
+		row.Cert = s.deps.Probe.Cert(r.Context(), row.Host)
+	})
 	return rows, nil
 }
 

@@ -81,7 +81,7 @@ func sessionCookie(t *testing.T, w *httptest.ResponseRecorder) *http.Cookie {
 
 func TestLoginSuccessSetsSecureCookie(t *testing.T) {
 	s := newServer(t, "pw")
-	w := login(s, "pw", nil, "")
+	w := login(s, "pw", map[string]string{"X-Forwarded-Proto": "https"}, "")
 	if w.Code != 204 || w.Header().Get("HX-Redirect") != "/" {
 		t.Fatalf("%d %v", w.Code, w.Header())
 	}
