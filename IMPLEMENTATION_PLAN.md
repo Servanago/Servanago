@@ -41,7 +41,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: The one path that changes config: mutex, tx, render, `caddy.Load`, commit/rollback; startup load with bootstrap fallback.
 **Success Criteria**: Mutation callback runs inside a tx; Caddy rejection rolls back the DB and leaves the old config live; startup with corrupt state loads bootstrap-only and exposes the error for a banner.
 **Tests** (integration, serial, real in-process Caddy, high ports, `internal` issuer, `httptest` upstream): valid mutation makes route live; invalid mutation rolls back and old route still serves; corrupt row at startup yields bootstrap config + error; same-state apply is a no-op; `caddy.Stop()` in cleanup.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 4: Web skeleton, auth, CSRF
 **Goal**: Server-rendered shell reachable through Caddy at `CARETAKARR_HOST`.
