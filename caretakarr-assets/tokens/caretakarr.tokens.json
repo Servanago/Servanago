@@ -1,0 +1,82 @@
+{
+  "color": {
+    "brand": {
+      "cyan": {
+        "value": "#16C7F3",
+        "description": "Primary Caretakarr cyan"
+      },
+      "blue": {
+        "value": "#0789F9",
+        "description": "Go/technical blue"
+      },
+      "green": {
+        "value": "#35D66F",
+        "description": "Secure/healthy HTTPS state"
+      },
+      "greenDark": {
+        "value": "#087A3D",
+        "description": "Shield/deep green"
+      },
+      "orange": {
+        "value": "#FF9D22",
+        "description": "Cloudflare-inspired accent; use sparingly"
+      }
+    },
+    "surface": {
+      "canvas": {
+        "value": "#07111F",
+        "description": "Main dark app background"
+      },
+      "panel": {
+        "value": "#0D1B2D",
+        "description": "Primary cards and navigation"
+      },
+      "panelRaised": {
+        "value": "#13263B",
+        "description": "Raised surfaces and hover states"
+      },
+      "border": {
+        "value": "#24415A",
+        "description": "Subtle borders"
+      }
+    },
+    "text": {
+      "primary": {
+        "value": "#F4F8FC",
+        "description": "Primary text"
+      },
+      "secondary": {
+        "value": "#B7C8D9",
+        "description": "Secondary text"
+      },
+      "muted": {
+        "value": "#7F98AF",
+        "description": "Muted labels"
+      }
+    },
+    "status": {
+      "success": {
+        "value": "#35D66F"
+      },
+      "warning": {
+        "value": "#FFB547"
+      },
+      "danger": {
+        "value": "#FF5B67"
+      },
+      "info": {
+        "value": "#16C7F3"
+      }
+    }
+  },
+  "radius": {
+    "sm": "6px",
+    "md": "10px",
+    "lg": "16px",
+    "xl": "22px"
+  },
+  "shadow": {
+    "panel": "0 8px 24px rgba(0, 0, 0, 0.22)",
+    "focus": "0 0 0 3px rgba(22, 199, 243, 0.24)"
+  }
+}
