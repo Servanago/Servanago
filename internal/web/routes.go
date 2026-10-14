@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/caretakarr/caretakarr/internal/config"
+	"github.com/caretakarr/caretakarr/internal/discovery"
 	"github.com/caretakarr/caretakarr/internal/presets"
 	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
@@ -105,6 +106,9 @@ type routeForm struct {
 	Domains       []store.Domain
 	Presets       []presets.Preset
 	DeleteConfirm string
+	ShowDocker    bool // Docker socket is mounted
+	Containers    []discovery.Container
+	DockerErr     string
 }
 
 // deleteConfirm tells the user exactly what deleting the route does to its A record.
@@ -134,11 +138,21 @@ func (s *Server) routeFormPage(w http.ResponseWriter, r *http.Request, rt store.
 		t, _ := dnsTargetOf(r, s.deps.Store, rt)
 		confirm = deleteConfirm(t)
 	}
-	s.render(w, "route", http.StatusOK, page{Title: title, Data: routeForm{rt, edit, ds, presets.All, confirm}})
+	form := routeForm{Route: rt, Edit: edit, Domains: ds, Presets: presets.All, DeleteConfirm: confirm}
+	if !edit && s.deps.Docker != nil && s.deps.Docker.Available() {
+		form.ShowDocker = true
+		if form.Containers, err = s.deps.Docker.List(r.Context()); err != nil {
+			form.DockerErr = err.Error()
+		}
+	}
+	s.render(w, "route", http.StatusOK, page{Title: title, Data: form})
 }
 
+// newRoutePage supports prefill from the Docker panel via ?sub=&host=&port=.
 func (s *Server) newRoutePage(w http.ResponseWriter, r *http.Request) {
-	s.routeFormPage(w, r, store.Route{Scheme: "http", Enabled: true}, false)
+	q := r.URL.Query()
+	port, _ := strconv.Atoi(q.Get("port"))
+	s.routeFormPage(w, r, store.Route{Scheme: "http", Enabled: true, Subdomain: q.Get("sub"), UpstreamHost: q.Get("host"), UpstreamPort: port}, false)
 }
 
 func (s *Server) editRoutePage(w http.ResponseWriter, r *http.Request) {

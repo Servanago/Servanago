@@ -67,6 +67,8 @@ type Upstream struct {
 type Monitor struct {
 	store     *store.Store
 	httpsAddr string // where Caddy serves TLS, e.g. 127.0.0.1:443
+	// Dial checks one upstream address; tests replace it to stay off the real network.
+	Dial func(ctx context.Context, addr string, timeout time.Duration) error
 	// LogError returns the latest logged issuance error mentioning host, or "". Optional.
 	LogError func(host string) string
 
@@ -75,19 +77,19 @@ type Monitor struct {
 }
 
 func NewMonitor(st *store.Store, httpsAddr string) *Monitor {
-	return &Monitor{store: st, httpsAddr: httpsAddr, up: map[int64]Upstream{}}
+	return &Monitor{store: st, httpsAddr: httpsAddr, up: map[int64]Upstream{}, Dial: TCP}
 }
 
 const dialTimeout = 2 * time.Second
 
-func dialRoute(ctx context.Context, r store.Route) Upstream {
+func (m *Monitor) dialRoute(ctx context.Context, r store.Route) Upstream {
 	addr := upstreamAddr(r)
-	return Upstream{Up: TCP(ctx, addr, dialTimeout) == nil, Checked: time.Now(), addr: addr}
+	return Upstream{Up: m.Dial(ctx, addr, dialTimeout) == nil, Checked: time.Now(), addr: addr}
 }
 
 // Check probes one route now, so a new route shows a real state before the next sweep.
 func (m *Monitor) Check(ctx context.Context, r store.Route) Upstream {
-	u := dialRoute(ctx, r)
+	u := m.dialRoute(ctx, r)
 	if ctx.Err() != nil {
 		return u // cancelled, not a real result: do not cache "down"
 	}
@@ -106,7 +108,7 @@ func (m *Monitor) Sweep(ctx context.Context) {
 	next := make(map[int64]Upstream, len(routes))
 	for _, r := range routes {
 		if r.Enabled {
-			next[r.ID] = dialRoute(ctx, r)
+			next[r.ID] = m.dialRoute(ctx, r)
 		}
 	}
 	m.mu.Lock()

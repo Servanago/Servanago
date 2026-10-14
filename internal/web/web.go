@@ -13,6 +13,7 @@ import (
 
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
+	"github.com/caretakarr/caretakarr/internal/discovery"
 	"github.com/caretakarr/caretakarr/internal/dnssync"
 	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
@@ -34,6 +35,8 @@ type Deps struct {
 	CF    *cfdns.Client
 	DNS   *dnssync.Syncer
 	Probe *probe.Monitor
+	// Docker is optional; the discovery panel shows only when its socket is mounted.
+	Docker *discovery.Client
 }
 
 type Server struct {

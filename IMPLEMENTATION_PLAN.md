@@ -83,7 +83,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: List containers from the Docker socket when mounted.
 **Success Criteria**: `GET /containers/json` over unix socket via stdlib; panel hidden when the socket is absent; pre-fills route with container name and a private port; UI note on shared networks.
 **Tests**: fake unix-socket server returning canned JSON; absent socket hides panel; parse edge cases (no ports, multiple ports, multiple names); e2e skipped without socket.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 11: Caddy log ring buffer and Logs page
 **Goal**: Show Caddy and ACME log lines in the UI.

@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
@@ -64,8 +66,10 @@ func domainServer(t *testing.T, cf *cfFake) *Server {
 	}
 	t.Cleanup(func() { st.Close() })
 	client := cfdns.New("tok", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+	mon := probe.NewMonitor(st, "127.0.0.1:1")
+	mon.Dial = func(context.Context, string, time.Duration) error { return errors.New("refused") } // never touch the real network
 	return New(Deps{Cfg: config.Config{}, Store: st, Apply: txApplier{st}, CF: client, DNS: dnssync.New(client, st),
-		Probe: probe.NewMonitor(st, "127.0.0.1:1")})
+		Probe: mon})
 }
 
 func postDomain(s *Server, name, ip, mode string) *httptest.ResponseRecorder {

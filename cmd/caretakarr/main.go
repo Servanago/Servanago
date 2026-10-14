@@ -26,6 +26,7 @@ import (
 	_ "github.com/caretakarr/caretakarr/internal/caddylog"
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
+	"github.com/caretakarr/caretakarr/internal/discovery"
 	"github.com/caretakarr/caretakarr/internal/dnssync"
 	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
@@ -76,7 +77,8 @@ func run() error {
 	defer stop()
 	mon := probe.NewMonitor(st, net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.HTTPSPort)))
 	go mon.Run(ctx, 30*time.Second)
-	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dnssync.New(cf, st), Probe: mon})
+	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dnssync.New(cf, st), Probe: mon,
+		Docker: discovery.New(cfg.DockerSocket)})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

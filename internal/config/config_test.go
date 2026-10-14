@@ -62,6 +62,9 @@ func TestLoadDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if c.DockerSocket != "/var/run/docker.sock" {
+		t.Errorf("docker socket default: %q", c.DockerSocket)
+	}
 	if c.HTTPPort != 80 || c.HTTPSPort != 443 {
 		t.Errorf("ports: %d %d", c.HTTPPort, c.HTTPSPort)
 	}
