@@ -62,7 +62,8 @@ type routeRow struct {
 	Probed   bool
 	Upstream string // up | down
 	Cert     probe.CertStatus
-	CertSoon bool // issued but inside renewWindow: shown amber
+	CertSoon bool   // issued but inside renewWindow: shown amber
+	CertWait string // how long a pending certificate may take, from the propagation settings
 }
 
 func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
@@ -107,6 +108,7 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 		row.Upstream = map[bool]string{true: "up", false: "down"}[u.Up]
 		row.Cert = s.deps.Probe.Cert(r.Context(), row.Host)
 		row.CertSoon = certExpiringSoon(row.Cert, time.Now())
+		row.CertWait = certWait(s.deps.Cfg.PropagationDelay, s.deps.Cfg.PropagationTimeout)
 	})
 	return rows, nil
 }

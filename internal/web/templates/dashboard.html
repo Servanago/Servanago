@@ -1,40 +1,55 @@
 {{define "routes"}}
 {{if .}}
 <table>
-<thead><tr><th>Host</th><th>Upstream</th><th>State</th><th>Certificate</th><th>DNS</th><th></th></tr></thead>
+<thead><tr><th>Host</th><th>Backend</th><th>State</th><th>Certificate {{helplink "statuses"}}</th><th>DNS {{helplink "statuses"}}</th><th></th></tr></thead>
 <tbody>
 {{range .}}
 <tr>
 <td>{{.Host}}</td>
-<td>{{.UpstreamHost}}:{{.UpstreamPort}}{{if .Probed}}<br><small class="up-{{.Upstream}}">{{.Upstream}}</small>{{end}}</td>
+<td>{{.UpstreamHost}}:{{.UpstreamPort}}{{if .Probed}}{{$u := status "up" .Upstream}}<br><small class="up-{{.Upstream}}" title="{{$u.Meaning}}">{{.Upstream}}</small>{{if $u.Next}}<small class="next">{{$u.Next}}</small>{{end}}{{end}}</td>
 <td>{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
-<td>{{if .Probed}}{{if .CertSoon}}<span class="cert-expiring">expiring soon</span>{{else}}<span class="cert-{{.Cert.State}}">{{.Cert.State}}</span>{{end}}{{if not .Cert.NotAfter.IsZero}}<br><small>expires {{.Cert.NotAfter.Format "2006-01-02"}}</small>{{end}}{{if .Cert.Err}}<br><small title="{{.Cert.Err}}">{{.Cert.Err}}</small>{{end}}{{end}}</td>
+<td>{{if .Probed}}{{$c := status "cert" .Cert.State}}{{if .CertSoon}}{{$c = status "cert" "expiring"}}<span class="cert-expiring" title="{{$c.Meaning}}">expiring soon</span>{{else}}<span class="cert-{{.Cert.State}}" title="{{$c.Meaning}}">{{.Cert.State}}</span>{{end}}
+{{if not .Cert.NotAfter.IsZero}}<br><small>expires {{.Cert.NotAfter.Format "2006-01-02"}}</small>{{end}}
+{{if eq .Cert.State "pending"}}<small class="next">{{.CertWait}}</small>{{else if and $c.Next (or (ne .Cert.State "error") (not .Cert.Err))}}<small class="next">{{$c.Next}}</small>{{end}}
+{{if .Cert.Err}}<div class="explain">{{errhtml .Cert.Err}}</div>{{end}}{{end}}</td>
 <td>
-{{if .HasDNS}}<span class="dns-{{.DNS.State}}">{{.DNS.State}}</span>{{if .DNS.Error}}<br><small>{{.DNS.Error}}</small>{{end}}
-{{if eq .DNS.State "conflict"}}<br><button class="outline warn" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}?">Take over</button>
-{{else if eq .DNS.State "error"}}<br><button class="outline" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Retry</button>
-{{else}}<br><button class="outline secondary" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Resync</button>{{end}}
-{{else}}<span class="dns-pending">pending</span>{{end}}
+{{if .HasDNS}}{{$d := status "dns" .DNS.State}}<span class="dns-{{.DNS.State}}" title="{{$d.Meaning}}">{{.DNS.State}}</span>
+{{if and $d.Next (or (ne .DNS.State "error") (not .DNS.Error))}}<small class="next">{{$d.Next}}</small>{{end}}
+{{if .DNS.Error}}<div class="explain">{{errhtml .DNS.Error}}</div>{{end}}
+{{if eq .DNS.State "conflict"}}<button class="outline warn" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}? The current record will be replaced.">Take over</button>
+{{else if eq .DNS.State "error"}}<button class="outline" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Retry</button>
+{{else}}<button class="outline secondary" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" title="Check the record in Cloudflare again">Resync</button>{{end}}
+{{else}}{{$d := status "dns" "pending"}}<span class="dns-pending" title="{{$d.Meaning}}">pending</span><small class="next">{{$d.Next}}</small>{{end}}
 </td>
-<td><a href="/routes/{{.ID}}">Edit</a> <button class="outline secondary" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></td>
+<td><a href="/routes/{{.ID}}">Edit</a> <button class="outline secondary" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg" title="{{if .Enabled}}Visitors will see a 'disabled' message; DNS and certificate are kept{{else}}Start serving this site again{{end}}">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></td>
 </tr>
 {{end}}
 </tbody>
 </table>
-{{else}}<p>No routes yet.</p>{{end}}
+{{else}}<p>No sites yet. Click <strong>Add site</strong> below, then enter the hostname (for example <code>oc.example.com</code>) and where the app runs: its IP address and its own port.</p>{{end}}
 {{end}}
 
 {{define "content"}}
 <h1>Dashboard</h1>
 {{with .Data}}
+{{if not .SetupDone}}
+<article class="checklist">
+<header>Getting started {{helplink "how-it-works"}}</header>
+<ul>
+{{range .Checklist}}<li class="check-{{.State}}"><strong>{{.Label}}</strong> {{helplink .Help}}{{if .Detail}}<br><span class="check-detail">{{.Detail}}</span>{{end}}</li>{{end}}
+</ul>
+</article>
+{{end}}
 {{with .Host}}
 <article id="ui-host">
 <header>UI host</header>
+{{$d := status "dns" .DNS.State}}
 <p><strong>{{.Spec.Name}}</strong> → {{.Spec.IP}}
-<span class="dns-{{.DNS.State}}">{{.DNS.State}}</span>{{if .DNS.Error}}<br><small>{{.DNS.Error}}</small>{{end}}</p>
-{{if eq .DNS.State "conflict"}}<button class="outline warn" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing A record for {{.Spec.Name}}?">Take over</button>
+<span class="dns-{{.DNS.State}}" title="{{$d.Meaning}}">{{.DNS.State}}</span>{{if and $d.Next (or (ne .DNS.State "error") (not .DNS.Error))}}<br><small class="next">{{$d.Next}}</small>{{end}}</p>
+{{if .DNS.Error}}<div class="explain">{{errhtml .DNS.Error}}</div>{{end}}
+{{if eq .DNS.State "conflict"}}<button class="outline warn" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing A record for {{.Spec.Name}}? The current record will be replaced.">Take over</button>
 {{else if eq .DNS.State "error"}}<button class="outline" hx-post="/host/dns/resync" hx-target="#host-msg">Retry</button>
-{{else}}<button class="outline secondary" hx-post="/host/dns/resync" hx-target="#host-msg">Resync</button>{{end}}
+{{else}}<button class="outline secondary" hx-post="/host/dns/resync" hx-target="#host-msg" title="Check the record in Cloudflare again">Resync</button>{{end}}
 <p id="host-msg" role="alert"></p>
 </article>
 {{end}}

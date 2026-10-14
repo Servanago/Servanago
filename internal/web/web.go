@@ -68,8 +68,8 @@ func (s *Server) takeFlashes() []string {
 
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
-	for _, p := range []string{"dashboard", "login", "domains", "route", "site", "logs"} {
-		s.pages[p] = template.Must(template.ParseFS(assets, "templates/layout.html", "templates/docker.html", "templates/"+p+".html"))
+	for _, p := range []string{"dashboard", "login", "domains", "route", "site", "logs", "help"} {
+		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/docker.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
 		s.startupErr = d.Apply.StartupError
@@ -98,6 +98,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /login", s.loginSubmit)
 	mux.HandleFunc("POST /logout", s.logout)
 	mux.Handle("GET /{$}", s.protected(s.dashboard))
+	mux.Handle("GET /help", s.protected(s.helpPage))
 	mux.Handle("GET /status", s.protected(s.status))
 	mux.Handle("GET /logs", s.protected(s.logsPage))
 	mux.Handle("GET /logs/rows", s.protected(s.logRows))
@@ -172,9 +173,13 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	host := s.hostCard(r.Context())
+	items := s.checklist(r.Context(), routes, host)
 	s.render(w, "dashboard", http.StatusOK, page{Title: "Dashboard", Data: struct {
-		Domains []domainRow
-		Routes  []routeRow
-		Host    *hostCard
-	}{domains, routes, s.hostCard(r.Context())}})
+		Domains   []domainRow
+		Routes    []routeRow
+		Host      *hostCard
+		Checklist []checkItem
+		SetupDone bool
+	}{domains, routes, host, items, setupDone(items)}})
 }

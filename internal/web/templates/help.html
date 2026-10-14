@@ -1,0 +1,26 @@
+{{define "content"}}
+{{with .Data}}
+<h1>Help</h1>
+<nav class="help-toc" aria-label="Help sections"><ul>
+{{range .Sections}}<li><a href="#{{.ID}}">{{.Title}}</a></li>{{end}}
+</ul></nav>
+{{range .Sections}}
+<article id="{{.ID}}">
+<h2>{{.Title}}</h2>
+{{if eq .ID "statuses"}}
+<table>
+<thead><tr><th>Status</th><th>What it means</th><th>What to do</th></tr></thead>
+<tbody>
+{{range $.Data.Statuses}}<tr><td><strong>{{.Label}}</strong></td><td>{{.Meaning}}</td><td>{{if .Next}}{{.Next}}{{else}}Nothing.{{end}}</td></tr>{{end}}
+</tbody>
+</table>
+{{else if eq .ID "troubleshooting"}}
+<dl>
+{{range $.Data.Errors}}<dt>{{.Title}}</dt><dd>{{.Fix}}</dd>{{end}}
+</dl>
+<p>Not listed? The Logs page shows what Caddy and Let's Encrypt are saying, in order.</p>
+{{else}}{{.Body}}{{end}}
+</article>
+{{end}}
+{{end}}
+{{end}}

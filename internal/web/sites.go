@@ -34,6 +34,7 @@ func (s *Server) dockerPanel(r *http.Request) dockerPanel {
 type addSiteData struct {
 	Hostname, Host string
 	Port           int
+	ServerIP       string // where the A record will point; shown in the live preview
 	Docker         dockerPanel
 	Presets        []presets.Preset
 }
@@ -43,7 +44,7 @@ func (s *Server) newSitePage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	port, _ := strconv.Atoi(q.Get("port"))
 	s.render(w, "site", http.StatusOK, page{Title: "Add site", Data: addSiteData{
-		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, Docker: s.dockerPanel(r), Presets: presets.All}})
+		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, ServerIP: s.deps.Cfg.HostIP, Docker: s.dockerPanel(r), Presets: presets.All}})
 }
 
 // addSite turns "oc.example.com -> 192.168.25.165:9200" into the managed domain (if new), the route and its A record.

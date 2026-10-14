@@ -12,6 +12,7 @@ One container that puts your arr stack (Sonarr, Radarr, Plex and friends) behind
 - Per-route enable/disable, CIDR allowlist and basic auth.
 - Upstream health, certificate expiry, DNS state and a live Caddy/ACME log in the UI.
 - Optional Docker discovery: list running containers and pre-fill a route from one.
+- Built-in help for people new to DNS and TLS: a hint under every field, a live preview of what *Add site* will create, plain-language explanations of errors and status words, a getting-started checklist, and a Help page.
 - Single static binary on a distroless image; all state in one `/data` volume.
 
 **LAN and tailnet only.** Every address Caretakarr publishes must be private IPv4 (10/8, 172.16/12, 192.168/16) or CGNAT (100.64/10, Tailscale). Public IPs, IPv6 and Cloudflare-proxied (orange cloud) records are not supported.

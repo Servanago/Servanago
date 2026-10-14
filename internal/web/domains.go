@@ -3,7 +3,6 @@ package web
 import (
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,10 +12,11 @@ import (
 )
 
 // fail writes an HTML-escaped message: htmx swaps error bodies into the page as HTML.
+// Known errors get a plain-language explanation first; the raw text is always kept.
 func fail(w http.ResponseWriter, status int, msg string) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	_, _ = fmt.Fprint(w, html.EscapeString(msg))
+	_, _ = fmt.Fprint(w, errorHTML(msg))
 }
 
 // userError carries an HTTP status out of a Mutate callback.
