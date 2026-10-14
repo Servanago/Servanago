@@ -1,0 +1,13 @@
+services:
+  caretakarr:
+    image: ghcr.io/caretakarr/caretakarr:latest
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./data:/data
+      # Optional Docker discovery. This is host-root equivalent; prefer a read-only socket proxy.
+      # - /var/run/docker.sock:/var/run/docker.sock:ro

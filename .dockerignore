@@ -1,0 +1,10 @@
+.git
+.github
+.claude
+.impeccable
+bin
+data
+e2e
+docs
+IMPLEMENTATION_PLAN.md
+.env

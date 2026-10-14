@@ -1,0 +1,7 @@
+# docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+services:
+  caretakarr:
+    build: .
+    image: caretakarr:dev
+    environment:
+      ACME_STAGING: "true"
