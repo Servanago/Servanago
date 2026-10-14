@@ -13,12 +13,13 @@
 <header class="container">
 <nav>
 <ul><li><strong>Caretakarr</strong></li></ul>
-{{if .LoggedIn}}<ul><li><a href="/">Dashboard</a></li><li><button class="outline secondary" hx-post="/logout">Sign out</button></li></ul>{{else}}<ul><li><a href="/">Dashboard</a></li></ul>{{end}}
+<ul><li><a href="/">Dashboard</a></li><li><a href="/domains">Domains</a></li>{{if .LoggedIn}}<li><button class="outline secondary" hx-post="/logout">Sign out</button></li>{{end}}</ul>
 </nav>
 </header>
 <main class="container">
 {{if .Open}}<div class="banner danger" role="alert"><strong>UI is open.</strong> Set <code>ADMIN_PASSWORD</code> to require a login.</div>{{end}}
 {{if .StartupErr}}<div class="banner warn" role="alert"><strong>Stored config was rejected; serving the bootstrap config only.</strong><br><code>{{.StartupErr}}</code></div>{{end}}
+{{if .CFErr}}<div class="banner warn" role="alert"><strong>Cloudflare token problem.</strong> Certificates and DNS will fail until it is fixed.<br><code>{{.CFErr}}</code></div>{{end}}
 {{template "content" .}}
 </main>
 </body>

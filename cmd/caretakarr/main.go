@@ -18,9 +18,12 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 
 	_ "github.com/caddy-dns/cloudflare"
+	"github.com/cloudflare/cloudflare-go/v7/option"
+
 	"github.com/caretakarr/caretakarr/internal/apply"
 	"github.com/caretakarr/caretakarr/internal/caddycfg"
 	_ "github.com/caretakarr/caretakarr/internal/caddylog"
+	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/store"
 	"github.com/caretakarr/caretakarr/internal/web"
@@ -61,8 +64,17 @@ func run() error {
 	}
 	defer func() { _ = caddy.Stop() }()
 
-	srv := &http.Server{Addr: cfg.UIListen, Handler: web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc}).Handler(),
-		ReadHeaderTimeout: 10 * time.Second}
+	var cfOpts []option.RequestOption
+	if cfg.CFBaseURL != "" {
+		cfOpts = append(cfOpts, option.WithBaseURL(cfg.CFBaseURL))
+	}
+	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cfdns.New(cfg.CloudflareToken, cfOpts...)})
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		ui.VerifyToken(ctx)
+	}()
+	srv := &http.Server{Addr: cfg.UIListen, Handler: ui.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	errc := make(chan error, 1)

@@ -25,7 +25,8 @@ type Config struct {
 	Resolvers          []string
 	UIListen           string
 	DataDir            string
-	HTTPPort           int // Caddy listen ports; default 80/443, overridable for unprivileged runs
+	CFBaseURL          string // test hook: point cloudflare-go at a mock (e2e); empty = real API
+	HTTPPort           int    // Caddy listen ports; default 80/443, overridable for unprivileged runs
 	HTTPSPort          int
 }
 
@@ -72,6 +73,7 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	c := Config{
+		CFBaseURL:          strings.TrimSpace(getenv("CLOUDFLARE_BASE_URL")),
 		HTTPPort:           port("HTTP_PORT", 80),
 		HTTPSPort:          port("HTTPS_PORT", 443),
 		CloudflareToken:    req("CLOUDFLARE_API_TOKEN"),

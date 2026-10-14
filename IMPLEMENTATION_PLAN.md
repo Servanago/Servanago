@@ -53,7 +53,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: Add and remove domains validated against the token.
 **Success Criteria**: Add domain resolves `zone_id` via `cloudflare-go/v7` (`Zones.List`), stores `default_ip`, `cert_mode`; startup token verify with UI banner on failure; delete blocked while routes exist; each add/remove goes through the apply service.
 **Tests**: `cfdns` against `httptest` + `option.WithBaseURL` (zone found, not found, bad token, API error text surfaced); handler tests for validation (`.local` rejected, bad IP); e2e: add domain, see it listed.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 6: Routes and presets
 **Goal**: Create, edit, delete routes; presets; end-to-end proxying.

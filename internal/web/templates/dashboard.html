@@ -1,4 +1,6 @@
 {{define "content"}}
 <h1>Dashboard</h1>
-<p>No domains yet.</p>
+{{if .Data}}
+<ul>{{range .Data}}<li>{{.Name}} ({{.Routes}} routes)</li>{{end}}</ul>
+{{else}}<p>No domains yet. <a href="/domains">Add one</a>.</p>{{end}}
 {{end}}

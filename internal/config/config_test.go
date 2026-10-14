@@ -86,13 +86,14 @@ func TestLoadOverrides(t *testing.T) {
 	m["UI_LISTEN"] = "0.0.0.0:9000"
 	m["DATA_DIR"] = "/tmp/x"
 	m["HTTP_PORT"], m["HTTPS_PORT"] = "8000", "8443"
+	m["CLOUDFLARE_BASE_URL"] = "http://127.0.0.1:1"
 	c, err := Load(env(m))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !c.Staging || c.PropagationDelay != 2*time.Minute || c.PropagationTimeout != 10*time.Minute ||
 		strings.Join(c.Resolvers, ",") != "9.9.9.9,1.1.1.1" || c.AdminPassword != "pw" ||
-		c.UIListen != "0.0.0.0:9000" || c.DataDir != "/tmp/x" || c.HTTPPort != 8000 || c.HTTPSPort != 8443 {
+		c.UIListen != "0.0.0.0:9000" || c.DataDir != "/tmp/x" || c.HTTPPort != 8000 || c.HTTPSPort != 8443 || c.CFBaseURL != "http://127.0.0.1:1" {
 		t.Errorf("%+v", c)
 	}
 }
