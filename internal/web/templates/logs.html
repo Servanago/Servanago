@@ -1,0 +1,17 @@
+{{define "logrows"}}
+{{range .}}<tr class="log-{{.Level}}"><td>{{.Time.Format "15:04:05"}}</td><td>{{.Level}}</td><td>{{.Logger}}</td><td>{{.Msg}}{{if .Error}}<br><small>{{.Error}}</small>{{end}}</td></tr>
+{{else}}<tr><td colspan="4">No log lines at this level.</td></tr>{{end}}
+{{end}}
+
+{{define "content"}}
+<h1>Logs</h1>
+<p>Caddy and certificate (ACME) messages since this process started. Not persisted.</p>
+<label>Minimum level
+<select name="level" hx-get="/logs/rows" hx-target="#log-rows" hx-trigger="change, every 5s" hx-include="this">
+{{range $l := .Data.Levels}}<option value="{{$l}}"{{if eq $l $.Data.Level}} selected{{end}}>{{$l}}</option>{{end}}
+</select></label>
+<table>
+<thead><tr><th>Time</th><th>Level</th><th>Logger</th><th>Message</th></tr></thead>
+<tbody id="log-rows">{{template "logrows" .Data.Entries}}</tbody>
+</table>
+{{end}}

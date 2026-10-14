@@ -23,7 +23,7 @@ import (
 
 	"github.com/caretakarr/caretakarr/internal/apply"
 	"github.com/caretakarr/caretakarr/internal/caddycfg"
-	_ "github.com/caretakarr/caretakarr/internal/caddylog"
+	"github.com/caretakarr/caretakarr/internal/caddylog"
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/discovery"
@@ -76,9 +76,10 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	mon := probe.NewMonitor(st, net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.HTTPSPort)))
+	mon.LogError = caddylog.Sink.LastError
 	go mon.Run(ctx, 30*time.Second)
 	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dnssync.New(cf, st), Probe: mon,
-		Docker: discovery.New(cfg.DockerSocket)})
+		Docker: discovery.New(cfg.DockerSocket), Logs: caddylog.Sink})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

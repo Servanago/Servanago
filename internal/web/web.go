@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/caretakarr/caretakarr/internal/caddylog"
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/discovery"
@@ -37,6 +38,7 @@ type Deps struct {
 	Probe *probe.Monitor
 	// Docker is optional; the discovery panel shows only when its socket is mounted.
 	Docker *discovery.Client
+	Logs   *caddylog.Ring
 }
 
 type Server struct {
@@ -66,7 +68,7 @@ func (s *Server) takeFlashes() []string {
 
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
-	for _, p := range []string{"dashboard", "login", "domains", "route"} {
+	for _, p := range []string{"dashboard", "login", "domains", "route", "logs"} {
 		s.pages[p] = template.Must(template.ParseFS(assets, "templates/layout.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -97,6 +99,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /logout", s.logout)
 	mux.Handle("GET /{$}", s.protected(s.dashboard))
 	mux.Handle("GET /status", s.protected(s.status))
+	mux.Handle("GET /logs", s.protected(s.logsPage))
+	mux.Handle("GET /logs/rows", s.protected(s.logRows))
 	mux.Handle("GET /domains", s.protected(s.domainsPage))
 	mux.Handle("POST /domains", s.protected(s.addDomain))
 	mux.Handle("DELETE /domains/{id}", s.protected(s.deleteDomain))

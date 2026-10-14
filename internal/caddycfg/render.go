@@ -27,6 +27,7 @@ type Options struct {
 	UIHost, UIUpstream  string
 	Email               string
 	Staging             bool
+	CA                  string // ACME directory URL override (tests); empty = Let's Encrypt prod or staging
 	HTTPPort, HTTPSPort int
 	StoragePath         string
 	Issuer              Issuer
@@ -137,7 +138,10 @@ func issuer(o Options) m {
 		dns["propagation_timeout"] = o.PropagationTimeout.String()
 	}
 	i := m{"module": "acme", "email": o.Email, "challenges": m{"dns": dns}}
-	if o.Staging {
+	switch {
+	case o.CA != "":
+		i["ca"] = o.CA
+	case o.Staging:
 		i["ca"] = stagingCA
 	}
 	return i

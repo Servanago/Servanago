@@ -89,7 +89,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: Show Caddy and ACME log lines in the UI.
 **Success Criteria**: Writer module from slice 0 productionized; ring of 1000 entries (`ts`, `level`, `logger`, `msg`, `error`); non-blocking `Write`; Logs page with level filter polled by htmx.
 **Tests**: ring overflow drops oldest; concurrent writes under `-race`; JSON line parsing incl. malformed line; level filter; integration: forced ACME failure shows an error entry; e2e: Logs page renders.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 12: Packaging, CI, docs
 **Goal**: Shippable image and repo.
