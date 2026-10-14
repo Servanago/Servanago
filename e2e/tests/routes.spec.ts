@@ -10,6 +10,7 @@ test('add a route from a preset, edit it, delete it', async ({ page }) => {
   await expect(page.getByRole('cell', { name: 'routes.example.net' })).toBeVisible();
 
   await page.goto('/routes/new');
+  await page.locator('select[name=domain_id]').selectOption('routes.example.net');
   await page.getByLabel('Preset').selectOption('Sonarr');
   await expect(page.getByLabel('Subdomain')).toHaveValue('sonarr');
   await expect(page.getByLabel('Upstream port')).toHaveValue('8989');
@@ -27,5 +28,5 @@ test('add a route from a preset, edit it, delete it', async ({ page }) => {
   await page.getByRole('link', { name: 'Edit' }).click();
   page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Delete route' }).click();
-  await expect(page.getByText('No routes yet.')).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'sonarr.routes.example.net' })).toHaveCount(0);
 });

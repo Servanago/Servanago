@@ -25,6 +25,7 @@ import (
 	_ "github.com/caretakarr/caretakarr/internal/caddylog"
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
+	"github.com/caretakarr/caretakarr/internal/dnssync"
 	"github.com/caretakarr/caretakarr/internal/store"
 	"github.com/caretakarr/caretakarr/internal/web"
 )
@@ -68,7 +69,8 @@ func run() error {
 	if cfg.CFBaseURL != "" {
 		cfOpts = append(cfOpts, option.WithBaseURL(cfg.CFBaseURL))
 	}
-	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cfdns.New(cfg.CloudflareToken, cfOpts...)})
+	cf := cfdns.New(cfg.CloudflareToken, cfOpts...)
+	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dnssync.New(cf, st)})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

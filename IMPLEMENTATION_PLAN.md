@@ -65,7 +65,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: A-record lifecycle per `DESIGN.md` §7.
 **Success Criteria**: Create with `proxied=false` and comment; adopt identical existing record (`owned=0`); `conflict` on different content (no write) with "Take over" action; update only owned; delete only owned, confirmation text says which; per-route `record_ip` override; Resync button; DNS failure does not revert the route and shows `error` with retry.
 **Tests** (`httptest` Cloudflare): create, adopt, conflict, take over, owned delete, adopted never deleted, IP change updates, API error sets `error` state, idempotent resync; e2e: route add shows synced, delete shows confirm.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 8: Route controls
 **Goal**: Enable/disable, CIDR allowlist, per-route basic auth.

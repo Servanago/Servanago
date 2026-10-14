@@ -181,3 +181,25 @@ func TestTxRollback(t *testing.T) {
 		t.Errorf("rollback failed: %+v", ds)
 	}
 }
+
+func TestListAndDeleteDNS(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	d := mustDomain(t, s, "example.com")
+	a, _ := s.CreateRoute(ctx, route(d.ID, "a"))
+	b, _ := s.CreateRoute(ctx, route(d.ID, "b"))
+	for _, r := range []Route{a, b} {
+		if err := s.UpsertDNS(ctx, DNSRecord{RouteID: r.ID, State: "synced", Owned: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	all, err := s.ListDNS(ctx)
+	if err != nil || len(all) != 2 {
+		t.Fatalf("%v %v", all, err)
+	}
+	if err := s.DeleteDNS(ctx, a.ID); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := s.ListDNS(ctx); len(all) != 1 || all[0].RouteID != b.ID {
+		t.Fatalf("%v", all)
+	}
+}

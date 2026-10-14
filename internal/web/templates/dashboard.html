@@ -5,13 +5,24 @@
 <h2>Routes</h2>
 {{if .Routes}}
 <table>
-<thead><tr><th>Host</th><th>Upstream</th><th>State</th><th></th></tr></thead>
+<thead><tr><th>Host</th><th>Upstream</th><th>State</th><th>DNS</th><th></th></tr></thead>
 <tbody>
 {{range .Routes}}
-<tr><td>{{.Host}}</td><td>{{.UpstreamHost}}:{{.UpstreamPort}}</td><td>{{if .Enabled}}enabled{{else}}disabled{{end}}</td><td><a href="/routes/{{.ID}}">Edit</a></td></tr>
+<tr>
+<td>{{.Host}}</td><td>{{.UpstreamHost}}:{{.UpstreamPort}}</td><td>{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
+<td>
+{{if .HasDNS}}<span class="dns-{{.DNS.State}}">{{.DNS.State}}</span>{{if .DNS.Error}}<br><small>{{.DNS.Error}}</small>{{end}}
+{{if eq .DNS.State "conflict"}}<br><button class="outline" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}?">Take over</button>
+{{else if eq .DNS.State "error"}}<br><button class="outline" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Retry</button>
+{{else}}<br><button class="outline secondary" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Resync</button>{{end}}
+{{else}}<span class="dns-pending">pending</span>{{end}}
+</td>
+<td><a href="/routes/{{.ID}}">Edit</a></td>
+</tr>
 {{end}}
 </tbody>
 </table>
+<p id="msg" role="alert"></p>
 {{else}}<p>No routes yet.</p>{{end}}
 <a role="button" href="/routes/new">Add route</a>
 {{else}}

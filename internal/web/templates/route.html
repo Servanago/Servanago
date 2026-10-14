@@ -25,7 +25,7 @@
 <button type="submit">{{if .Edit}}Save{{else}}Add route{{end}}</button>
 <p id="msg" role="alert"></p>
 </form>
-{{if .Edit}}<button class="outline secondary" hx-delete="/routes/{{.Route.ID}}" hx-target="#msg" hx-confirm="Delete this route?">Delete route</button>{{end}}
+{{if .Edit}}<button class="outline secondary" hx-delete="/routes/{{.Route.ID}}" hx-target="#msg" hx-confirm="{{.DeleteConfirm}}">Delete route</button>{{end}}
 <script>
 document.getElementById('preset').addEventListener('change', function (e) {
   var o = e.target.selectedOptions[0];

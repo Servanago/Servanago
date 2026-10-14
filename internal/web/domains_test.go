@@ -13,7 +13,9 @@ import (
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
 	"github.com/caretakarr/caretakarr/internal/cfdns"
+	"github.com/caretakarr/caretakarr/internal/cfdns/cftest"
 	"github.com/caretakarr/caretakarr/internal/config"
+	"github.com/caretakarr/caretakarr/internal/dnssync"
 	"github.com/caretakarr/caretakarr/internal/store"
 )
 
@@ -29,15 +31,21 @@ const zonesOK = `{"success":true,"errors":[],"messages":[],"result":[{"id":"zone
 
 type cfFake struct {
 	calls atomic.Int32
-	zones string // body for GET /zones
+	dns   *cftest.Fake // stateful DNS record endpoints
+	zones string       // body for GET /zones
 	token func(w http.ResponseWriter)
 }
 
 // domainServer returns an open-mode server wired to a fake Cloudflare.
 func domainServer(t *testing.T, cf *cfFake) *Server {
 	t.Helper()
+	cf.dns = cftest.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cf.calls.Add(1)
+		if strings.Contains(r.URL.Path, "/dns_records") {
+			cf.dns.Handler().ServeHTTP(w, r)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/zones":
@@ -54,8 +62,8 @@ func domainServer(t *testing.T, cf *cfFake) *Server {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	return New(Deps{Cfg: config.Config{}, Store: st, Apply: txApplier{st},
-		CF: cfdns.New("tok", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))})
+	client := cfdns.New("tok", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+	return New(Deps{Cfg: config.Config{}, Store: st, Apply: txApplier{st}, CF: client, DNS: dnssync.New(client, st)})
 }
 
 func postDomain(s *Server, name, ip, mode string) *httptest.ResponseRecorder {

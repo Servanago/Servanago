@@ -186,3 +186,29 @@ func (s *Store) UpsertDNS(ctx context.Context, d DNSRecord) error {
 	}
 	return nil
 }
+
+const dnsCols = "route_id, COALESCE(cf_record_id,''), COALESCE(content,''), owned, state, COALESCE(error,''), COALESCE(synced_at,'')"
+
+func (s *Store) ListDNS(ctx context.Context) ([]DNSRecord, error) {
+	rows, err := s.q.QueryContext(ctx, "SELECT "+dnsCols+" FROM dns_records ORDER BY route_id")
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []DNSRecord
+	for rows.Next() {
+		var d DNSRecord
+		if err := rows.Scan(&d.RouteID, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, d)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) DeleteDNS(ctx context.Context, routeID int64) error {
+	if _, err := s.q.ExecContext(ctx, "DELETE FROM dns_records WHERE route_id=?", routeID); err != nil {
+		return fmt.Errorf("delete dns record for route %d: %w", routeID, err)
+	}
+	return nil
+}

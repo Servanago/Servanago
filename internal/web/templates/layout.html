@@ -19,6 +19,7 @@
 <main class="container">
 {{if .Open}}<div class="banner danger" role="alert"><strong>UI is open.</strong> Set <code>ADMIN_PASSWORD</code> to require a login.</div>{{end}}
 {{if .StartupErr}}<div class="banner warn" role="alert"><strong>Stored config was rejected; serving the bootstrap config only.</strong><br><code>{{.StartupErr}}</code></div>{{end}}
+{{range .Flash}}<div class="banner warn" role="alert">{{.}}</div>{{end}}
 {{if .CFErr}}<div class="banner warn" role="alert"><strong>Cloudflare token problem.</strong> Certificates and DNS will fail until it is fixed.<br><code>{{.CFErr}}</code></div>{{end}}
 {{template "content" .}}
 </main>

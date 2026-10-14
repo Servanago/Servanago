@@ -1,0 +1,150 @@
+package web
+
+import (
+	"context"
+	"strings"
+	"testing"
+
+	"github.com/caretakarr/caretakarr/internal/store"
+)
+
+func addRoute(t *testing.T, s *Server, d store.Domain, extra ...string) store.Route {
+	t.Helper()
+	kv := append([]string{"domain_id", itoa(d.ID), "enabled", "on"}, extra...)
+	w := s.do(req{method: "POST", path: "/routes", body: form(kv...).Encode(), hdr: htmxPost})
+	if w.Code != 204 {
+		t.Fatalf("create route: %d %q", w.Code, w.Body.String())
+	}
+	rs, _ := s.deps.Store.ListRoutes(context.Background())
+	return rs[len(rs)-1]
+}
+
+func dnsRow(t *testing.T, s *Server, routeID int64) store.DNSRecord {
+	t.Helper()
+	d, err := s.deps.Store.GetDNS(context.Background(), routeID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return d
+}
+
+func newDNSServer(t *testing.T) (*Server, *cfFake, store.Domain) {
+	t.Helper()
+	cf := &cfFake{zones: zonesOK}
+	s := domainServer(t, cf)
+	d, err := s.deps.Store.CreateDomain(context.Background(), store.Domain{Name: "example.com", ZoneID: "zone123", DefaultIP: "10.0.0.1", CertMode: "wildcard"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, cf, d
+}
+
+func TestRouteCreateSyncsDNS(t *testing.T) {
+	s, cf, d := newDNSServer(t)
+	r := addRoute(t, s, d)
+	recs := cf.dns.Records()
+	if len(recs) != 1 || recs[0].Name != "sonarr.example.com" || recs[0].Content != "10.0.0.1" {
+		t.Fatalf("%+v", recs)
+	}
+	if row := dnsRow(t, s, r.ID); row.State != "synced" || !row.Owned {
+		t.Fatalf("%+v", row)
+	}
+	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "synced") {
+		t.Errorf("dashboard lacks DNS state: %s", body)
+	}
+}
+
+func TestDNSFailureKeepsRouteAndRetryWorks(t *testing.T) {
+	s, cf, d := newDNSServer(t)
+	cf.dns.FailWith("cloudflare is down")
+	r := addRoute(t, s, d)
+	if rs, _ := s.deps.Store.ListRoutes(context.Background()); len(rs) != 1 {
+		t.Fatal("route reverted by DNS failure")
+	}
+	if row := dnsRow(t, s, r.ID); row.State != "error" || !strings.Contains(row.Error, "cloudflare is down") {
+		t.Fatalf("%+v", row)
+	}
+	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "cloudflare is down") || !strings.Contains(body, "Retry") {
+		t.Errorf("error/retry not shown: %s", body)
+	}
+	cf.dns.FailWith("")
+	if w := s.do(req{method: "POST", path: "/routes/" + itoa(r.ID) + "/dns/resync", hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("resync: %d", w.Code)
+	}
+	if row := dnsRow(t, s, r.ID); row.State != "synced" {
+		t.Fatalf("%+v", row)
+	}
+}
+
+func TestConflictAndTakeOver(t *testing.T) {
+	s, cf, d := newDNSServer(t)
+	cf.dns.Seed("sonarr.example.com", "9.9.9.9")
+	r := addRoute(t, s, d)
+	if row := dnsRow(t, s, r.ID); row.State != "conflict" {
+		t.Fatalf("%+v", row)
+	}
+	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "Take over") {
+		t.Errorf("take over action missing")
+	}
+	if w := s.do(req{method: "POST", path: "/routes/" + itoa(r.ID) + "/dns/takeover", hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("takeover: %d", w.Code)
+	}
+	if row := dnsRow(t, s, r.ID); row.State != "synced" || !row.Owned || cf.dns.Records()[0].Content != "10.0.0.1" {
+		t.Fatalf("%+v %+v", row, cf.dns.Records())
+	}
+}
+
+func TestDeleteConfirmationAndRecordHandling(t *testing.T) {
+	// owned: confirmation says the record is deleted, and it is
+	s, cf, d := newDNSServer(t)
+	r := addRoute(t, s, d)
+	if body := s.do(req{path: "/routes/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "also deletes the A record sonarr.example.com") {
+		t.Errorf("owned confirmation: %s", body)
+	}
+	if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID), hdr: htmxPost}); w.Code != 204 {
+		t.Fatal(w.Code)
+	}
+	if len(cf.dns.Records()) != 0 {
+		t.Error("owned record not deleted")
+	}
+
+	// adopted: confirmation says left in place, and it is
+	s, cf, d = newDNSServer(t)
+	cf.dns.Seed("sonarr.example.com", "10.0.0.1")
+	r = addRoute(t, s, d)
+	if body := s.do(req{path: "/routes/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "left in place") {
+		t.Errorf("adopted confirmation: %s", body)
+	}
+	s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID), hdr: htmxPost})
+	if len(cf.dns.Records()) != 1 {
+		t.Error("adopted record deleted")
+	}
+}
+
+func TestDeleteReportsDNSFailure(t *testing.T) {
+	s, cf, d := newDNSServer(t)
+	r := addRoute(t, s, d)
+	cf.dns.FailWith("nope")
+	if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("route delete must still succeed: %d", w.Code)
+	}
+	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "could not be removed") {
+		t.Errorf("flash missing: %s", body)
+	}
+	if body := s.do(req{path: "/"}).Body.String(); strings.Contains(body, "could not be removed") {
+		t.Error("flash shown twice")
+	}
+}
+
+func TestRenameMovesRecord(t *testing.T) {
+	s, cf, d := newDNSServer(t)
+	r := addRoute(t, s, d)
+	e := form("domain_id", itoa(d.ID), "subdomain", "tv", "enabled", "on")
+	if w := s.do(req{method: "PUT", path: "/routes/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("%d %q", w.Code, w.Body.String())
+	}
+	recs := cf.dns.Records()
+	if len(recs) != 1 || recs[0].Name != "tv.example.com" {
+		t.Fatalf("%+v", recs)
+	}
+}

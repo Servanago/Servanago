@@ -8,10 +8,12 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
 	"sync/atomic"
 
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
+	"github.com/caretakarr/caretakarr/internal/dnssync"
 	"github.com/caretakarr/caretakarr/internal/store"
 )
 
@@ -29,6 +31,7 @@ type Deps struct {
 	Store *store.Store
 	Apply Applier
 	CF    *cfdns.Client
+	DNS   *dnssync.Syncer
 }
 
 type Server struct {
@@ -37,6 +40,23 @@ type Server struct {
 	auth       *authn
 	startupErr func() error
 	cfErr      atomic.Value // string; set by VerifyToken
+
+	flashMu sync.Mutex
+	flashes []string // one-time notices shown on the next page render
+}
+
+func (s *Server) flash(msg string) {
+	s.flashMu.Lock()
+	defer s.flashMu.Unlock()
+	s.flashes = append(s.flashes, msg)
+}
+
+func (s *Server) takeFlashes() []string {
+	s.flashMu.Lock()
+	defer s.flashMu.Unlock()
+	f := s.flashes
+	s.flashes = nil
+	return f
 }
 
 func New(d Deps) *Server {
@@ -79,6 +99,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /routes/{id}", s.protected(s.editRoutePage))
 	mux.Handle("PUT /routes/{id}", s.protected(s.updateRoute))
 	mux.Handle("DELETE /routes/{id}", s.protected(s.deleteRoute))
+	mux.Handle("POST /routes/{id}/dns/resync", s.protected(s.resyncDNS))
+	mux.Handle("POST /routes/{id}/dns/takeover", s.protected(s.takeOverDNS))
 	return s.csrf(mux)
 }
 
@@ -87,6 +109,7 @@ type page struct {
 	Open       bool // no ADMIN_PASSWORD: UI is unauthenticated
 	StartupErr string
 	CFErr      string
+	Flash      []string
 	LoggedIn   bool
 	Data       any
 }
@@ -94,6 +117,7 @@ type page struct {
 func (s *Server) render(w http.ResponseWriter, name string, status int, p page) {
 	p.Open = !s.auth.enabled()
 	p.LoggedIn = s.auth.enabled()
+	p.Flash = s.takeFlashes()
 	if s.startupErr != nil {
 		if err := s.startupErr(); err != nil {
 			p.StartupErr = err.Error()

@@ -10,8 +10,8 @@ test('add a domain and see it listed, then remove it', async ({ page }) => {
   await expect(page.getByRole('cell', { name: 'example.org' })).toBeVisible();
 
   page.once('dialog', (d) => d.accept());
-  await page.getByRole('button', { name: 'Remove' }).click();
-  await expect(page.getByText('No domains yet.')).toBeVisible();
+  await page.getByRole('row', { name: 'example.org' }).getByRole('button', { name: 'Remove' }).click();
+  await expect(page.getByRole('cell', { name: 'example.org' })).toHaveCount(0);
 });
 
 test('rejects .local domains with a message', async ({ page }) => {
