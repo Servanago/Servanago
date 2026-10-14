@@ -35,7 +35,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 - Routes render with allowlist, basic auth, scheme/skip-verify, disabled → 503.
 - `wildcard` and `per_host` policies; propagation fields emitted only when set; token only as `{env.CLOUDFLARE_API_TOKEN}`; staging CA set from option; deterministic ordering.
 **Tests**: golden JSON asserts `email` on every issuer; empty-email render errors; golden JSON for bootstrap, one route, disabled, allowlist, basic auth, https upstream with skip-verify, staging vs prod, wildcard vs per_host, delay/timeout set vs unset, the `banking.example.com` → `192.168.25.165:8766` homelab case; determinism (render twice, byte-equal); no literal token in output.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 3: Apply service
 **Goal**: The one path that changes config: mutex, tx, render, `caddy.Load`, commit/rollback; startup load with bootstrap fallback.
