@@ -15,6 +15,7 @@ import (
 
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/presets"
+	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
 )
 
@@ -52,6 +53,10 @@ type routeRow struct {
 	Host   string
 	DNS    store.DNSRecord
 	HasDNS bool
+	// Probed is false for disabled routes: nothing is served, so nothing is checked.
+	Probed   bool
+	Upstream string // up | down
+	Cert     probe.CertStatus
 }
 
 func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
@@ -79,6 +84,17 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	for i, x := range rs {
 		d, ok := byRoute[x.ID]
 		rows[i] = routeRow{Route: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: d, HasDNS: ok}
+		if x.Enabled && s.deps.Probe != nil {
+			rows[i].Probed = true
+			u, known := s.deps.Probe.Upstream(x)
+			if !known {
+				ctx, cancel := detached(r)
+				u = s.deps.Probe.Check(ctx, x)
+				cancel()
+			}
+			rows[i].Upstream = map[bool]string{true: "up", false: "down"}[u.Up]
+			rows[i].Cert = s.deps.Probe.Cert(r.Context(), rows[i].Host)
+		}
 	}
 	return rows, nil
 }

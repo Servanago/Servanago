@@ -16,6 +16,7 @@ import (
 	"github.com/caretakarr/caretakarr/internal/cfdns/cftest"
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/dnssync"
+	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
 )
 
@@ -63,7 +64,8 @@ func domainServer(t *testing.T, cf *cfFake) *Server {
 	}
 	t.Cleanup(func() { st.Close() })
 	client := cfdns.New("tok", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
-	return New(Deps{Cfg: config.Config{}, Store: st, Apply: txApplier{st}, CF: client, DNS: dnssync.New(client, st)})
+	return New(Deps{Cfg: config.Config{}, Store: st, Apply: txApplier{st}, CF: client, DNS: dnssync.New(client, st),
+		Probe: probe.NewMonitor(st, "127.0.0.1:1")})
 }
 
 func postDomain(s *Server, name, ip, mode string) *httptest.ResponseRecorder {

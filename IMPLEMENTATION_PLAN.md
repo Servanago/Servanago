@@ -77,7 +77,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: Upstream health and cert state on the dashboard.
 **Success Criteria**: 30s TCP dial per enabled route (in memory); loopback TLS probe per route host reads `NotAfter` and issuer; `/status` fragment polled every 10s with states up/down, cert issued/pending/error with expiry, DNS state.
 **Tests**: TCP probe against open/closed listener; TLS probe against the in-process Caddy with `internal` issuer; state mapping table; e2e: status badges render.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 10: Docker discovery (opt-in)
 **Goal**: List containers from the Docker socket when mounted.

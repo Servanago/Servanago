@@ -14,6 +14,7 @@ import (
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/dnssync"
+	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
 )
 
@@ -32,6 +33,7 @@ type Deps struct {
 	Apply Applier
 	CF    *cfdns.Client
 	DNS   *dnssync.Syncer
+	Probe *probe.Monitor
 }
 
 type Server struct {
@@ -91,6 +93,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /login", s.loginSubmit)
 	mux.HandleFunc("POST /logout", s.logout)
 	mux.Handle("GET /{$}", s.protected(s.dashboard))
+	mux.Handle("GET /status", s.protected(s.status))
 	mux.Handle("GET /domains", s.protected(s.domainsPage))
 	mux.Handle("POST /domains", s.protected(s.addDomain))
 	mux.Handle("DELETE /domains/{id}", s.protected(s.deleteDomain))
@@ -131,6 +134,19 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, p page) 
 	w.WriteHeader(status)
 	if err := s.pages[name].ExecuteTemplate(w, "layout", p); err != nil {
 		slog.Error("render page", "page", name, "error", err)
+	}
+}
+
+// status renders just the routes table; the dashboard polls it every 10s.
+func (s *Server) status(w http.ResponseWriter, r *http.Request) {
+	routes, err := s.routeRows(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	if err := s.pages["dashboard"].ExecuteTemplate(w, "routes", routes); err != nil {
+		slog.Error("render status", "error", err)
 	}
 }
 

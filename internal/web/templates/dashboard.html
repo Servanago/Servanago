@@ -1,15 +1,14 @@
-{{define "content"}}
-<h1>Dashboard</h1>
-{{with .Data}}
-{{if .Domains}}
-<h2>Routes</h2>
-{{if .Routes}}
+{{define "routes"}}
+{{if .}}
 <table>
-<thead><tr><th>Host</th><th>Upstream</th><th>State</th><th>DNS</th><th></th></tr></thead>
+<thead><tr><th>Host</th><th>Upstream</th><th>State</th><th>Certificate</th><th>DNS</th><th></th></tr></thead>
 <tbody>
-{{range .Routes}}
+{{range .}}
 <tr>
-<td>{{.Host}}</td><td>{{.UpstreamHost}}:{{.UpstreamPort}}</td><td>{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
+<td>{{.Host}}</td>
+<td>{{.UpstreamHost}}:{{.UpstreamPort}}{{if .Probed}}<br><small class="up-{{.Upstream}}">{{.Upstream}}</small>{{end}}</td>
+<td>{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
+<td>{{if .Probed}}<span class="cert-{{.Cert.State}}">{{.Cert.State}}</span>{{if not .Cert.NotAfter.IsZero}}<br><small>expires {{.Cert.NotAfter.Format "2006-01-02"}}</small>{{end}}{{if .Cert.Err}}<br><small>{{.Cert.Err}}</small>{{end}}{{end}}</td>
 <td>
 {{if .HasDNS}}<span class="dns-{{.DNS.State}}">{{.DNS.State}}</span>{{if .DNS.Error}}<br><small>{{.DNS.Error}}</small>{{end}}
 {{if eq .DNS.State "conflict"}}<br><button class="outline" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}?">Take over</button>
@@ -22,8 +21,16 @@
 {{end}}
 </tbody>
 </table>
-<p id="msg" role="alert"></p>
 {{else}}<p>No routes yet.</p>{{end}}
+{{end}}
+
+{{define "content"}}
+<h1>Dashboard</h1>
+{{with .Data}}
+{{if .Domains}}
+<h2>Routes</h2>
+<div id="routes" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "routes" .Routes}}</div>
+<p id="msg" role="alert"></p>
 <a role="button" href="/routes/new">Add route</a>
 {{else}}
 <p>No domains yet. <a href="/domains">Add one</a>.</p>

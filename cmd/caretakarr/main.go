@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/dnssync"
+	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
 	"github.com/caretakarr/caretakarr/internal/web"
 )
@@ -70,15 +72,17 @@ func run() error {
 		cfOpts = append(cfOpts, option.WithBaseURL(cfg.CFBaseURL))
 	}
 	cf := cfdns.New(cfg.CloudflareToken, cfOpts...)
-	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dnssync.New(cf, st)})
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	mon := probe.NewMonitor(st, net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.HTTPSPort)))
+	go mon.Run(ctx, 30*time.Second)
+	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dnssync.New(cf, st), Probe: mon})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()
 		ui.VerifyToken(ctx)
 	}()
 	srv := &http.Server{Addr: cfg.UIListen, Handler: ui.Handler(), ReadHeaderTimeout: 10 * time.Second}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
 	slog.Info("caretakarr started", "ui_listen", cfg.UIListen, "host", cfg.Host)
