@@ -166,6 +166,10 @@ func (s *Server) createRoute(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	if err := applyControls(&rt, r.PostForm); err != nil {
+		fail(w, http.StatusUnprocessableEntity, err.Error())
+		return
+	}
 	var created store.Route
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		if err := checkRoute(r, tx, rt); err != nil {
@@ -206,10 +210,13 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 			return userError{http.StatusNotFound, "route not found"}
 		}
 		old, _ = dnsTargetOf(r, tx, cur)
-		// Overlay only the fields this form owns; DNS override, allowlist and auth are edited elsewhere.
+		// Overlay only the fields this form owns; the DNS override is edited elsewhere.
 		cur.DomainID, cur.Subdomain, cur.Scheme = in.DomainID, in.Subdomain, in.Scheme
 		cur.UpstreamHost, cur.UpstreamPort = in.UpstreamHost, in.UpstreamPort
 		cur.TLSSkipVerify, cur.Enabled, cur.Preset = in.TLSSkipVerify, in.Enabled, in.Preset
+		if err := applyControls(&cur, r.PostForm); err != nil {
+			return err
+		}
 		if err := checkRoute(r, tx, cur); err != nil {
 			return err
 		}

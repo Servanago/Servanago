@@ -99,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /routes/{id}", s.protected(s.editRoutePage))
 	mux.Handle("PUT /routes/{id}", s.protected(s.updateRoute))
 	mux.Handle("DELETE /routes/{id}", s.protected(s.deleteRoute))
+	mux.Handle("POST /routes/{id}/toggle", s.protected(s.toggleRoute))
 	mux.Handle("POST /routes/{id}/dns/resync", s.protected(s.resyncDNS))
 	mux.Handle("POST /routes/{id}/dns/takeover", s.protected(s.takeOverDNS))
 	return s.csrf(mux)

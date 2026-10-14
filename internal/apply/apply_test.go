@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	"golang.org/x/crypto/bcrypt"
 
 	"github.com/caretakarr/caretakarr/internal/caddycfg"
 	"github.com/caretakarr/caretakarr/internal/caddytest"
@@ -161,6 +162,90 @@ func TestTwoRoutesOneDomain(t *testing.T) {
 	for host, want := range map[string]string{"one.example.com": "A", "two.example.com": "B"} {
 		if code, body := caddytest.Get(t, f.httpsPort, host); code != 200 || body != want {
 			t.Errorf("%s: %d %q", host, code, body)
+		}
+	}
+}
+
+// routeWith adds an "app" route with the given tweaks and returns its host.
+func (f *fixture) routeWith(t *testing.T, tweak func(*store.Route)) {
+	t.Helper()
+	host, port := splitHostPort(t, caddytest.Upstream(t, "secret-content"))
+	err := f.svc.Mutate(context.Background(), func(tx *store.Store) error {
+		r := store.Route{DomainID: f.domainID, Subdomain: "app", Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true}
+		tweak(&r)
+		_, err := tx.CreateRoute(context.Background(), r)
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestDisabledRouteServes503(t *testing.T) {
+	f := newFixture(t)
+	if err := f.svc.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.routeWith(t, func(r *store.Route) { r.Enabled = false })
+	if code, body := caddytest.Get(t, f.httpsPort, "app.example.com"); code != 503 || body == "secret-content" {
+		t.Fatalf("%d %q", code, body)
+	}
+	err := f.svc.Mutate(context.Background(), func(tx *store.Store) error {
+		rs, _ := tx.ListRoutes(context.Background())
+		rs[0].Enabled = true
+		return tx.UpdateRoute(context.Background(), rs[0])
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if code, body := caddytest.Get(t, f.httpsPort, "app.example.com"); code != 200 || body != "secret-content" {
+		t.Fatalf("re-enabled: %d %q", code, body)
+	}
+}
+
+func TestAllowlist(t *testing.T) {
+	for name, tt := range map[string]struct {
+		allow string
+		want  int
+	}{
+		"source inside range":  {"127.0.0.0/8", 200},
+		"source outside range": {"10.0.0.0/8\n192.168.0.0/16", 403},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			if err := f.svc.Start(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			f.routeWith(t, func(r *store.Route) { r.Allowlist = tt.allow })
+			code, body := caddytest.Get(t, f.httpsPort, "app.example.com")
+			if code != tt.want || (tt.want == 403 && body == "secret-content") {
+				t.Fatalf("%d %q", code, body)
+			}
+		})
+	}
+}
+
+func TestBasicAuth(t *testing.T) {
+	f := newFixture(t)
+	if err := f.svc.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte("s3cret"), bcrypt.MinCost)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.routeWith(t, func(r *store.Route) { r.BasicUser, r.BasicHash = "alice", string(hash) })
+	for _, c := range []struct {
+		name, user, pass string
+		want             int
+	}{
+		{"no credentials", "", "", 401},
+		{"wrong password", "alice", "nope", 401},
+		{"wrong user", "mallory", "s3cret", 401},
+		{"right credentials", "alice", "s3cret", 200},
+	} {
+		if code, _ := caddytest.GetAs(t, f.httpsPort, "app.example.com", c.user, c.pass); code != c.want {
+			t.Errorf("%s: got %d want %d", c.name, code, c.want)
 		}
 	}
 }

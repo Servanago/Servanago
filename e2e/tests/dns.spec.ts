@@ -14,12 +14,13 @@ test('route shows DNS synced; delete asks with the record named', async ({ page 
   await page.getByLabel('Preset').selectOption('Radarr');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.21');
   await page.getByRole('button', { name: 'Add route' }).click();
-  await expect(page.getByText('synced')).toBeVisible();
+  const row = page.getByRole('row', { name: /radarr\.dns\.example\.net/ });
+  await expect(row.getByText('synced')).toBeVisible();
 
-  await page.getByRole('button', { name: 'Resync' }).click();
-  await expect(page.getByText('synced')).toBeVisible();
+  await row.getByRole('button', { name: 'Resync' }).click();
+  await expect(row.getByText('synced')).toBeVisible();
 
-  await page.getByRole('link', { name: 'Edit' }).click();
+  await row.getByRole('link', { name: 'Edit' }).click();
   let message = '';
   page.once('dialog', (d) => {
     message = d.message();

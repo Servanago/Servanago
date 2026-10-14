@@ -21,6 +21,13 @@
 <label>Upstream host or IP <input name="upstream_host" value="{{.Route.UpstreamHost}}" placeholder="192.168.1.20" required></label>
 <label>Upstream port <input name="upstream_port" id="upstream_port" type="number" min="1" max="65535" value="{{if .Route.UpstreamPort}}{{.Route.UpstreamPort}}{{end}}" required></label>
 <label><input type="checkbox" name="tls_skip_verify"{{if .Route.TLSSkipVerify}} checked{{end}}> Skip TLS verification (self-signed https upstream)</label>
+<label>Allowed sources (CIDR ranges, one per line; empty = anyone)
+<textarea name="allowlist" rows="3" placeholder="192.168.0.0/16">{{.Route.Allowlist}}</textarea></label>
+<fieldset>
+<legend>Basic authentication (optional)</legend>
+<label>User <input name="basic_user" value="{{.Route.BasicUser}}" autocomplete="off"></label>
+<label>Password <input type="password" name="basic_password" autocomplete="new-password" placeholder="{{if .Route.BasicHash}}leave blank to keep the current password{{end}}"></label>
+</fieldset>
 <label><input type="checkbox" name="enabled"{{if .Route.Enabled}} checked{{end}}> Enabled</label>
 <button type="submit">{{if .Edit}}Save{{else}}Add route{{end}}</button>
 <p id="msg" role="alert"></p>

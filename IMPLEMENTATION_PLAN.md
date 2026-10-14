@@ -71,7 +71,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: Enable/disable, CIDR allowlist, per-route basic auth.
 **Success Criteria**: Toggle swaps route to 503 and back; allowlist validates CIDRs and returns 403 outside; basic auth stores bcrypt hash only, password never returned to the UI.
 **Tests** (integration with real Caddy): disabled → 503; allowed vs blocked source (via configured range including/excluding loopback) → 200/403; wrong/right basic auth → 401/200; hash never rendered into pages; e2e: toggle and edit controls.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 9: Probes and status UI
 **Goal**: Upstream health and cert state on the dashboard.

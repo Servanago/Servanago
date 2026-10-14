@@ -17,7 +17,7 @@
 {{else}}<br><button class="outline secondary" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Resync</button>{{end}}
 {{else}}<span class="dns-pending">pending</span>{{end}}
 </td>
-<td><a href="/routes/{{.ID}}">Edit</a></td>
+<td><a href="/routes/{{.ID}}">Edit</a> <button class="outline secondary" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg">{{if .Enabled}}Disable{{else}}Enable{{end}}</button></td>
 </tr>
 {{end}}
 </tbody>
