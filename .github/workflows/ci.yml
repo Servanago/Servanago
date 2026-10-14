@@ -15,7 +15,8 @@ jobs:
           go-version-file: go.mod
       - uses: golangci/golangci-lint-action@v6
         with:
-          version: v1.64
+          version: v1.64.8
+          install-mode: goinstall # release binary is built with go1.24, go.mod needs 1.26
       - uses: oven-sh/setup-bun@v2
       - name: Install Playwright browser
         run: cd e2e && bun install --frozen-lockfile && bunx playwright install --with-deps chromium
