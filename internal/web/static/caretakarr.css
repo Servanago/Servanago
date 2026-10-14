@@ -150,7 +150,7 @@ button.warn:hover, button.outline.warn:hover { background: rgba(255, 181, 71, 0.
 td button, td [role="button"] { margin: 0; padding: 0.3rem 0.7rem; font-size: 0.85rem; width: auto; }
 
 /* ---- Alerts and banners ------------------------------------------------------------------------ */
-.banner { padding: 0.75rem 1rem; margin: 0 0 1rem; border-radius: var(--ct-radius-md); border: 1px solid; border-left-width: 4px; background: var(--ct-surface); }
+.banner { padding: 0.75rem 1rem; margin: 0 0 1rem; border-radius: var(--ct-radius-md); border: 1px solid; background: var(--ct-surface); }
 .banner code { background: transparent; color: inherit; padding: 0; word-break: break-word; }
 .banner.danger { border-color: var(--ct-danger); background: color-mix(in srgb, var(--ct-danger) 14%, var(--ct-surface)); color: #ffd3d6; }
 .banner.warn { border-color: var(--ct-warning); background: color-mix(in srgb, var(--ct-warning) 13%, var(--ct-surface)); color: #ffe6bd; }
