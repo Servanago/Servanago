@@ -56,7 +56,7 @@ func (c *Client) ZoneFor(ctx context.Context, host, override string) (id, zone s
 		}
 		_, name, _ = strings.Cut(name, ".")
 	}
-	return "", "", fmt.Errorf("no Cloudflare zone found for %s (tried %s); set CARETAKARR_HOST_ZONE", host, strings.Join(tried, ", "))
+	return "", "", fmt.Errorf("no Cloudflare zone found for %s (tried %s)", host, strings.Join(tried, ", "))
 }
 
 // VerifyToken checks the API token is valid and active.

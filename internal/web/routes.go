@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/discovery"
 	"github.com/caretakarr/caretakarr/internal/presets"
 	"github.com/caretakarr/caretakarr/internal/probe"
 	"github.com/caretakarr/caretakarr/internal/store"
@@ -118,9 +117,7 @@ type routeForm struct {
 	Domains       []store.Domain
 	Presets       []presets.Preset
 	DeleteConfirm string
-	ShowDocker    bool // Docker socket is mounted
-	Containers    []discovery.Container
-	DockerErr     string
+	Docker        dockerPanel
 }
 
 // deleteConfirm tells the user exactly what deleting the route does to its A record.
@@ -151,11 +148,8 @@ func (s *Server) routeFormPage(w http.ResponseWriter, r *http.Request, rt store.
 		confirm = deleteConfirm(t)
 	}
 	form := routeForm{Route: rt, Edit: edit, Domains: ds, Presets: presets.All, DeleteConfirm: confirm}
-	if !edit && s.deps.Docker != nil && s.deps.Docker.Available() {
-		form.ShowDocker = true
-		if form.Containers, err = s.deps.Docker.List(r.Context()); err != nil {
-			form.DockerErr = err.Error()
-		}
+	if !edit {
+		form.Docker = s.dockerPanel(r)
 	}
 	s.render(w, "route", http.StatusOK, page{Title: title, Data: form})
 }

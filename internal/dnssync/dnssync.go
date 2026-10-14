@@ -113,6 +113,9 @@ func (s *Syncer) ReconcileHost(ctx context.Context, takeOver bool) error {
 		return err
 	}
 	zone, _, err := s.cf.ZoneFor(ctx, s.Host.Name, s.Host.Zone)
+	if err != nil && s.Host.Zone == "" {
+		err = fmt.Errorf("%w; set CARETAKARR_HOST_ZONE to the zone name", err)
+	}
 	var next store.DNSRecord
 	if err == nil {
 		next, err = s.step(ctx, zone, s.Host.Name, s.Host.IP, row, takeOver)

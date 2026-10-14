@@ -17,7 +17,9 @@ Bun.serve({
     if (url.pathname === '/user/tokens/verify') return ok({ id: 'tok', status: 'active' });
     if (url.pathname === '/zones') {
       const name = url.searchParams.get('name') ?? '';
-      const zones = name.startsWith('missing.') ? [] : [{ id: `zone-${name}`, name }];
+      // "missing.*" and site-style names (oc., nope.) are not zones, like real subdomains
+      const notZone = name.startsWith('missing.') || /^(oc|nope|app)\./.test(name);
+      const zones = notZone ? [] : [{ id: `zone-${name}`, name }];
       return ok(zones, info(zones.length));
     }
     if (parts[0] === 'zones' && parts[2] === 'dns_records') {

@@ -13,10 +13,10 @@
 <script src="/static/htmx.min.js" defer></script>
 </head>
 <body>
-<header class="container">
+<header class="topbar">
 <nav>
 <ul><li><a class="brand" href="/" aria-label="Caretakarr dashboard"><img src="/static/caretakarr-mark.svg" alt="" width="28" height="32"><span class="wordmark">Care<b>takarr</b></span></a></li></ul>
-<ul><li><a href="/">Dashboard</a></li><li><a href="/domains">Domains</a></li><li><a href="/logs">Logs</a></li>{{if .LoggedIn}}<li><button class="outline secondary" hx-post="/logout">Sign out</button></li>{{end}}</ul>
+<ul><li><a href="/">Dashboard</a></li><li><a href="/sites/new">Add site</a></li><li><a href="/domains">Domains</a></li><li><a href="/logs">Logs</a></li>{{if .LoggedIn}}<li><button class="outline secondary" hx-post="/logout">Sign out</button></li>{{end}}</ul>
 </nav>
 </header>
 <main class="container">

@@ -105,7 +105,9 @@ html, body {
 }
 
 /* ---- Navigation and brand -------------------------------------------------------------------- */
-body > header { border-bottom: 1px solid var(--ct-border); background: var(--ct-surface); margin-bottom: 1.5rem; }
+/* full-bleed bar: spans 100% of the page, content inset from the edges */
+body > header.topbar { width: 100%; padding-inline: 1.5rem; border-bottom: 1px solid var(--ct-border); background: var(--ct-surface); margin-bottom: 1.5rem; }
+@media (max-width: 640px) { body > header.topbar { padding-inline: 1rem; } }
 body > header nav { --pico-nav-element-spacing-vertical: 0.6rem; }
 .brand { display: inline-flex; align-items: center; gap: 0.6rem; color: var(--ct-text); text-decoration: none; }
 .brand:hover { color: var(--ct-text); }

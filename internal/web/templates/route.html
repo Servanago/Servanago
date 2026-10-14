@@ -1,25 +1,9 @@
 {{define "content"}}
 {{with .Data}}
 <h1>{{if .Edit}}Edit route{{else}}New route{{end}}</h1>
-{{if not .Domains}}<p>Add a <a href="/domains">domain</a> first.</p>{{else}}
+{{if not .Domains}}<p>No domains yet. <a href="/sites/new">Add a site</a>: its domain is added for you.</p>{{else}}
 <article>
-{{if .ShowDocker}}
-<details class="docker">
-<summary>Docker containers ({{len .Containers}})</summary>
-<div>
-{{if .DockerErr}}<p role="alert">{{.DockerErr}}</p>{{else if .Containers}}
-<table>
-<thead><tr><th>Container</th><th>Image</th><th>Networks</th><th>Use port</th></tr></thead>
-<tbody>
-{{range .Containers}}{{$c := .}}<tr><td>{{.Name}}</td><td>{{.Image}}</td><td>{{range .Networks}}{{.}} {{end}}</td>
-<td>{{range .Ports}}<a href="/routes/new?sub={{$c.Name}}&host={{$c.Name}}&port={{.}}">{{.}}</a> {{else}}none exposed{{end}}</td></tr>{{end}}
-</tbody>
-</table>
-{{else}}<p>No running containers.</p>{{end}}
-</div>
-<small>The container name only resolves when Caretakarr is attached to a shared Docker network with that container; otherwise enter its host IP and published port.</small>
-</details>
-{{end}}
+{{template "docker" .Docker}}
 <form {{if .Edit}}hx-put="/routes/{{.Route.ID}}"{{else}}hx-post="/routes"{{end}} hx-target="#msg">
 <label>Preset
 <select name="preset" id="preset">

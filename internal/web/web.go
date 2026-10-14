@@ -68,8 +68,8 @@ func (s *Server) takeFlashes() []string {
 
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
-	for _, p := range []string{"dashboard", "login", "domains", "route", "logs"} {
-		s.pages[p] = template.Must(template.ParseFS(assets, "templates/layout.html", "templates/"+p+".html"))
+	for _, p := range []string{"dashboard", "login", "domains", "route", "site", "logs"} {
+		s.pages[p] = template.Must(template.ParseFS(assets, "templates/layout.html", "templates/docker.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
 		s.startupErr = d.Apply.StartupError
@@ -104,6 +104,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /domains", s.protected(s.domainsPage))
 	mux.Handle("POST /domains", s.protected(s.addDomain))
 	mux.Handle("DELETE /domains/{id}", s.protected(s.deleteDomain))
+	mux.Handle("GET /sites/new", s.protected(s.newSitePage))
+	mux.Handle("POST /sites", s.protected(s.addSite))
 	mux.Handle("GET /routes/new", s.protected(s.newRoutePage))
 	mux.Handle("POST /routes", s.protected(s.createRoute))
 	mux.Handle("GET /routes/{id}", s.protected(s.editRoutePage))

@@ -38,15 +38,11 @@
 <p id="host-msg" role="alert"></p>
 </article>
 {{end}}
-{{if .Domains}}
-<h2>Routes</h2>
+<h2>Sites</h2>
 <article>
 <div id="routes" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "routes" .Routes}}</div>
 <p id="msg" role="alert"></p>
 </article>
-<a role="button" href="/routes/new">Add route</a>
-{{else}}
-<p>No domains yet. <a href="/domains">Add one</a>.</p>
-{{end}}
+<a role="button" href="/sites/new">Add site</a>
 {{end}}
 {{end}}

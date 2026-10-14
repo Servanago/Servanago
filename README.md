@@ -36,7 +36,7 @@ One container that puts your arr stack (Sonarr, Radarr, Plex and friends) behind
    ```sh
    docker compose up -d
    ```
-5. Open `https://<CARETAKARR_HOST>`. The dashboard's *UI host* card shows the record's state. Add a domain, then add routes (pick a preset, or a container if the Docker socket is mounted).
+5. Open `https://<CARETAKARR_HOST>`. The dashboard's *UI host* card shows the record's state. Click **Add site** and enter the hostname (`oc.example.com`) and its backend: host or IP plus its own **Backend port** field (`192.168.25.165` and `9200`). Presets fill the port, and the Docker socket (if mounted) lists containers to pick from. Caretakarr finds the Cloudflare zone, adds the domain if it is new, and creates the route and A record. That is the Caddyfile equivalent of `oc.example.com { reverse_proxy http://192.168.25.165:9200 }`.
 
 If the zone for `CARETAKARR_HOST` can't be found, set `CARETAKARR_HOST_ZONE`. If a different A record already exists for that name, the card shows a conflict and a *Take over* button; nothing is overwritten until you click it.
 

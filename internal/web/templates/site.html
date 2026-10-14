@@ -1,0 +1,45 @@
+{{define "content"}}
+{{with .Data}}
+<h1>Add site</h1>
+<article>
+{{template "docker" .Docker}}
+<form hx-post="/sites" hx-target="#msg">
+<label>Hostname
+<input name="hostname" id="hostname" value="{{.Hostname}}" placeholder="oc.example.com" autocomplete="off" required>
+<small>The address people open. Its Cloudflare zone is found automatically and added if it is new.</small></label>
+<fieldset>
+<legend>Backend: where Caddy forwards requests</legend>
+<label>Preset
+<select id="preset" name="preset">
+<option value="">Custom</option>
+{{range .Presets}}<option value="{{.Name}}" data-sub="{{.Subdomain}}" data-port="{{.Port}}">{{.Name}} ({{.Port}})</option>{{end}}
+</select></label>
+<div class="grid">
+<label>Scheme
+<select name="scheme">
+<option value="http" selected>http</option>
+<option value="https">https</option>
+</select></label>
+<label>Backend host or IP
+<input name="upstream_host" value="{{.Host}}" placeholder="192.168.25.165" required></label>
+<label>Backend port
+<input name="upstream_port" id="upstream_port" type="number" min="1" max="65535" value="{{if .Port}}{{.Port}}{{end}}" placeholder="9200" required></label>
+</div>
+<label><input type="checkbox" name="tls_skip_verify"> Skip TLS verification (self-signed https backend)</label>
+</fieldset>
+<label><input type="checkbox" name="enabled" checked> Enabled</label>
+<button type="submit">Add site</button>
+<p id="msg" role="alert"></p>
+</form>
+</article>
+<script>
+document.getElementById('preset').addEventListener('change', function (e) {
+  var o = e.target.selectedOptions[0];
+  if (!o.value) return;
+  document.getElementById('upstream_port').value = o.dataset.port;
+  var h = document.getElementById('hostname');
+  if (!h.value) h.value = o.dataset.sub + '.';
+});
+</script>
+{{end}}
+{{end}}
