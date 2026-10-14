@@ -1,5 +1,6 @@
 {{define "content"}}
 <h1>Domains</h1>
+<article>
 {{if .Data}}
 <table>
 <thead><tr><th>Domain</th><th>Default IP</th><th>Certificates</th><th>Routes</th><th></th></tr></thead>
@@ -7,14 +8,16 @@
 {{range .Data}}
 <tr>
 <td>{{.Name}}</td><td>{{.DefaultIP}}</td><td>{{.CertMode}}</td><td>{{.Routes}}</td>
-<td><button class="outline secondary" hx-delete="/domains/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}? DNS records and certificates are not touched.">Remove</button></td>
+<td><button class="outline danger" hx-delete="/domains/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}? DNS records and certificates are not touched.">Remove</button></td>
 </tr>
 {{end}}
 </tbody>
 </table>
 {{else}}<p>No domains yet.</p>{{end}}
 <p id="msg" role="alert"></p>
-<h2>Add domain</h2>
+</article>
+<article>
+<header>Add domain</header>
 <form hx-post="/domains" hx-target="#msg">
 <label>Domain <input name="name" placeholder="example.com" required></label>
 <label>Default IP for A records <input name="default_ip" placeholder="192.168.1.10" required></label>
@@ -25,4 +28,5 @@
 </select></label>
 <button type="submit">Add domain</button>
 </form>
+</article>
 {{end}}

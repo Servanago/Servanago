@@ -1,8 +1,16 @@
 {{define "content"}}
+<div class="login-box">
+<div class="login-brand">
+<img src="/static/caretakarr-mark.svg" alt="" width="86" height="96">
+<span class="wordmark">Care<b>takarr</b></span>
+</div>
+<article>
 <h1>Sign in</h1>
 <form hx-post="/login" hx-target="#msg">
 <input type="password" name="password" placeholder="Password" aria-label="Password" autocomplete="current-password" autofocus required>
 <button type="submit">Sign in</button>
 <p id="msg" role="alert"></p>
 </form>
+</article>
+</div>
 {{end}}

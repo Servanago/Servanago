@@ -63,6 +63,7 @@ type routeRow struct {
 	Probed   bool
 	Upstream string // up | down
 	Cert     probe.CertStatus
+	CertSoon bool // issued but inside renewWindow: shown amber
 }
 
 func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
@@ -106,6 +107,7 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 		}
 		row.Upstream = map[bool]string{true: "up", false: "down"}[u.Up]
 		row.Cert = s.deps.Probe.Cert(r.Context(), row.Host)
+		row.CertSoon = certExpiringSoon(row.Cert, time.Now())
 	})
 	return rows, nil
 }
@@ -370,4 +372,12 @@ func (s *Server) dnsAction(w http.ResponseWriter, r *http.Request, act func(cont
 	}
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// renewWindow is when an issued certificate shows amber: Caddy renews about 30 days before expiry,
+// so a cert this close to its end means renewal is overdue or failing.
+const renewWindow = 21 * 24 * time.Hour
+
+func certExpiringSoon(cs probe.CertStatus, now time.Time) bool {
+	return cs.State == probe.StateIssued && cs.NotAfter.Sub(now) < renewWindow
 }

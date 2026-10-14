@@ -1,26 +1,29 @@
 {{define "layout"}}<!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"[45]..","swap":true,"error":true}]}'>
 <title>{{.Title}} · Caretakarr</title>
+<meta name="theme-color" content="#07111F">
+<link rel="icon" type="image/svg+xml" href="/static/caretakarr-mark.svg">
+<link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
 <link rel="stylesheet" href="/static/pico.min.css">
+<link rel="stylesheet" href="/static/caretakarr.css">
 <script src="/static/htmx.min.js" defer></script>
-<style>.banner{padding:.75rem 1rem;margin:0 0 1rem;border-radius:var(--pico-border-radius)}.banner.danger{background:#b3261e;color:#fff}.banner.warn{background:#8a5a00;color:#fff}</style>
 </head>
 <body>
 <header class="container">
 <nav>
-<ul><li><strong>Caretakarr</strong></li></ul>
+<ul><li><a class="brand" href="/" aria-label="Caretakarr dashboard"><img src="/static/caretakarr-mark.svg" alt="" width="28" height="32"><span class="wordmark">Care<b>takarr</b></span></a></li></ul>
 <ul><li><a href="/">Dashboard</a></li><li><a href="/domains">Domains</a></li><li><a href="/logs">Logs</a></li>{{if .LoggedIn}}<li><button class="outline secondary" hx-post="/logout">Sign out</button></li>{{end}}</ul>
 </nav>
 </header>
 <main class="container">
 {{if .Open}}<div class="banner danger" role="alert"><strong>UI is open.</strong> Set <code>ADMIN_PASSWORD</code> to require a login.</div>{{end}}
-{{if .StartupErr}}<div class="banner warn" role="alert"><strong>Stored config was rejected; serving the bootstrap config only.</strong><br><code>{{.StartupErr}}</code></div>{{end}}
+{{if .StartupErr}}<div class="banner danger" role="alert"><strong>Stored config was rejected; serving the bootstrap config only.</strong><br><code>{{.StartupErr}}</code></div>{{end}}
 {{range .Flash}}<div class="banner warn" role="alert">{{.}}</div>{{end}}
-{{if .CFErr}}<div class="banner warn" role="alert"><strong>Cloudflare token problem.</strong> Certificates and DNS will fail until it is fixed.<br><code>{{.CFErr}}</code></div>{{end}}
+{{if .CFErr}}<div class="banner danger" role="alert"><strong>Cloudflare token problem.</strong> Certificates and DNS will fail until it is fixed.<br><code>{{.CFErr}}</code></div>{{end}}
 {{template "content" .}}
 </main>
 </body>

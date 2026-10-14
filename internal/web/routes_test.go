@@ -1,7 +1,10 @@
 package web
 
 import (
+	"time"
+
 	"context"
+	"github.com/caretakarr/caretakarr/internal/probe"
 	"net/url"
 	"strings"
 	"testing"
@@ -162,5 +165,27 @@ func TestRouteCannotShadowUIHost(t *testing.T) {
 	rs, _ := s.deps.Store.ListRoutes(context.Background())
 	if w := s.do(req{method: "PUT", path: "/routes/" + itoa(rs[0].ID), body: form("domain_id", itoa(d.ID)).Encode(), hdr: htmxPost}); w.Code != 422 {
 		t.Fatalf("rename onto UI host: %d", w.Code)
+	}
+}
+
+func TestCertExpiringSoon(t *testing.T) {
+	now := time.Unix(1_000_000, 0)
+	issued := func(d time.Duration) probe.CertStatus {
+		return probe.CertStatus{State: probe.StateIssued, NotAfter: now.Add(d)}
+	}
+	for name, tt := range map[string]struct {
+		cs   probe.CertStatus
+		want bool
+	}{
+		"plenty of time":    {issued(60 * 24 * time.Hour), false},
+		"just outside":      {issued(21*24*time.Hour + time.Hour), false},
+		"inside the window": {issued(20 * 24 * time.Hour), true},
+		"about to expire":   {issued(time.Hour), true},
+		"pending":           {probe.CertStatus{State: probe.StatePending}, false},
+		"error":             {probe.CertStatus{State: probe.StateError}, false},
+	} {
+		if got := certExpiringSoon(tt.cs, now); got != tt.want {
+			t.Errorf("%s: got %v want %v", name, got, tt.want)
+		}
 	}
 }

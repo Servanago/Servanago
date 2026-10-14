@@ -8,10 +8,10 @@
 <td>{{.Host}}</td>
 <td>{{.UpstreamHost}}:{{.UpstreamPort}}{{if .Probed}}<br><small class="up-{{.Upstream}}">{{.Upstream}}</small>{{end}}</td>
 <td>{{if .Enabled}}enabled{{else}}disabled{{end}}</td>
-<td>{{if .Probed}}<span class="cert-{{.Cert.State}}">{{.Cert.State}}</span>{{if not .Cert.NotAfter.IsZero}}<br><small>expires {{.Cert.NotAfter.Format "2006-01-02"}}</small>{{end}}{{if .Cert.Err}}<br><small>{{.Cert.Err}}</small>{{end}}{{end}}</td>
+<td>{{if .Probed}}{{if .CertSoon}}<span class="cert-expiring">expiring soon</span>{{else}}<span class="cert-{{.Cert.State}}">{{.Cert.State}}</span>{{end}}{{if not .Cert.NotAfter.IsZero}}<br><small>expires {{.Cert.NotAfter.Format "2006-01-02"}}</small>{{end}}{{if .Cert.Err}}<br><small title="{{.Cert.Err}}">{{.Cert.Err}}</small>{{end}}{{end}}</td>
 <td>
 {{if .HasDNS}}<span class="dns-{{.DNS.State}}">{{.DNS.State}}</span>{{if .DNS.Error}}<br><small>{{.DNS.Error}}</small>{{end}}
-{{if eq .DNS.State "conflict"}}<br><button class="outline" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}?">Take over</button>
+{{if eq .DNS.State "conflict"}}<br><button class="outline warn" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}?">Take over</button>
 {{else if eq .DNS.State "error"}}<br><button class="outline" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Retry</button>
 {{else}}<br><button class="outline secondary" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Resync</button>{{end}}
 {{else}}<span class="dns-pending">pending</span>{{end}}
@@ -32,7 +32,7 @@
 <header>UI host</header>
 <p><strong>{{.Spec.Name}}</strong> → {{.Spec.IP}}
 <span class="dns-{{.DNS.State}}">{{.DNS.State}}</span>{{if .DNS.Error}}<br><small>{{.DNS.Error}}</small>{{end}}</p>
-{{if eq .DNS.State "conflict"}}<button class="outline" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing A record for {{.Spec.Name}}?">Take over</button>
+{{if eq .DNS.State "conflict"}}<button class="outline warn" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing A record for {{.Spec.Name}}?">Take over</button>
 {{else if eq .DNS.State "error"}}<button class="outline" hx-post="/host/dns/resync" hx-target="#host-msg">Retry</button>
 {{else}}<button class="outline secondary" hx-post="/host/dns/resync" hx-target="#host-msg">Resync</button>{{end}}
 <p id="host-msg" role="alert"></p>
@@ -40,8 +40,10 @@
 {{end}}
 {{if .Domains}}
 <h2>Routes</h2>
+<article>
 <div id="routes" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "routes" .Routes}}</div>
 <p id="msg" role="alert"></p>
+</article>
 <a role="button" href="/routes/new">Add route</a>
 {{else}}
 <p>No domains yet. <a href="/domains">Add one</a>.</p>

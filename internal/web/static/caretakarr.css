@@ -1,0 +1,178 @@
+:root {
+  color-scheme: dark;
+  --ct-brand-cyan: #16C7F3;
+  --ct-brand-blue: #0789F9;
+  --ct-brand-green: #35D66F;
+  --ct-brand-green-dark: #087A3D;
+  --ct-brand-orange: #FF9D22;
+
+  --ct-bg: #07111F;
+  --ct-surface: #0D1B2D;
+  --ct-surface-raised: #13263B;
+  --ct-border: #24415A;
+
+  --ct-text: #F4F8FC;
+  --ct-text-secondary: #B7C8D9;
+  --ct-text-muted: #7F98AF;
+
+  --ct-success: #35D66F;
+  --ct-warning: #FFB547;
+  --ct-danger: #FF5B67;
+  --ct-info: #16C7F3;
+
+  --ct-radius-sm: 6px;
+  --ct-radius-md: 10px;
+  --ct-radius-lg: 16px;
+  --ct-radius-xl: 22px;
+
+  --ct-shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.22);
+  --ct-shadow-focus: 0 0 0 3px rgba(22, 199, 243, 0.24);
+}
+html, body {
+  background: var(--ct-bg);
+  color: var(--ct-text);
+}
+:focus-visible {
+  outline: 2px solid var(--ct-brand-cyan);
+  outline-offset: 2px;
+}
+
+/* ---- Pico mapping: Caretakarr dark theme ---------------------------------------------------- */
+:root[data-theme="dark"] {
+  --pico-font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --pico-background-color: var(--ct-bg);
+  --pico-color: var(--ct-text);
+  --pico-muted-color: var(--ct-text-muted);
+  --pico-muted-border-color: var(--ct-border);
+  --pico-h1-color: var(--ct-text);
+  --pico-h2-color: var(--ct-text);
+  --pico-h3-color: var(--ct-text);
+  --pico-border-radius: var(--ct-radius-md);
+
+  --pico-primary: var(--ct-brand-cyan);
+  --pico-primary-background: var(--ct-brand-cyan);
+  --pico-primary-border: var(--ct-brand-cyan);
+  --pico-primary-underline: rgba(22, 199, 243, 0.5);
+  --pico-primary-hover: #5fdcfa;
+  --pico-primary-hover-background: #5fdcfa;
+  --pico-primary-hover-border: #5fdcfa;
+  --pico-primary-hover-underline: #5fdcfa;
+  --pico-primary-focus: rgba(22, 199, 243, 0.35);
+  --pico-primary-inverse: var(--ct-bg);
+
+  --pico-secondary: var(--ct-text-secondary);
+  --pico-secondary-background: var(--ct-surface-raised);
+  --pico-secondary-border: var(--ct-border);
+  --pico-secondary-hover: var(--ct-text);
+  --pico-secondary-hover-background: var(--ct-border);
+  --pico-secondary-hover-border: var(--ct-border);
+  --pico-secondary-underline: rgba(183, 200, 217, 0.5);
+  --pico-secondary-focus: rgba(183, 200, 217, 0.25);
+  --pico-secondary-inverse: var(--ct-text);
+
+  --pico-card-background-color: var(--ct-surface);
+  --pico-card-border-color: var(--ct-border);
+  --pico-card-sectioning-background-color: var(--ct-surface-raised);
+  --pico-card-box-shadow: var(--ct-shadow-panel);
+
+  --pico-form-element-background-color: var(--ct-bg);
+  --pico-form-element-selected-background-color: var(--ct-surface-raised);
+  --pico-form-element-border-color: var(--ct-border);
+  --pico-form-element-color: var(--ct-text);
+  --pico-form-element-placeholder-color: var(--ct-text-muted);
+  --pico-form-element-active-background-color: var(--ct-bg);
+  --pico-form-element-active-border-color: var(--ct-brand-cyan);
+  --pico-form-element-focus-color: var(--ct-brand-cyan);
+  --pico-form-element-disabled-background-color: var(--ct-surface);
+  --pico-form-element-invalid-border-color: var(--ct-danger);
+  --pico-form-element-invalid-focus-color: var(--ct-danger);
+  --pico-form-element-valid-border-color: var(--ct-success);
+  --pico-form-element-valid-focus-color: var(--ct-success);
+  --pico-switch-checked-background-color: var(--ct-brand-cyan);
+
+  --pico-table-border-color: var(--ct-border);
+  --pico-table-row-stripped-background-color: rgba(19, 38, 59, 0.45);
+  --pico-code-background-color: var(--ct-surface-raised);
+  --pico-code-color: var(--ct-text-secondary);
+  --pico-mark-background-color: rgba(22, 199, 243, 0.25);
+  --pico-mark-color: var(--ct-text);
+  --pico-del-color: var(--ct-danger);
+  --pico-ins-color: var(--ct-success);
+  --pico-box-shadow: var(--ct-shadow-panel);
+  --pico-dropdown-background-color: var(--ct-surface-raised);
+  --pico-dropdown-border-color: var(--ct-border);
+  --pico-dropdown-hover-background-color: var(--ct-surface);
+}
+
+/* ---- Navigation and brand -------------------------------------------------------------------- */
+body > header { border-bottom: 1px solid var(--ct-border); background: var(--ct-surface); margin-bottom: 1.5rem; }
+body > header nav { --pico-nav-element-spacing-vertical: 0.6rem; }
+.brand { display: inline-flex; align-items: center; gap: 0.6rem; color: var(--ct-text); text-decoration: none; }
+.brand:hover { color: var(--ct-text); }
+.brand img { height: 2rem; width: auto; display: block; }
+.wordmark { font-size: 1.2rem; font-weight: 700; letter-spacing: 0.01em; }
+.wordmark b { color: var(--ct-brand-cyan); font-weight: 700; }
+body > header nav a:not(.brand) { color: var(--ct-text-secondary); }
+body > header nav a:not(.brand):hover { color: var(--ct-brand-cyan); }
+
+.login-brand { text-align: center; margin-bottom: 1.5rem; }
+.login-brand img { height: 6rem; width: auto; }
+.login-brand .wordmark { display: block; font-size: 1.8rem; margin-top: 0.5rem; }
+.login-box { max-width: 26rem; margin-inline: auto; }
+
+/* ---- Cards, tables, forms -------------------------------------------------------------------- */
+article { border: 1px solid var(--ct-border); border-radius: var(--ct-radius-lg); box-shadow: var(--ct-shadow-panel); overflow-x: auto; }
+article > header { background: var(--ct-surface-raised); border-bottom: 1px solid var(--ct-border); color: var(--ct-text-secondary); font-weight: 600; }
+article > h2:first-child, article > h1:first-child { margin-top: 0; }
+article:has(> table, > #routes) { padding-inline: 0.5rem; }
+article table { min-width: 44rem; margin-bottom: 0; } /* scrolls inside the card on narrow screens instead of crushing columns */
+article th, article td { padding: 0.55rem 0.6rem; }
+article td:first-child { overflow-wrap: anywhere; }
+article td:last-child { white-space: nowrap; }
+article td:last-child a { display: block; margin-bottom: 0.3rem; }
+td small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; width: 9.5rem; overflow-wrap: anywhere; }
+td small.up-up, td small.up-down { display: inline-block; width: auto; }
+details.docker > div { max-height: 18rem; overflow: auto; margin-bottom: 0.5rem; }
+th { color: var(--ct-text-secondary); font-weight: 600; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.04em; }
+small { color: var(--ct-text-muted); }
+fieldset { border: 1px solid var(--ct-border); border-radius: var(--ct-radius-md); padding: 0.75rem 1rem; margin-bottom: 1rem; }
+legend { color: var(--ct-text-secondary); padding: 0 0.4rem; font-size: 0.9rem; }
+details > summary { color: var(--ct-text-secondary); cursor: pointer; }
+:where(input, select, textarea):focus { box-shadow: var(--ct-shadow-focus); }
+
+/* ---- Buttons: cyan = primary action; neutral outline; red destructive; amber caution ---------------- */
+button.outline.secondary, [role="button"].outline.secondary { --pico-color: var(--ct-text-secondary); --pico-border-color: var(--ct-border); }
+button.outline:not(.secondary):not(.danger):not(.warn) { --pico-color: var(--ct-brand-cyan); --pico-border-color: var(--ct-brand-cyan); }
+button.danger, button.outline.danger, [role="button"].danger { --pico-color: var(--ct-danger); --pico-border-color: var(--ct-danger); --pico-background-color: transparent; background: transparent; }
+button.danger:hover, button.outline.danger:hover { background: rgba(255, 91, 103, 0.14); --pico-color: #ff8a92; --pico-border-color: #ff8a92; }
+button.warn, button.outline.warn { --pico-color: var(--ct-warning); --pico-border-color: var(--ct-warning); --pico-background-color: transparent; background: transparent; }
+button.warn:hover, button.outline.warn:hover { background: rgba(255, 181, 71, 0.14); }
+td button, td [role="button"] { margin: 0; padding: 0.3rem 0.7rem; font-size: 0.85rem; width: auto; }
+
+/* ---- Alerts and banners ------------------------------------------------------------------------ */
+.banner { padding: 0.75rem 1rem; margin: 0 0 1rem; border-radius: var(--ct-radius-md); border: 1px solid; border-left-width: 4px; background: var(--ct-surface); }
+.banner code { background: transparent; color: inherit; padding: 0; word-break: break-word; }
+.banner.danger { border-color: var(--ct-danger); background: color-mix(in srgb, var(--ct-danger) 14%, var(--ct-surface)); color: #ffd3d6; }
+.banner.warn { border-color: var(--ct-warning); background: color-mix(in srgb, var(--ct-warning) 13%, var(--ct-surface)); color: #ffe6bd; }
+[role="alert"]:not(.banner):not(:empty) { color: var(--ct-danger); }
+
+/* ---- Status indicators (green = secure/healthy, amber = attention, red = error) --------------------- */
+.cert-issued, .dns-synced, .up-up, .cert-pending, .dns-pending, .dns-conflict, .cert-expiring, .cert-error, .dns-error, .up-down {
+  display: inline-block; padding: 0.05rem 0.55rem; border-radius: 999px; font-size: 0.8rem; font-weight: 600; line-height: 1.5;
+  border: 1px solid currentColor; white-space: nowrap;
+}
+small.up-up, small.up-down { font-size: 0.8rem; }
+.cert-issued, .dns-synced, .up-up { color: var(--ct-success); background: color-mix(in srgb, var(--ct-success) 12%, transparent); }
+.cert-pending, .dns-pending, .dns-conflict, .cert-expiring { color: var(--ct-warning); background: color-mix(in srgb, var(--ct-warning) 12%, transparent); }
+.cert-error, .dns-error, .up-down { color: var(--ct-danger); background: color-mix(in srgb, var(--ct-danger) 12%, transparent); }
+
+/* ---- Logs ---------------------------------------------------------------------------------------- */
+tr.log-error td:nth-child(2) { color: var(--ct-danger); font-weight: 600; }
+tr.log-warn td:nth-child(2) { color: var(--ct-warning); font-weight: 600; }
+tr.log-info td:nth-child(2), tr.log-debug td:nth-child(2) { color: var(--ct-text-muted); }
+#log-rows td { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.82rem; vertical-align: top; }
+
+@media (max-width: 640px) {
+  body > header nav { flex-wrap: wrap; }
+  .wordmark { font-size: 1.05rem; }
+}
