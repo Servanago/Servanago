@@ -1,0 +1,69 @@
+# Caretakarr
+
+> Single-container Go app that puts a homelab (arr stack, Plex, anything with an HTTP backend) behind real domains on Cloudflare with valid HTTPS certificates. A web UI manages domains and routes; Caddy runs embedded in the same process and its config is generated from SQLite and applied atomically. LAN and tailnet only: every published address must be private IPv4 (10/8, 172.16/12, 192.168/16) or CGNAT (100.64/10). MIT licensed.
+
+Image: `ghcr.io/caretakarr/caretakarr` (tags: `latest`, `1.0.1`, `1.0`; linux/amd64 and linux/arm64). Runs as UID/GID 65532 (distroless nonroot). All state lives in one `/data` volume.
+
+## Install
+
+Prerequisites: Docker with Compose, a domain whose DNS is on Cloudflare, a Cloudflare API token with `Zone:Zone:Read` and `Zone:DNS:Edit` on the zones to manage, and a private LAN or Tailscale IP for the server.
+
+1. Get `docker-compose.yml` and `.env.example` from the repo root and copy the latter: `cp .env.example .env`.
+2. Fill in `.env`. Required: `CLOUDFLARE_API_TOKEN`, `CARETAKARR_HOST` (hostname for the UI, e.g. `caretakarr.example.com`), `CARETAKARR_HOST_IP` (private IPv4 that host resolves to), `ACME_EMAIL` (bare address, not `Name <addr>`). Set `ADMIN_PASSWORD`: unset means the UI is open to anyone who can reach it.
+3. Make the data directory writable by the container user: `mkdir -p data && sudo chown 65532:65532 data` (named volumes need nothing).
+4. Start: `docker compose up -d`. Caretakarr creates the `CARETAKARR_HOST` A record itself; no manual DNS step.
+5. Open `https://<CARETAKARR_HOST>` and log in with `ADMIN_PASSWORD`.
+
+Startup fails fast naming the missing or invalid variable. To test without hitting Let's Encrypt rate limits set `ACME_STAGING=true`.
+
+## Configure
+
+Environment variables (secrets are read from the environment only, never stored in SQLite or logs):
+
+- `CLOUDFLARE_API_TOKEN` (required): token above, used for ACME DNS-01 and A records.
+- `CARETAKARR_HOST` (required), `CARETAKARR_HOST_IP` (required), `ACME_EMAIL` (required).
+- `CARETAKARR_HOST_ZONE`: Cloudflare zone of the host; set it if zone auto-detection fails.
+- `ADMIN_PASSWORD`: enables login.
+- `ACME_STAGING`: `true` uses the Let's Encrypt staging CA.
+- `ACME_PROPAGATION_DELAY`, `ACME_PROPAGATION_TIMEOUT`: DNS-01 tuning; `2m` / `10m` fixes "timed out waiting for record to fully propagate".
+- `ACME_RESOLVERS`: default `1.1.1.1,8.8.8.8`.
+- `UI_LISTEN` (default `127.0.0.1:8080`), `DATA_DIR` (default `/data`), `HTTP_PORT`/`HTTPS_PORT` (default 80/443), `DOCKER_SOCKET` (default `/var/run/docker.sock`, discovery active only if present).
+
+## Use
+
+All management is through the web UI (htmx, server-rendered); there is no public REST API.
+
+- Add a site: `/sites/new`. Enter hostname (`oc.example.com`), backend host or IP, and backend port as separate fields. Caretakarr finds the Cloudflare zone, adds the domain if new, creates the route and A record. Equivalent to the Caddyfile `oc.example.com { reverse_proxy http://192.168.25.165:9200 }`.
+- Domains: `/domains`. Per domain, `cert_mode` is `wildcard` (default, one wildcard cert) or `per_host`; `default_ip` is where its A records point.
+- Routes: `/routes/{id}`. Enable/disable, CIDR allowlist, basic auth, per-route DNS record IP.
+- Dashboard `/`: upstream health, certificate expiry, DNS state, UI host record card. `/logs`: live Caddy/ACME log. `/help`: plain-language help for DNS/TLS terms, errors and statuses.
+- If the UI host's A record already exists with a different value, the dashboard shows a conflict; nothing is overwritten until you click *Take over*.
+- Mounting `/var/run/docker.sock:/var/run/docker.sock:ro` enables container discovery to pre-fill routes. It is host-root equivalent: prefer a read-only socket proxy and set `ADMIN_PASSWORD`.
+
+## Behavior and constraints
+
+- Every change writes SQLite, renders the full Caddy JSON, then calls `caddy.Load`. If Caddy rejects it, the DB change is reverted and the exact error is shown. If stored config fails to load at startup, a bootstrap config (UI only) is served with a banner.
+- Only Cloudflare records marked `managed by caretakarr` are changed or deleted. Records are DNS-only (never proxied); public IPs and IPv6 are rejected.
+- Rejected domains: `.local`, `.internal`, `.home.arpa`, IP literals (Caddy would use its internal CA instead of ACME). A route cannot use the `CARETAKARR_HOST` hostname.
+- Backups: copy `/data` (SQLite DB and Caddy certificate storage).
+- `UI_LISTEN=0.0.0.0:8080` is a recovery hatch only: the UI is then served without TLS.
+
+## Troubleshooting
+
+- "permission denied" on `/data`: host directory not owned by 65532.
+- Cert never issues: check token scopes, set the propagation variables above, try `ACME_STAGING=true`.
+- `expected 1 zone, got 0`: leave `ACME_RESOLVERS` at its default or set `CARETAKARR_HOST_ZONE`.
+- Pulling the image is denied: the ghcr package must be public.
+
+## Docs
+
+- [README](https://github.com/caretakarr/caretakarr/blob/main/README.md): quickstart, config table, warnings, how it works
+- [Requirements](https://github.com/caretakarr/caretakarr/blob/main/docs/REQUIREMENTS.md): spec
+- [Design](https://github.com/caretakarr/caretakarr/blob/main/docs/DESIGN.md): architecture, apply path, DNS sync, LAN-only IP rules (section 16)
+- [.env.example](https://github.com/caretakarr/caretakarr/blob/main/.env.example): annotated environment template
+- [docker-compose.yml](https://github.com/caretakarr/caretakarr/blob/main/docker-compose.yml): deployment file
+
+## Development
+
+- `make test` (`go test -race ./cmd/... ./internal/...`), `make lint`, `make e2e` (Playwright, needs bun and chromium), `make check` (all), `make build`, `make docker`.
+- Stack: Go, embedded Caddy with `caddy-dns/cloudflare`, SQLite, Go templates + htmx via `embed.FS`, no Node build step.
