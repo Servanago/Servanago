@@ -9,7 +9,7 @@ import (
 func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
 func valid() map[string]string {
-	return map[string]string{"CLOUDFLARE_API_TOKEN": "tok", "CARETAKARR_HOST": "caretakarr.example.com", "ACME_EMAIL": "me@example.com"}
+	return map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "CARETAKARR_HOST": "caretakarr.example.com", "ACME_EMAIL": "me@example.com"}
 }
 
 func with(k, v string) map[string]string {
@@ -31,6 +31,9 @@ func TestLoadErrors(t *testing.T) {
 		{"bad delay", with("ACME_PROPAGATION_DELAY", "soon"), []string{"ACME_PROPAGATION_DELAY"}},
 		{"bad timeout", with("ACME_PROPAGATION_TIMEOUT", "-1m"), []string{"ACME_PROPAGATION_TIMEOUT"}},
 		{"bad staging", with("ACME_STAGING", "maybe"), []string{"ACME_STAGING"}},
+		{"token too short", with("CLOUDFLARE_API_TOKEN", "tok"), []string{"CLOUDFLARE_API_TOKEN"}},
+		{"token quoted", with("CLOUDFLARE_API_TOKEN", `"`+strings.Repeat("a", 40)+`"`), []string{"CLOUDFLARE_API_TOKEN"}},
+		{"bad port", with("HTTPS_PORT", "70000"), []string{"HTTPS_PORT"}},
 		{"bad host", with("CARETAKARR_HOST", "https://x.example.com"), []string{"CARETAKARR_HOST"}},
 	}
 	for _, tt := range tests {
@@ -48,10 +51,19 @@ func TestLoadErrors(t *testing.T) {
 	}
 }
 
+func TestNewStyleTokenAccepted(t *testing.T) {
+	if _, err := Load(env(with("CLOUDFLARE_API_TOKEN", "cfut_"+strings.Repeat("A", 40)))); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestLoadDefaults(t *testing.T) {
 	c, err := Load(env(valid()))
 	if err != nil {
 		t.Fatal(err)
+	}
+	if c.HTTPPort != 80 || c.HTTPSPort != 443 {
+		t.Errorf("ports: %d %d", c.HTTPPort, c.HTTPSPort)
 	}
 	if c.UIListen != "127.0.0.1:8080" || c.DataDir != "/data" || c.Staging || c.AdminPassword != "" {
 		t.Errorf("defaults: %+v", c)
@@ -73,13 +85,14 @@ func TestLoadOverrides(t *testing.T) {
 	m["ADMIN_PASSWORD"] = "pw"
 	m["UI_LISTEN"] = "0.0.0.0:9000"
 	m["DATA_DIR"] = "/tmp/x"
+	m["HTTP_PORT"], m["HTTPS_PORT"] = "8000", "8443"
 	c, err := Load(env(m))
 	if err != nil {
 		t.Fatal(err)
 	}
 	if !c.Staging || c.PropagationDelay != 2*time.Minute || c.PropagationTimeout != 10*time.Minute ||
 		strings.Join(c.Resolvers, ",") != "9.9.9.9,1.1.1.1" || c.AdminPassword != "pw" ||
-		c.UIListen != "0.0.0.0:9000" || c.DataDir != "/tmp/x" {
+		c.UIListen != "0.0.0.0:9000" || c.DataDir != "/tmp/x" || c.HTTPPort != 8000 || c.HTTPSPort != 8443 {
 		t.Errorf("%+v", c)
 	}
 }

@@ -5,10 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
 )
+
+// cfToken mirrors caddy-dns/cloudflare's own check, which otherwise makes the whole Caddy config unloadable.
+var cfToken = regexp.MustCompile(`^([A-Za-z0-9_-]{35,50}|cf(ut|at)_[A-Za-z0-9_-]{32,256})$`)
 
 type Config struct {
 	CloudflareToken    string
@@ -21,6 +25,8 @@ type Config struct {
 	Resolvers          []string
 	UIListen           string
 	DataDir            string
+	HTTPPort           int // Caddy listen ports; default 80/443, overridable for unprivileged runs
+	HTTPSPort          int
 }
 
 // Load reads configuration through getenv (os.Getenv in production) and reports every problem at once.
@@ -52,7 +58,22 @@ func Load(getenv func(string) string) (Config, error) {
 		return d
 	}
 
+	port := func(k string, def int) int {
+		v := strings.TrimSpace(getenv(k))
+		if v == "" {
+			return def
+		}
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 65535 {
+			errs = append(errs, fmt.Errorf("%s: %q is not a port", k, v))
+			return def
+		}
+		return n
+	}
+
 	c := Config{
+		HTTPPort:           port("HTTP_PORT", 80),
+		HTTPSPort:          port("HTTPS_PORT", 443),
 		CloudflareToken:    req("CLOUDFLARE_API_TOKEN"),
 		Host:               req("CARETAKARR_HOST"),
 		ACMEEmail:          req("ACME_EMAIL"),
@@ -73,6 +94,9 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("ACME_STAGING: %q is not a boolean", v))
 		}
 		c.Staging = b
+	}
+	if c.CloudflareToken != "" && !cfToken.MatchString(c.CloudflareToken) {
+		errs = append(errs, errors.New("CLOUDFLARE_API_TOKEN: not a valid Cloudflare API token format (no quotes or braces)"))
 	}
 	if c.Host != "" {
 		if err := ValidateDomain(c.Host); err != nil {

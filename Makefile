@@ -7,7 +7,7 @@ lint:
 	@test -z "$$(gofmt -l .)" || { gofmt -l .; exit 1; }
 	golangci-lint run
 
-e2e:
+e2e: build
 	@if [ -d e2e ]; then cd e2e && bun install --frozen-lockfile && bunx playwright test; else echo "no e2e tests yet"; fi
 
 check: lint test e2e

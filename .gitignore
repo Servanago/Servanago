@@ -28,3 +28,7 @@ CLAUDE.md
 data/
 /bin/
 /caretakarr
+
+node_modules/
+test-results/
+playwright-report/

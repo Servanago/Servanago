@@ -47,7 +47,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: Server-rendered shell reachable through Caddy at `CARETAKARR_HOST`.
 **Success Criteria**: Loopback UI server; templates + vendored Pico/htmx via `embed.FS`; layout and empty dashboard; optional login (signed per-boot cookie, `HttpOnly`/`Secure`/`SameSite=Strict`), per-IP throttle, CSRF rule (non-GET needs `HX-Request` and matching `Origin`); no `ADMIN_PASSWORD` → open, `WARN` log and red banner; client IP from `X-Forwarded-For` only from loopback peer.
 **Tests**: handler tests for login success/fail/throttle, protected route redirects, CSRF rejects, open mode banner, XFF trusted only from loopback; e2e (Playwright): login flow and dashboard load.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 5: Domains and Cloudflare zone lookup
 **Goal**: Add and remove domains validated against the token.
