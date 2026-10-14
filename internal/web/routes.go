@@ -11,6 +11,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/presets"
@@ -254,6 +255,11 @@ func (s *Server) deleteRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// detached outlives the request: once the route change is committed, a closed tab must not strand the DNS record.
+func detached(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
+}
+
 // dnsTarget is what a route's A record looked like before the route changed or went away.
 type dnsTarget struct {
 	name, zone string
@@ -274,7 +280,9 @@ func dnsTargetOf(r *http.Request, q *store.Store, rt store.Route) (dnsTarget, er
 }
 
 func (s *Server) reconcile(r *http.Request, routeID int64) {
-	if err := s.deps.DNS.Reconcile(r.Context(), routeID); err != nil {
+	ctx, cancel := detached(r)
+	defer cancel()
+	if err := s.deps.DNS.Reconcile(ctx, routeID); err != nil {
 		slog.Error("dns reconcile", "route", routeID, "error", err)
 	}
 }
@@ -284,7 +292,9 @@ func (s *Server) removeRecord(r *http.Request, t dnsTarget) {
 	if !t.hasRow {
 		return
 	}
-	if _, err := s.deps.DNS.Remove(r.Context(), t.zone, t.row); err != nil {
+	ctx, cancel := detached(r)
+	defer cancel()
+	if _, err := s.deps.DNS.Remove(ctx, t.zone, t.row); err != nil {
 		slog.Error("dns remove", "record", t.name, "error", err)
 		s.flash(fmt.Sprintf("The A record %s could not be removed: %v", t.name, err))
 	}
