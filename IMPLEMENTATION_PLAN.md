@@ -59,7 +59,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 **Goal**: Create, edit, delete routes; presets; end-to-end proxying.
 **Success Criteria**: Preset list (Sonarr 8989, Radarr 7878, Lidarr 8686, Readarr 8787, Prowlarr 9696, Bazarr 6767, Overseerr 5055, Jellyseerr 5055, qBittorrent 8080, SABnzbd 8080, Tautulli 8181, Plex 32400, Jellyfin 8096, Emby 8096) fills subdomain and port; routes validated (subdomain label, port, host); each change goes through apply; a request to `sub.domain` reaches the upstream.
 **Tests**: preset table; validation table; apply integration with two routes on one domain; handler tests; e2e: add route from preset, toggles appear.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 7: DNS record sync
 **Goal**: A-record lifecycle per `DESIGN.md` §7.

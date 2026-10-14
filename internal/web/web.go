@@ -41,7 +41,7 @@ type Server struct {
 
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
-	for _, p := range []string{"dashboard", "login", "domains"} {
+	for _, p := range []string{"dashboard", "login", "domains", "route"} {
 		s.pages[p] = template.Must(template.ParseFS(assets, "templates/layout.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -74,6 +74,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /domains", s.protected(s.domainsPage))
 	mux.Handle("POST /domains", s.protected(s.addDomain))
 	mux.Handle("DELETE /domains/{id}", s.protected(s.deleteDomain))
+	mux.Handle("GET /routes/new", s.protected(s.newRoutePage))
+	mux.Handle("POST /routes", s.protected(s.createRoute))
+	mux.Handle("GET /routes/{id}", s.protected(s.editRoutePage))
+	mux.Handle("PUT /routes/{id}", s.protected(s.updateRoute))
+	mux.Handle("DELETE /routes/{id}", s.protected(s.deleteRoute))
 	return s.csrf(mux)
 }
 
@@ -105,10 +110,18 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, p page) 
 }
 
 func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
-	rows, err := s.domainRows(r)
+	domains, err := s.domainRows(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "dashboard", http.StatusOK, page{Title: "Dashboard", Data: rows})
+	routes, err := s.routeRows(r)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.render(w, "dashboard", http.StatusOK, page{Title: "Dashboard", Data: struct {
+		Domains []domainRow
+		Routes  []routeRow
+	}{domains, routes}})
 }

@@ -1,0 +1,39 @@
+{{define "content"}}
+{{with .Data}}
+<h1>{{if .Edit}}Edit route{{else}}New route{{end}}</h1>
+{{if not .Domains}}<p>Add a <a href="/domains">domain</a> first.</p>{{else}}
+<form {{if .Edit}}hx-put="/routes/{{.Route.ID}}"{{else}}hx-post="/routes"{{end}} hx-target="#msg">
+<label>Preset
+<select name="preset" id="preset">
+<option value="">Custom</option>
+{{range .Presets}}<option value="{{.Name}}" data-sub="{{.Subdomain}}" data-port="{{.Port}}"{{if eq .Name $.Data.Route.Preset}} selected{{end}}>{{.Name}} ({{.Port}})</option>{{end}}
+</select></label>
+<label>Domain
+<select name="domain_id" required>
+{{range .Domains}}<option value="{{.ID}}"{{if eq .ID $.Data.Route.DomainID}} selected{{end}}>{{.Name}}</option>{{end}}
+</select></label>
+<label>Subdomain <input name="subdomain" id="subdomain" value="{{.Route.Subdomain}}" placeholder="sonarr" required></label>
+<label>Upstream scheme
+<select name="scheme">
+<option value="http"{{if eq .Route.Scheme "http"}} selected{{end}}>http</option>
+<option value="https"{{if eq .Route.Scheme "https"}} selected{{end}}>https</option>
+</select></label>
+<label>Upstream host or IP <input name="upstream_host" value="{{.Route.UpstreamHost}}" placeholder="192.168.1.20" required></label>
+<label>Upstream port <input name="upstream_port" id="upstream_port" type="number" min="1" max="65535" value="{{if .Route.UpstreamPort}}{{.Route.UpstreamPort}}{{end}}" required></label>
+<label><input type="checkbox" name="tls_skip_verify"{{if .Route.TLSSkipVerify}} checked{{end}}> Skip TLS verification (self-signed https upstream)</label>
+<label><input type="checkbox" name="enabled"{{if .Route.Enabled}} checked{{end}}> Enabled</label>
+<button type="submit">{{if .Edit}}Save{{else}}Add route{{end}}</button>
+<p id="msg" role="alert"></p>
+</form>
+{{if .Edit}}<button class="outline secondary" hx-delete="/routes/{{.Route.ID}}" hx-target="#msg" hx-confirm="Delete this route?">Delete route</button>{{end}}
+<script>
+document.getElementById('preset').addEventListener('change', function (e) {
+  var o = e.target.selectedOptions[0];
+  if (!o.value) return;
+  document.getElementById('subdomain').value = o.dataset.sub;
+  document.getElementById('upstream_port').value = o.dataset.port;
+});
+</script>
+{{end}}
+{{end}}
+{{end}}

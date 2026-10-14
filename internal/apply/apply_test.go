@@ -145,3 +145,22 @@ func splitHostPort(t *testing.T, addr string) (string, int) {
 	}
 	return h, n
 }
+
+func TestTwoRoutesOneDomain(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.svc.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Mutate(ctx, f.addRoute("one", "A", t)); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Mutate(ctx, f.addRoute("two", "B", t)); err != nil {
+		t.Fatal(err)
+	}
+	for host, want := range map[string]string{"one.example.com": "A", "two.example.com": "B"} {
+		if code, body := caddytest.Get(t, f.httpsPort, host); code != 200 || body != want {
+			t.Errorf("%s: %d %q", host, code, body)
+		}
+	}
+}

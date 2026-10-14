@@ -1,6 +1,21 @@
 {{define "content"}}
 <h1>Dashboard</h1>
-{{if .Data}}
-<ul>{{range .Data}}<li>{{.Name}} ({{.Routes}} routes)</li>{{end}}</ul>
-{{else}}<p>No domains yet. <a href="/domains">Add one</a>.</p>{{end}}
+{{with .Data}}
+{{if .Domains}}
+<h2>Routes</h2>
+{{if .Routes}}
+<table>
+<thead><tr><th>Host</th><th>Upstream</th><th>State</th><th></th></tr></thead>
+<tbody>
+{{range .Routes}}
+<tr><td>{{.Host}}</td><td>{{.UpstreamHost}}:{{.UpstreamPort}}</td><td>{{if .Enabled}}enabled{{else}}disabled{{end}}</td><td><a href="/routes/{{.ID}}">Edit</a></td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p>No routes yet.</p>{{end}}
+<a role="button" href="/routes/new">Add route</a>
+{{else}}
+<p>No domains yet. <a href="/domains">Add one</a>.</p>
+{{end}}
+{{end}}
 {{end}}
