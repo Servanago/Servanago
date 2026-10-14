@@ -25,7 +25,7 @@ Dependencies between slices: 0 → 1 → 2 → 3 → 4; 5 needs 1 and 4; 6 needs
 - `internal/store` opens WAL SQLite with `foreign_keys`, applies embedded migrations via `PRAGMA user_version`, schema per `DESIGN.md` §4 (including `cert_mode`).
 - Domain-name validator rejects `.local`, `.internal`, `.home.arpa`, IP literals.
 **Tests**: table-driven env cases (missing `ACME_EMAIL` errors naming it; `not-an-email` errors; `Name <a@b.co>` form rejected, bare address only); durations parse or error; migration applies on empty DB and is idempotent; unique `(domain_id, subdomain)`, port CHECK, `cert_mode` CHECK, FK restrict on domain delete; CRUD round trips; validator table.
-**Status**: Not Started
+**Status**: Complete
 
 ## Slice 2: Caddy config renderer
 **Goal**: Pure `caddycfg.Render(State, Options) ([]byte, error)`.
