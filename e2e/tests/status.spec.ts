@@ -19,8 +19,11 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
 
   const row = page.getByRole('row', { name: /self\.status\.example\.net/ });
   await expect(row.getByText('up', { exact: true })).toBeVisible();
-  // ACME_ISSUER=internal (e2e) can issue before the row renders; staging never finishes offline.
-  await expect(row.getByText('pending').first().or(row.getByText('issued').first())).toBeVisible();
+  // Issuer-dependent: ACME_ISSUER=internal (e2e) issues quickly and 12h certs also read as
+  // "expiring soon"; staging never finishes offline and stays "pending".
+  await expect(row.getByText('pending').first()
+    .or(row.getByText('issued').first())
+    .or(row.getByText('expiring soon').first())).toBeVisible();
   await expect(row.getByText('synced')).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
