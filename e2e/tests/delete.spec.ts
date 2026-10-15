@@ -27,6 +27,9 @@ test('list row delete panel: cancel keeps the route, delete asks about the DNS r
 
   await row.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
+  // The route list refreshes every 10s; an open dialog and its ticked box must survive that.
+  await page.waitForResponse((r) => r.url().endsWith('/status') && r.status() === 200, { timeout: 15000 });
+  await expect(page.getByRole('dialog').getByLabel('Also delete the DNS record')).toBeChecked();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'lidarr.delrow.example.net' })).toHaveCount(0);
 });

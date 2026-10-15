@@ -178,17 +178,23 @@ func TestDeleteRecordOnlyWhenAskedAndOwned(t *testing.T) {
 }
 
 func TestListRowDeletePanel(t *testing.T) {
+	// One dialog for the whole page, outside the polled #routes fragment so a refresh cannot close it.
 	s, _, d := newDNSServer(t)
 	addRoute(t, s, d)
 	body := s.do(req{path: "/"}).Body.String()
-	if !strings.Contains(body, `name="delete_dns"`) || !strings.Contains(body, "Also delete the DNS record sonarr.example.com") {
-		t.Errorf("owned row lacks the DNS option:\n%s", body)
+	if strings.Count(body, "<dialog") != 1 || !strings.Contains(body, `id="delete-dialog"`) || !strings.Contains(body, `name="delete_dns"`) {
+		t.Errorf("want one shared dialog with the DNS option:\n%s", body)
+	}
+	if !strings.Contains(body, `data-host="sonarr.example.com"`) || !strings.Contains(body, `data-dns-ip="10.0.0.1"`) {
+		t.Errorf("owned row button lacks its data:\n%s", body)
+	}
+	if frag := s.do(req{path: "/status"}).Body.String(); strings.Contains(frag, "<dialog") || !strings.Contains(frag, `data-dns-ip="10.0.0.1"`) {
+		t.Errorf("polled fragment must carry row data but no dialog:\n%s", frag)
 	}
 	s, cf, d := newDNSServer(t)
 	cf.dns.Seed("sonarr.example.com", "10.0.0.1")
 	addRoute(t, s, d)
-	body = s.do(req{path: "/"}).Body.String()
-	if strings.Contains(body, `name="delete_dns"`) || !strings.Contains(body, "left in place") {
-		t.Errorf("adopted row must not offer DNS deletion:\n%s", body)
+	if body = s.do(req{path: "/"}).Body.String(); !strings.Contains(body, `data-dns-ip=""`) {
+		t.Errorf("adopted row must carry no DNS ip:\n%s", body)
 	}
 }

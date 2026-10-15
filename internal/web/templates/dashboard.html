@@ -22,18 +22,7 @@
 {{else}}{{$d := status "dns" "pending"}}<span class="dns-pending" title="{{$d.Meaning}}">pending</span><small class="next">{{$d.Next}}</small>{{end}}
 </td>
 <td><a href="/routes/{{.ID}}">Edit</a> <button class="outline secondary" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg" title="{{if .Enabled}}Stops serving this site and its certificate work; the DNS record is kept{{else}}Start serving this site again{{end}}">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
-<button class="outline danger" onclick="document.getElementById('del-{{.ID}}').showModal()">Delete</button>
-<dialog id="del-{{.ID}}">
-<form hx-delete="/routes/{{.ID}}" hx-target="find .dlg-msg">
-<h3>Delete {{.Host}}?</h3>
-<p>The site stops being served and the route is removed. This cannot be undone.</p>
-{{if .OwnsRecord}}<label><input type="checkbox" name="delete_dns"> Also delete the DNS record {{.Host}} &rarr; {{.DNS.Content}} in Cloudflare</label>
-{{else}}<p>The DNS record is left in place: Caretakarr did not create it, or there is none.</p>{{end}}
-<p class="dlg-msg" role="alert"></p>
-<button type="submit" class="danger">Delete</button>
-<button type="button" class="outline secondary" onclick="this.closest('dialog').close()">Cancel</button>
-</form>
-</dialog></td>
+<button class="outline danger delete-route" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{if .OwnsRecord}}{{.DNS.Content}}{{end}}">Delete</button></td>
 </tr>
 {{end}}
 </tbody>
@@ -71,5 +60,37 @@
 <p id="msg" role="alert"></p>
 </article>
 <a role="button" href="/sites/new">Add site</a>
+{{/* One dialog for every row, outside #routes: the 10s refresh replaces #routes and would close a dialog inside it. */}}
+<dialog id="delete-dialog">
+<article>
+<h3>Delete <span class="dlg-host"></span>?</h3>
+<p>The site stops being served and the route is removed. This cannot be undone.</p>
+<form hx-delete="/routes/0" hx-target="find .dlg-msg">
+<label class="dlg-owned" hidden><input type="checkbox" name="delete_dns"> Also delete the DNS record <span class="dlg-record"></span> in Cloudflare</label>
+<p class="dlg-kept" hidden>The DNS record is left in place: Caretakarr did not create it, or there is none.</p>
+<p class="dlg-msg" role="alert"></p>
+<footer>
+<button type="button" class="outline secondary" onclick="document.getElementById('delete-dialog').close()">Cancel</button>
+<button type="submit" class="danger">Delete</button>
+</footer>
+</form>
+</article>
+</dialog>
+<script>
+document.addEventListener('click', function (e) {
+  var b = e.target.closest('.delete-route');
+  if (!b) return;
+  var d = document.getElementById('delete-dialog'), f = d.querySelector('form'), ip = b.dataset.dnsIp;
+  f.setAttribute('hx-delete', '/routes/' + b.dataset.id);
+  htmx.process(f); // htmx captures the URL when it binds the form, so re-bind after changing it
+  f.reset();
+  d.querySelector('.dlg-host').textContent = b.dataset.host;
+  d.querySelector('.dlg-record').textContent = b.dataset.host + ' → ' + ip;
+  d.querySelector('.dlg-owned').hidden = !ip;
+  d.querySelector('.dlg-kept').hidden = !!ip;
+  d.querySelector('.dlg-msg').textContent = '';
+  d.showModal();
+});
+</script>
 {{end}}
 {{end}}
