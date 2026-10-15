@@ -30,7 +30,7 @@ var hints = map[string]string{
 	"record_ip":     "Leave blank to use the domain's default IP. Set it only if this one site's DNS record must point at a different server.",
 	"allowlist":     "Only these networks can open the site; everyone else gets an error 403. One per line. Leave empty to allow anyone who can reach this server. Example: 192.168.0.0/16 is a typical whole home network.",
 	"basic_auth":    "Puts a username and password prompt in front of the app. Leave the user empty for no prompt.",
-	"enabled":       "Turn off to answer \"503 disabled\" without deleting the site. Its DNS record and certificate are kept.",
+	"enabled":       "Turn off to stop serving the site without deleting it. Caddy ignores it completely, so no certificate work happens for it. Its DNS record is kept.",
 	"admin_login":   "The password set as ADMIN_PASSWORD when Caretakarr was started.",
 }
 

@@ -164,14 +164,14 @@ This is the JSON equivalent of the homelab Caddyfile's `tls { dns cloudflare {$C
 
 Cert mode, per domain (`domains.cert_mode`):
 - `wildcard` (default): TLS policy `subjects: ["*.example.com"]`. One issuance per domain, so adding routes costs none, and subdomain names stay out of CT logs.
-- `per_host`: TLS policy `subjects` lists that domain's enabled and disabled route hostnames (`["banking.example.com", …]`), matching the plain Caddyfile behavior. Each new route triggers a new issuance and pays any configured propagation delay.
+- `per_host`: TLS policy `subjects` lists that domain's enabled route hostnames (`["banking.example.com", …]`), matching the plain Caddyfile behavior. Each new route triggers a new issuance and pays any configured propagation delay.
 - Empty `per_host` domain (no routes) emits no policy. Hostnames are sorted for deterministic output.
 
 Migration check for the homelab case: `banking.example.com` → domain `example.com`, route `banking`, upstream `192.168.25.165:8766` over `http`. The renderer must produce the same behavior as that Caddyfile (golden test).
 
 Rules:
 - The token is the placeholder `{env.CLOUDFLARE_API_TOKEN}`, never the literal, so rendered JSON is safe to log.
-- Disabled route: `static_response` 503 with a short body, instead of removing the route. Keeps cert and DNS meaningful.
+- Disabled route: omitted from the rendered config entirely (no handler, no TLS policy subject), so Caddy does no certificate work for it. Its DNS record and DB row are kept.
 - Order: UI route first, then routes by subdomain (deterministic output for golden tests and for `Load`'s same-config short-circuit).
 - Both `http_port`/`https_port` come from `Options`, so integration tests use high ports.
 - Tests use `Issuer=Internal` (`{"module":"internal"}`) plus `pki.certificate_authorities.local.install_trust=false`. No real ACME or Cloudflare in tests.

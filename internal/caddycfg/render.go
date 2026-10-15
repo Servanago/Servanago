@@ -61,6 +61,9 @@ func Render(st State, o Options) ([]byte, error) {
 	}
 	var hr []hostRoute
 	for _, r := range st.Routes {
+		if !r.Enabled { // a disabled route is not in Caddy at all: no handler, no certificate work
+			continue
+		}
 		d, ok := domains[r.DomainID]
 		if !ok {
 			return nil, fmt.Errorf("render: route %d references unknown domain %d", r.ID, r.DomainID)
@@ -148,9 +151,6 @@ func issuer(o Options) m {
 }
 
 func routeHandler(r store.Route) (any, error) {
-	if !r.Enabled {
-		return m{"handler": "static_response", "status_code": "503", "body": "route disabled"}, nil
-	}
 	proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
 	if r.Scheme == "https" {
 		tls := m{}

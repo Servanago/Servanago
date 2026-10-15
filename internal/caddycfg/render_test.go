@@ -60,6 +60,8 @@ func TestRenderGolden(t *testing.T) {
 		{"prod_default", opts(), State{[]store.Domain{dom}, nil}},
 		{"propagation_set", timed, State{}},
 		{"per_host", opts(), State{[]store.Domain{perHost}, []store.Route{route, with(route, func(r *store.Route) { r.ID, r.Subdomain = 2, "radarr" })}}},
+		{"per_host_one_disabled", opts(), State{[]store.Domain{perHost}, []store.Route{route, with(route, func(r *store.Route) { r.ID, r.Subdomain, r.Enabled = 2, "radarr", false })}}},
+		{"per_host_all_disabled", opts(), State{[]store.Domain{perHost}, []store.Route{with(route, func(r *store.Route) { r.Enabled = false })}}},
 		{"per_host_empty", opts(), State{[]store.Domain{perHost}, nil}},
 		{"internal_issuer", internal, State{[]store.Domain{dom}, []store.Route{route}}},
 		{"banking_homelab", opts(), State{[]store.Domain{dom}, []store.Route{{ID: 1, DomainID: 1, Subdomain: "banking", Scheme: "http", UpstreamHost: "192.168.25.165", UpstreamPort: 8766, Enabled: true}}}},

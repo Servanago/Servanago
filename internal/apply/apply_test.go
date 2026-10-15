@@ -2,6 +2,8 @@ package apply
 
 import (
 	"context"
+	"crypto/tls"
+	"fmt"
 	"net"
 	"strconv"
 	"testing"
@@ -181,14 +183,20 @@ func (f *fixture) routeWith(t *testing.T, tweak func(*store.Route)) {
 	}
 }
 
-func TestDisabledRouteServes503(t *testing.T) {
+func TestDisabledRouteIsNotServed(t *testing.T) {
 	f := newFixture(t)
 	if err := f.svc.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	if err := f.svc.Mutate(context.Background(), f.addRoute("other", "other-content", t)); err != nil {
+		t.Fatal(err)
+	}
 	f.routeWith(t, func(r *store.Route) { r.Enabled = false })
-	if code, body := caddytest.Get(t, f.httpsPort, "app.example.com"); code != 503 || body == "secret-content" {
-		t.Fatalf("%d %q", code, body)
+	// A disabled host is not in Caddy at all: no certificate is managed for it, so even the handshake fails.
+	caddytest.WaitCert(t, f.httpsPort, "other.example.com")
+	if c, err := tls.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", f.httpsPort), &tls.Config{InsecureSkipVerify: true, ServerName: "app.example.com"}); err == nil {
+		c.Close()
+		t.Fatal("disabled host completed a TLS handshake")
 	}
 	err := f.svc.Mutate(context.Background(), func(tx *store.Store) error {
 		rs, _ := tx.ListRoutes(context.Background())

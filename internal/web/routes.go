@@ -66,6 +66,9 @@ type routeRow struct {
 	CertWait string // how long a pending certificate may take, from the propagation settings
 }
 
+// OwnsRecord is true when Caretakarr created this route's A record, the only kind it may delete.
+func (r routeRow) OwnsRecord() bool { return r.HasDNS && r.DNS.Owned && r.DNS.CFRecordID != "" }
+
 func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	ds, err := s.deps.Store.ListDomains(r.Context())
 	if err != nil {
@@ -299,7 +302,9 @@ func (s *Server) deleteRoute(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	s.removeRecord(r, target)
+	if r.FormValue("delete_dns") != "" { // the A record is kept unless the user asked; Remove skips adopted records
+		s.removeRecord(r, target)
+	}
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)
 }

@@ -34,23 +34,6 @@
                 }
               ],
               "terminal": true
-            },
-            {
-              "handle": [
-                {
-                  "body": "route disabled",
-                  "handler": "static_response",
-                  "status_code": "503"
-                }
-              ],
-              "match": [
-                {
-                  "host": [
-                    "sonarr.example.com"
-                  ]
-                }
-              ],
-              "terminal": true
             }
           ]
         }

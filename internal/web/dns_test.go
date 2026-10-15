@@ -101,7 +101,7 @@ func TestDeleteConfirmationAndRecordHandling(t *testing.T) {
 	if body := s.do(req{path: "/routes/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "also deletes the A record sonarr.example.com") {
 		t.Errorf("owned confirmation: %s", body)
 	}
-	if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID), hdr: htmxPost}); w.Code != 204 {
+	if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID) + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
 		t.Fatal(w.Code)
 	}
 	if len(cf.dns.Records()) != 0 {
@@ -125,7 +125,7 @@ func TestDeleteReportsDNSFailure(t *testing.T) {
 	s, cf, d := newDNSServer(t)
 	r := addRoute(t, s, d)
 	cf.dns.FailWith("nope")
-	if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID), hdr: htmxPost}); w.Code != 204 {
+	if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID) + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
 		t.Fatalf("route delete must still succeed: %d", w.Code)
 	}
 	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "could not be removed") {
@@ -146,5 +146,49 @@ func TestRenameMovesRecord(t *testing.T) {
 	recs := cf.dns.Records()
 	if len(recs) != 1 || recs[0].Name != "tv.example.com" {
 		t.Fatalf("%+v", recs)
+	}
+}
+
+func TestDeleteRecordOnlyWhenAskedAndOwned(t *testing.T) {
+	del := func(s *Server, id int64, q string) {
+		t.Helper()
+		if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(id) + q, hdr: htmxPost}); w.Code != 204 {
+			t.Fatalf("delete: %d %q", w.Code, w.Body.String())
+		}
+	}
+	// owned, not asked: the route goes, the record stays
+	s, cf, d := newDNSServer(t)
+	del(s, addRoute(t, s, d).ID, "")
+	if len(cf.dns.Records()) != 1 {
+		t.Error("record deleted without being asked")
+	}
+	// owned, asked: both go
+	s, cf, d = newDNSServer(t)
+	del(s, addRoute(t, s, d).ID, "?delete_dns=on")
+	if len(cf.dns.Records()) != 0 {
+		t.Error("asked record not deleted")
+	}
+	// adopted, asked: never deleted
+	s, cf, d = newDNSServer(t)
+	cf.dns.Seed("sonarr.example.com", "10.0.0.1")
+	del(s, addRoute(t, s, d).ID, "?delete_dns=on")
+	if len(cf.dns.Records()) != 1 {
+		t.Error("adopted record deleted")
+	}
+}
+
+func TestListRowDeletePanel(t *testing.T) {
+	s, _, d := newDNSServer(t)
+	addRoute(t, s, d)
+	body := s.do(req{path: "/"}).Body.String()
+	if !strings.Contains(body, `name="delete_dns"`) || !strings.Contains(body, "Also delete the DNS record sonarr.example.com") {
+		t.Errorf("owned row lacks the DNS option:\n%s", body)
+	}
+	s, cf, d := newDNSServer(t)
+	cf.dns.Seed("sonarr.example.com", "10.0.0.1")
+	addRoute(t, s, d)
+	body = s.do(req{path: "/"}).Body.String()
+	if strings.Contains(body, `name="delete_dns"`) || !strings.Contains(body, "left in place") {
+		t.Errorf("adopted row must not offer DNS deletion:\n%s", body)
 	}
 }
