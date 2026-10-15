@@ -36,6 +36,7 @@ All management is through the web UI (htmx, server-rendered); there is no public
 - Add a site: `/sites/new`. Enter hostname (`oc.example.com`), backend host or IP, and backend port as separate fields. Caretakarr finds the Cloudflare zone, adds the domain if new, creates the route and A record. Equivalent to the Caddyfile `oc.example.com { reverse_proxy http://192.168.25.165:9200 }`.
 - Domains: `/domains`. Per domain, `cert_mode` is `wildcard` (default, one wildcard cert) or `per_host`; `default_ip` is where its A records point.
 - Routes: `/routes/{id}`. Enable/disable, CIDR allowlist, basic auth, per-route DNS record IP.
+- Backend on the Docker host itself: use `host.docker.internal` as the backend host. The shipped `docker-compose.yml` maps it with `extra_hosts: host.docker.internal:host-gateway`.
 - Dashboard `/`: upstream health, certificate expiry, DNS state, UI host record card. `/logs`: live Caddy/ACME log. `/help`: plain-language help for DNS/TLS terms, errors and statuses.
 - If the UI host's A record already exists with a different value, the dashboard shows a conflict; nothing is overwritten until you click *Take over*.
 - Mounting `/var/run/docker.sock:/var/run/docker.sock:ro` enables container discovery to pre-fill routes. It is host-root equivalent: prefer a read-only socket proxy and set `ADMIN_PASSWORD`.

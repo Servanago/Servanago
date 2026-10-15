@@ -7,6 +7,9 @@ services:
       - "80:80"
       - "443:443"
       - "443:443/udp"
+    # Lets routes use host.docker.internal as the backend host to reach services on the Docker host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./data:/data
       # Optional Docker discovery. This is host-root equivalent; prefer a read-only socket proxy.
