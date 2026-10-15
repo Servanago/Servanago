@@ -100,3 +100,15 @@ func TestImportIsRerunnable(t *testing.T) {
 		t.Errorf("routes = %+v", rs)
 	}
 }
+
+func TestImportSummaryCountsParserSkips(t *testing.T) {
+	_, _, imp := importFx(t)
+	imp.parserSkipped = 3
+	var out bytes.Buffer
+	if err := imp.run(context.Background(), nil, true, &out); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out.String(), "would add 0, skipped 3") {
+		t.Errorf("summary = %q", out.String())
+	}
+}

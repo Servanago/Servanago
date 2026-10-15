@@ -59,7 +59,7 @@ func runImport(args []string, out io.Writer) error {
 	cf := cfdns.New(cfg.CloudflareToken, cfOpts...)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
-	return importer{cfg: cfg, cf: cf, st: st, dns: dnssync.New(cf, st)}.run(ctx, sites, *dry, out)
+	return importer{cfg: cfg, cf: cf, st: st, dns: dnssync.New(cf, st), parserSkipped: len(skipped)}.run(ctx, sites, *dry, out)
 }
 
 type importer struct {
@@ -67,6 +67,8 @@ type importer struct {
 	cf  *cfdns.Client
 	st  *store.Store
 	dns *dnssync.Syncer
+
+	parserSkipped int // blocks the Caddyfile reader could not model; counted in the summary
 }
 
 // run adds each site as a route (creating its domain on first use) and reconciles its A record.
@@ -88,7 +90,7 @@ func (im importer) run(ctx context.Context, sites []caddyfile.Site, dry bool, ou
 			}
 		}
 	}
-	added, skipped := 0, 0
+	added, skipped := 0, im.parserSkipped
 	skip := func(host, why string) { skipped++; fmt.Fprintf(out, "skip %s: %s\n", host, why) }
 	for _, s := range sites {
 		host := strings.ToLower(s.Hostname)
