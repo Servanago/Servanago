@@ -37,7 +37,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 	mustDomain(t, s, "example.com")
 	var v int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 2 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 3 {
 		t.Fatalf("user_version %d %v", v, err)
 	}
 	s.Close()
@@ -86,6 +86,7 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 
 	r := route(d.ID, "sonarr")
 	r.RecordIP, r.Allowlist, r.BasicUser, r.BasicHash, r.Preset = "10.9.9.9", "192.168.0.0/16", "u", "h", "Sonarr"
+	r.Stream, r.MaxBody = true, 2<<30
 	r, err := s.CreateRoute(ctx, r)
 	if err != nil {
 		t.Fatal(err)

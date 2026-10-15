@@ -159,7 +159,14 @@ func routeHandler(r store.Route) (any, error) {
 		}
 		proxy["transport"] = m{"protocol": "http", "tls": tls}
 	}
-	if r.Allowlist == "" && r.BasicUser == "" {
+	if r.Stream {
+		proxy["flush_interval"] = -1
+	}
+	handlers := []any{proxy}
+	if r.MaxBody > 0 {
+		handlers = []any{m{"handler": "request_body", "max_size": r.MaxBody}, proxy}
+	}
+	if r.Allowlist == "" && r.BasicUser == "" && len(handlers) == 1 {
 		return proxy, nil
 	}
 
@@ -177,6 +184,6 @@ func routeHandler(r store.Route) (any, error) {
 			"accounts": []any{m{"username": r.BasicUser, "password": r.BasicHash}},
 		}}}}})
 	}
-	sub = append(sub, m{"handle": []any{proxy}})
+	sub = append(sub, m{"handle": handlers})
 	return m{"handler": "subroute", "routes": sub}, nil
 }

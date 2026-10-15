@@ -164,6 +164,7 @@ td button, td [role="button"] { margin: 0; padding: 0.3rem 0.7rem; font-size: 0.
   border: 1px solid currentColor; white-space: nowrap;
 }
 small.up-up, small.up-down { font-size: 0.8rem; }
+.tune { display: inline-block; padding: 0.05rem 0.55rem; border: 1px solid var(--ct-border); border-radius: 999px; color: var(--ct-text-secondary); font-size: 0.8rem; line-height: 1.5; white-space: nowrap; }
 .cert-issued, .dns-synced, .up-up { color: var(--ct-success); background: color-mix(in srgb, var(--ct-success) 12%, transparent); }
 .cert-pending, .dns-pending, .dns-conflict, .cert-expiring { color: var(--ct-warning); background: color-mix(in srgb, var(--ct-warning) 12%, transparent); }
 .cert-error, .dns-error, .up-down { color: var(--ct-danger); background: color-mix(in srgb, var(--ct-danger) 12%, transparent); }

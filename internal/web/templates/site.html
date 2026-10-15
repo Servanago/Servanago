@@ -29,6 +29,10 @@
 {{hint "scheme"}} {{hint "upstream_host"}} {{hint "upstream_port"}}
 <label><input type="checkbox" name="tls_skip_verify"> Skip TLS verification (self-signed https backend)</label>
 {{hint "skip_verify"}}
+<label><input type="checkbox" name="stream"> Send responses as they arrive (streaming)</label>
+{{hint "stream"}}
+<label>Upload limit (blank = no limit) <input name="max_body" placeholder="2GB"></label>
+{{hint "max_body"}}
 </fieldset>
 <label><input type="checkbox" name="enabled" checked> Enabled</label>
 {{hint "enabled"}}

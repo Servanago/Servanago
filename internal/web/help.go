@@ -6,6 +6,8 @@ import (
 	"html/template"
 	"strings"
 	"time"
+
+	"github.com/caretakarr/caretakarr/internal/config"
 )
 
 // All user-facing help lives here so form hints, status tooltips, error explanations and the /help
@@ -22,6 +24,8 @@ var hints = map[string]string{
 	"upstream_host": "Where the app really runs: an IP address such as 192.168.25.165, or a Docker container name on a shared network. Not the public hostname.",
 	"upstream_port": "The port the app listens on, such as 9200 (Sonarr is 8989, Radarr 7878). Not 443: Caddy already provides HTTPS in front of it.",
 	"skip_verify":   "Only for apps that use https with a self-signed certificate. Turns off checking that certificate. Fine on a trusted home network.",
+	"stream":        "Sends the app's answer to the visitor as it arrives instead of in chunks. Turn on for live streams, event feeds and terminals that seem to freeze or lag. Websockets work without it.",
+	"max_body":      "The biggest upload this site accepts, such as 2GB or 512MB (up to 100GB). Larger uploads get error 413. Leave empty for no limit.",
 	"subdomain":     "The first part of the address, such as oc in oc.example.com. Letters, numbers and hyphens only.",
 	"record_ip":     "Leave blank to use the domain's default IP. Set it only if this one site's DNS record must point at a different server.",
 	"allowlist":     "Only these networks can open the site; everyone else gets an error 403. One per line. Leave empty to allow anyone who can reach this server. Example: 192.168.0.0/16 is a typical whole home network.",
@@ -177,6 +181,7 @@ var helpFuncs = template.FuncMap{
 	"helplink": func(anchor string) template.HTML {
 		return template.HTML(`<a class="help-link" href="/help#` + html.EscapeString(anchor) + `" title="Open help" aria-label="Open help">?</a>`)
 	},
+	"size":   config.FormatSize,
 	"status": func(kind, state string) statusInfo { return statusHelp[kind+":"+state] },
 	"errhtml": func(msg string) template.HTML {
 		return template.HTML(errorHTML(msg)) // #nosec: errorHTML escapes every piece

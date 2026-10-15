@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/store"
 )
 
@@ -33,6 +34,15 @@ func applyControls(r *store.Route, v url.Values) error {
 		cidrs = append(cidrs, p.Masked().String())
 	}
 	r.Allowlist = strings.Join(cidrs, "\n")
+
+	r.Stream, r.MaxBody = v.Get("stream") != "", 0
+	if s := strings.TrimSpace(v.Get("max_body")); s != "" {
+		n, err := config.ParseSize(s)
+		if err != nil {
+			return fmt.Errorf("upload limit: %w", err)
+		}
+		r.MaxBody = n
+	}
 
 	user, pw := strings.TrimSpace(v.Get("basic_user")), v.Get("basic_password")
 	switch {

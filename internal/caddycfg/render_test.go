@@ -51,6 +51,11 @@ func TestRenderGolden(t *testing.T) {
 		{"basic_auth", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.BasicUser, r.BasicHash = "u", "$2a$14$abc" })}}},
 		{"https_skip_verify", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.Scheme, r.TLSSkipVerify = "https", true })}}},
 		{"https_verify", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.Scheme = "https" })}}},
+		{"stream", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.Stream = true })}}},
+		{"max_body", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.MaxBody = 2 << 30 })}}},
+		{"stream_max_body_basic", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) {
+			r.Stream, r.MaxBody, r.BasicUser, r.BasicHash = true, 2<<30, "u", "$2a$14$abc"
+		})}}},
 		{"staging", staging, State{}},
 		{"prod_default", opts(), State{[]store.Domain{dom}, nil}},
 		{"propagation_set", timed, State{}},

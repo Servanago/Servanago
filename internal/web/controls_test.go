@@ -129,3 +129,36 @@ func TestToggleRoute(t *testing.T) {
 		t.Error("still disabled")
 	}
 }
+
+func TestApplyControlsProxyTuning(t *testing.T) {
+	var r store.Route
+	if err := applyControls(&r, url.Values{"stream": {"on"}, "max_body": {" 2gb "}}); err != nil || !r.Stream || r.MaxBody != 2<<30 {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if err := applyControls(&r, url.Values{}); err != nil || r.Stream || r.MaxBody != 0 {
+		t.Fatalf("not cleared: %+v %v", r, err)
+	}
+	for _, bad := range []string{"2XB", "0", "101GB", "-5MB"} {
+		if err := applyControls(&store.Route{}, url.Values{"max_body": {bad}}); err == nil || !strings.Contains(err.Error(), "upload limit") {
+			t.Errorf("max_body %q: %v", bad, err)
+		}
+	}
+}
+
+func TestProxyTuningInHandlersAndPages(t *testing.T) {
+	s, _, d := newDNSServer(t)
+	r := addRoute(t, s, d, "stream", "on", "max_body", "2GB")
+	got, _ := s.deps.Store.GetRoute(context.Background(), r.ID)
+	if !got.Stream || got.MaxBody != 2<<30 {
+		t.Fatalf("%+v", got)
+	}
+	if body := s.do(req{path: "/routes/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, `value="2GB"`) || !strings.Contains(body, "name=\"stream\" checked") {
+		t.Errorf("edit page lost the options")
+	}
+	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, ">stream<") || !strings.Contains(body, "max 2GB") {
+		t.Errorf("dashboard badges missing")
+	}
+	if body := s.do(req{path: "/sites/new"}).Body.String(); !strings.Contains(body, `name="max_body"`) || !strings.Contains(body, `name="stream"`) {
+		t.Errorf("add site form lacks the options")
+	}
+}

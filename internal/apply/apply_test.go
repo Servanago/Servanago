@@ -249,3 +249,17 @@ func TestBasicAuth(t *testing.T) {
 		}
 	}
 }
+
+func TestMaxBodyAndStreamLoad(t *testing.T) {
+	f := newFixture(t)
+	if err := f.svc.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	f.routeWith(t, func(r *store.Route) { r.Stream, r.MaxBody = true, 10 })
+	if code := caddytest.Post(t, f.httpsPort, "app.example.com", "tiny"); code != 200 {
+		t.Errorf("under the limit: got %d want 200", code)
+	}
+	if code := caddytest.Post(t, f.httpsPort, "app.example.com", "this body is longer than ten bytes"); code != 413 {
+		t.Errorf("over the limit: got %d want 413", code)
+	}
+}

@@ -32,6 +32,10 @@
 {{hint "record_ip"}} {{helplink "lan-only"}}
 <label><input type="checkbox" name="tls_skip_verify"{{if .Route.TLSSkipVerify}} checked{{end}}> Skip TLS verification (self-signed https upstream)</label>
 {{hint "skip_verify"}}
+<label><input type="checkbox" name="stream"{{if .Route.Stream}} checked{{end}}> Send responses as they arrive (streaming)</label>
+{{hint "stream"}}
+<label>Upload limit (blank = no limit) <input name="max_body" value="{{size .Route.MaxBody}}" placeholder="2GB"></label>
+{{hint "max_body"}}
 <label>Allowed sources (CIDR ranges, one per line; empty = anyone)
 <textarea name="allowlist" rows="3" placeholder="192.168.0.0/16">{{.Route.Allowlist}}</textarea></label>
 {{hint "allowlist"}} {{helplink "access"}}

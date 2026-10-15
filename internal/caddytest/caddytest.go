@@ -112,3 +112,21 @@ func GetAs(t testing.TB, httpsPort int, host, user, pass string) (int, string) {
 	b, _ := io.ReadAll(resp.Body)
 	return resp.StatusCode, string(b)
 }
+
+// Post sends body to https://host/ and returns the status code.
+func Post(t testing.TB, httpsPort int, host, body string) int {
+	t.Helper()
+	WaitCert(t, httpsPort, host)
+	c := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: host},
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, fmt.Sprintf("127.0.0.1:%d", httpsPort))
+		},
+	}}
+	resp, err := c.Post("https://"+host+"/", "text/plain", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	return resp.StatusCode
+}
