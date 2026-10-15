@@ -16,13 +16,16 @@
 {{if .HasDNS}}{{$d := status "dns" .DNS.State}}<span class="dns-{{.DNS.State}}" title="{{$d.Meaning}}">{{.DNS.State}}</span>
 {{if and $d.Next (or (ne .DNS.State "error") (not .DNS.Error))}}<small class="next">{{$d.Next}}</small>{{end}}
 {{if .DNS.Error}}<div class="explain">{{errhtml .DNS.Error}}</div>{{end}}
-{{if eq .DNS.State "conflict"}}<button class="outline warn" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}? The current record will be replaced.">Take over</button>
-{{else if eq .DNS.State "error"}}<button class="outline" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg">Retry</button>
-{{else}}<button class="outline secondary" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" title="Check the record in Cloudflare again">Resync</button>{{end}}
+{{if eq .DNS.State "conflict"}}<button class="outline warn icon-btn" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}? The current record will be replaced." aria-label="Take over" data-tooltip="Replace the existing DNS record">{{icon "takeover"}}</button>
+{{else if eq .DNS.State "error"}}<button class="outline icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Retry" data-tooltip="Try the DNS update again">{{icon "refresh"}}</button>
+{{else}}<button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Resync" data-tooltip="Check the record in Cloudflare again">{{icon "refresh"}}</button>{{end}}
 {{else}}{{$d := status "dns" "pending"}}<span class="dns-pending" title="{{$d.Meaning}}">pending</span><small class="next">{{$d.Next}}</small>{{end}}
 </td>
-<td><a href="/routes/{{.ID}}">Edit</a> <button class="outline secondary" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg" title="{{if .Enabled}}Stops serving this site and its certificate work; the DNS record is kept{{else}}Start serving this site again{{end}}">{{if .Enabled}}Disable{{else}}Enable{{end}}</button>
-<button class="outline danger delete-route" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{if .OwnsRecord}}{{.DNS.Content}}{{end}}">Delete</button></td>
+<td class="actions">
+<a class="icon-btn" href="/routes/{{.ID}}" aria-label="Edit" data-tooltip="Edit this site">{{icon "edit"}}</a>
+<button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg" aria-label="{{if .Enabled}}Disable{{else}}Enable{{end}}" data-tooltip="{{if .Enabled}}Disable: stop serving this site, keep its DNS record{{else}}Enable: start serving this site again{{end}}">{{if .Enabled}}{{icon "pause"}}{{else}}{{icon "play"}}{{end}}</button>
+<button class="outline danger icon-btn delete-route" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{if .OwnsRecord}}{{.DNS.Content}}{{end}}" aria-label="Delete" data-tooltip="Delete this site">{{icon "trash"}}</button>
+</td>
 </tr>
 {{end}}
 </tbody>

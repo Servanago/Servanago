@@ -198,3 +198,23 @@ func TestListRowDeletePanel(t *testing.T) {
 		t.Errorf("adopted row must carry no DNS ip:\n%s", body)
 	}
 }
+
+// Row actions are icon-only: each needs an accessible name and a tooltip, or it is an unlabeled mystery button.
+func TestRowActionsAreLabelledIcons(t *testing.T) {
+	s, cf, d := newDNSServer(t)
+	addRoute(t, s, d)
+	cf.dns.FailWith("down")
+	s.do(req{method: "POST", path: "/routes/1/dns/resync", hdr: htmxPost}) // row ends in DNS error: Retry button
+	body := s.do(req{path: "/status"}).Body.String()
+	for _, label := range []string{"Edit", "Disable", "Delete", "Retry"} {
+		if !strings.Contains(body, `aria-label="`+label+`"`) {
+			t.Errorf("no icon button labelled %q:\n%s", label, body)
+		}
+	}
+	if strings.Count(body, "<svg") < 4 || strings.Count(body, "data-tooltip=") < 4 {
+		t.Errorf("icons or tooltips missing:\n%s", body)
+	}
+	if strings.Contains(body, ">Edit</a>") || strings.Contains(body, ">Disable</button>") {
+		t.Errorf("text labels still shown:\n%s", body)
+	}
+}

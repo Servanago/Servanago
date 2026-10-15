@@ -121,7 +121,7 @@ func TestToggleRoute(t *testing.T) {
 	if got, _ := s.deps.Store.GetRoute(context.Background(), r.ID); got.Enabled {
 		t.Error("still enabled")
 	}
-	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, ">Enable<") {
+	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, `aria-label="Enable"`) {
 		t.Errorf("enable button missing")
 	}
 	toggle()

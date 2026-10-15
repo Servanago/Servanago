@@ -133,7 +133,7 @@ article table { min-width: 44rem; margin-bottom: 0; } /* scrolls inside the card
 article th, article td { padding: 0.55rem 0.6rem; }
 article td:first-child { overflow-wrap: anywhere; }
 article td:last-child { white-space: nowrap; }
-article td:last-child a { display: block; margin-bottom: 0.3rem; }
+article td:last-child a:not(.icon-btn) { display: block; margin-bottom: 0.3rem; }
 td small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; width: 9.5rem; overflow-wrap: anywhere; }
 td small.up-up, td small.up-down { display: inline-block; width: auto; }
 details.docker > div { max-height: 18rem; overflow: auto; margin-bottom: 0.5rem; }
@@ -152,6 +152,15 @@ button.danger:hover, button.outline.danger:hover { background: rgba(255, 91, 103
 button.warn, button.outline.warn { --pico-color: var(--ct-warning); --pico-border-color: var(--ct-warning); --pico-background-color: transparent; background: transparent; }
 button.warn:hover, button.outline.warn:hover { background: rgba(255, 181, 71, 0.14); }
 td button, td [role="button"] { margin: 0; padding: 0.3rem 0.7rem; font-size: 0.85rem; width: auto; }
+/* Icon-only row actions sit on one line; the label lives in aria-label and the data-tooltip. */
+td.actions { white-space: nowrap; }
+td.actions .icon-btn + .icon-btn { margin-left: 0.3rem; }
+.icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 2rem; height: 2rem; padding: 0; vertical-align: middle; }
+td .icon-btn { width: 2rem; padding: 0; }
+.icon-btn .icon { flex: none; }
+/* The Edit link is a real link (navigates) dressed like the outline buttons beside it. */
+a.icon-btn { border: 1px solid var(--ct-brand-cyan); border-radius: var(--pico-border-radius); color: var(--ct-brand-cyan); text-decoration: none; }
+a.icon-btn:hover { background: color-mix(in srgb, var(--ct-brand-cyan) 14%, transparent); }
 
 /* ---- Alerts and banners ------------------------------------------------------------------------ */
 .banner { padding: 0.75rem 1rem; margin: 0 0 1rem; border-radius: var(--ct-radius-md); border: 1px solid; background: var(--ct-surface); }

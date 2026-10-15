@@ -33,3 +33,25 @@ test('list row delete panel: cancel keeps the route, delete asks about the DNS r
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'lidarr.delrow.example.net' })).toHaveCount(0);
 });
+
+test('row actions share one line and show a tooltip', async ({ page }) => {
+  await login(page);
+  await page.goto('/domains');
+  await page.getByLabel('Domain', { exact: true }).fill('icons.example.net');
+  await page.getByLabel('Default IP').fill('192.168.1.10');
+  await page.getByRole('button', { name: 'Add domain' }).click();
+  await expect(page.getByRole('cell', { name: 'icons.example.net' })).toBeVisible();
+  await page.goto('/routes/new');
+  await page.locator('select[name=domain_id]').selectOption('icons.example.net');
+  await page.getByLabel('Preset').selectOption('Readarr');
+  await page.getByLabel('Upstream host or IP').fill('192.168.1.25');
+  await page.getByRole('button', { name: 'Add route' }).click();
+  const row = page.getByRole('row', { name: /readarr\.icons\.example\.net/ });
+
+  const edit = await row.getByRole('link', { name: 'Edit' }).boundingBox();
+  const toggle = await row.getByRole('button', { name: 'Disable' }).boundingBox();
+  const del = await row.getByRole('button', { name: 'Delete', exact: true }).boundingBox();
+  expect(Math.abs(edit!.y - toggle!.y)).toBeLessThan(2);
+  expect(Math.abs(toggle!.y - del!.y)).toBeLessThan(2);
+  await expect(row.getByRole('button', { name: 'Delete', exact: true })).toHaveAttribute('data-tooltip', /Delete this site/);
+});
