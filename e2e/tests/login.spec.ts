@@ -22,3 +22,9 @@ test('login reaches the dashboard and logout returns to login', async ({ page })
   await page.getByRole('button', { name: 'Sign out' }).click();
   await expect(page).toHaveURL(/\/login$/);
 });
+
+test('root font size stays 14px on wide screens (Pico would scale it to 20px+)', async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.goto('/login');
+  expect(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe('14px');
+});

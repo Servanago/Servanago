@@ -28,6 +28,8 @@
   --ct-shadow-panel: 0 8px 24px rgba(0, 0, 0, 0.22);
   --ct-shadow-focus: 0 0 0 3px rgba(22, 199, 243, 0.24);
 }
+/* Pico scales the root up to 21px on wide screens; every rem size here follows this one value. */
+html { font-size: 87.5%; }
 html, body {
   background: var(--ct-bg);
   color: var(--ct-text);
@@ -106,7 +108,7 @@ html, body {
 
 /* ---- Navigation and brand -------------------------------------------------------------------- */
 /* full-bleed bar: spans 100% of the page, content inset from the edges */
-body > header.topbar { width: 100%; padding-inline: 1.5rem; border-bottom: 1px solid var(--ct-border); background: var(--ct-surface); margin-bottom: 1.5rem; }
+body > header.topbar { width: 100%; padding-inline: 2rem; border-bottom: 1px solid var(--ct-border); background: var(--ct-surface); margin-bottom: 1.5rem; }
 @media (max-width: 640px) { body > header.topbar { padding-inline: 1rem; } }
 body > header nav { --pico-nav-element-spacing-vertical: 0.6rem; }
 .brand { display: inline-flex; align-items: center; gap: 0.6rem; color: var(--ct-text); text-decoration: none; }
