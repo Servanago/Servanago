@@ -19,7 +19,8 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
 
   const row = page.getByRole('row', { name: /self\.status\.example\.net/ });
   await expect(row.getByText('up', { exact: true })).toBeVisible();
-  await expect(row.getByText('pending').first()).toBeVisible(); // no cert: ACME cannot run offline
+  // ACME_ISSUER=internal (e2e) can issue before the row renders; staging never finishes offline.
+  await expect(row.getByText('pending').first().or(row.getByText('issued').first())).toBeVisible();
   await expect(row.getByText('synced')).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
