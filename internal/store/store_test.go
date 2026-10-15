@@ -37,7 +37,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 	mustDomain(t, s, "example.com")
 	var v int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 3 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 4 {
 		t.Fatalf("user_version %d %v", v, err)
 	}
 	s.Close()
@@ -227,5 +227,92 @@ func TestUIDNSRecord(t *testing.T) {
 	}
 	if _, err := s.db.Exec("INSERT INTO ui_dns_record (id, state) VALUES (2, 'pending')"); err == nil {
 		t.Error("second row accepted")
+	}
+}
+
+func TestTOTPLifecycle(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	if _, ok, err := s.GetTOTP(ctx); ok || err != nil {
+		t.Fatalf("empty: %v %v", ok, err)
+	}
+	if err := s.SaveTOTP(ctx, []byte("sealed1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveTOTP(ctx, []byte("sealed2")); err != nil { // unconfirmed seed is replaceable
+		t.Fatal(err)
+	}
+	if ok, _ := s.AdvanceTOTPStep(ctx, 5); ok {
+		t.Fatal("step accepted before enable")
+	}
+	if err := s.EnableTOTP(ctx, 10, []string{"h1", "h2"}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok, _ := s.GetTOTP(ctx)
+	if !ok || !got.Enabled || string(got.Secret) != "sealed2" || got.LastStep != 10 {
+		t.Fatalf("%+v", got)
+	}
+	if err := s.SaveTOTP(ctx, []byte("x")); err == nil {
+		t.Error("enabled seed overwritten")
+	}
+	for _, c := range []struct {
+		step int64
+		want bool
+	}{{10, false}, {9, false}, {11, true}, {11, false}} {
+		if ok, _ := s.AdvanceTOTPStep(ctx, c.step); ok != c.want {
+			t.Errorf("step %d: %v want %v", c.step, ok, c.want)
+		}
+	}
+	if ok, _ := s.UseBackupCode(ctx, "h1"); !ok {
+		t.Error("first use")
+	}
+	if ok, _ := s.UseBackupCode(ctx, "h1"); ok {
+		t.Error("second use")
+	}
+	if ok, _ := s.UseBackupCode(ctx, "nope"); ok {
+		t.Error("unknown code")
+	}
+	if n, _ := s.CountBackupCodes(ctx); n != 1 {
+		t.Errorf("unused %d", n)
+	}
+	if err := s.EnableTOTP(ctx, 1, nil); err != nil { // idempotent update path
+		t.Fatal(err)
+	}
+}
+
+func TestPasskeysAndResetAuth(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	p := Passkey{ID: "a", RPID: "h.example.com", CredentialID: []byte{1}, Credential: "{}", Name: "laptop"}
+	if err := s.AddPasskey(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	p.ID = "b"
+	if err := s.AddPasskey(ctx, p); err == nil {
+		t.Error("duplicate credential id accepted")
+	}
+	if err := s.TouchPasskey(ctx, []byte{1}, `{"n":2}`); err != nil {
+		t.Fatal(err)
+	}
+	ps, _ := s.ListPasskeys(ctx)
+	if len(ps) != 1 || ps[0].Credential != `{"n":2}` || ps[0].LastUsedAt == "" {
+		t.Fatalf("%+v", ps)
+	}
+	if err := s.SaveTOTP(ctx, []byte("s")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.EnableTOTP(ctx, 1, []string{"x", "y"}); err != nil {
+		t.Fatal(err)
+	}
+	totp, codes, keys, err := s.ResetAuth(ctx)
+	if err != nil || !totp || codes != 2 || keys != 1 {
+		t.Fatalf("%v %d %d %v", totp, codes, keys, err)
+	}
+	if ps, _ := s.ListPasskeys(ctx); len(ps) != 0 {
+		t.Error("passkeys left")
+	}
+	if _, ok, _ := s.GetTOTP(ctx); ok {
+		t.Error("totp left")
+	}
+	if ok, _ := s.DeletePasskey(ctx, "a"); ok {
+		t.Error("deleted a ghost")
 	}
 }

@@ -1,0 +1,81 @@
+{{define "content"}}
+<h1>Security {{helplink "sign-in"}}</h1>
+{{if .Data.Limited}}<div class="banner warn" role="alert"><strong>Set up the authenticator app to continue.</strong> REQUIRE_2FA is on, so the rest of Caretakarr stays locked until you confirm a code.</div>{{end}}
+
+<article>
+<h2>Authenticator app</h2>
+{{if not .Data.HasKey}}
+<p>Not available. {{hint "secret_key"}}</p>
+{{else if .Data.TOTPEnabled}}
+<p>On. {{.Data.BackupLeft}} backup codes left.</p>
+<form hx-post="/security/backup-codes" hx-target="#backup-msg">
+<input type="password" name="password" placeholder="Password" aria-label="Password to confirm" autocomplete="current-password" required>
+<input type="text" name="code" placeholder="Code" aria-label="Code to confirm" autocomplete="one-time-code" required>
+{{hint "totp_code"}}
+<button type="submit" class="outline">New backup codes</button>
+<div id="backup-msg" role="alert"></div>
+</form>
+{{if not .Data.Require2FA}}
+<form hx-post="/security/totp/disable" hx-target="#disable-msg" hx-confirm="Turn off the authenticator app?">
+<input type="password" name="password" placeholder="Password" aria-label="Password to turn off" autocomplete="current-password" required>
+<input type="text" name="code" placeholder="Code" aria-label="Code to turn off" autocomplete="one-time-code" required>
+<button type="submit" class="outline secondary">Turn off</button>
+<p id="disable-msg" role="alert"></p>
+</form>
+{{end}}
+{{else}}
+<p>Off. Adds a 6-digit code after the password.</p>
+<form hx-post="/security/totp/begin" hx-target="#totp-setup">
+<input type="password" name="password" placeholder="Password" aria-label="Password to start" autocomplete="current-password" required>
+<button type="submit">Set up authenticator</button>
+</form>
+<div id="totp-setup" role="alert"></div>
+{{end}}
+</article>
+
+{{if not .Data.Limited}}
+<article>
+<h2>Passkeys</h2>
+{{if .Data.Passkeys}}
+<table>
+<thead><tr><th>Name</th><th>Added</th><th>Last used</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Passkeys}}
+<tr><td>{{.Name}}{{if .OtherHost}} <small>(other host, not usable here)</small>{{end}}</td><td>{{.CreatedAt}}</td><td>{{if .LastUsedAt}}{{.LastUsedAt}}{{else}}never{{end}}</td>
+<td><button class="outline secondary" hx-delete="/security/passkeys/{{.ID}}" hx-confirm="Delete passkey {{.Name}}?" hx-target="#passkey-msg">Delete</button></td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p>None yet.</p>{{end}}
+{{if .Data.PasskeysOK}}
+<form id="passkey-add-form">
+<input type="text" name="name" placeholder="Name" aria-label="Passkey name" maxlength="100">
+{{hint "passkey_name"}}
+<input type="password" name="password" placeholder="Password" aria-label="Password to add passkey" autocomplete="current-password" required>
+{{if .Data.TOTPEnabled}}<input type="text" name="code" placeholder="Code" aria-label="Code to add passkey" autocomplete="one-time-code" required>{{end}}
+<button type="submit">Add passkey</button>
+</form>
+{{else}}<p><small>Passkeys can be added when you use the HTTPS address or localhost.</small></p>{{end}}
+<p id="passkey-msg" role="alert"></p>
+</article>
+{{end}}
+<script src="/static/auth.js" defer></script>
+{{end}}
+
+{{define "totp_enroll"}}
+<p>Scan this with your authenticator app, or type the key.</p>
+<img src="{{.QR}}" alt="QR code for the authenticator app" width="200" height="200">
+<p><code>{{.Secret}}</code></p>
+<form hx-post="/security/totp/confirm" hx-target="#totp-msg">
+<input type="text" name="code" placeholder="Code" aria-label="Code from the app" autocomplete="one-time-code" required>
+{{hint "totp_code"}}
+<button type="submit">Confirm</button>
+<div id="totp-msg" role="alert"></div>
+</form>
+{{end}}
+
+{{define "backup_codes"}}
+<p><strong>Backup codes.</strong> {{hint "backup_codes"}}</p>
+<ul>{{range .Codes}}<li><code>{{.}}</code></li>{{end}}</ul>
+{{if .Done}}<p><a role="button" href="/">Continue</a></p>{{end}}
+{{end}}

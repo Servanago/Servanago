@@ -32,6 +32,10 @@ var hints = map[string]string{
 	"basic_auth":    "Puts a username and password prompt in front of the app. Leave the user empty for no prompt.",
 	"enabled":       "Turn off to stop serving the site without deleting it. Caddy ignores it completely, so no certificate work happens for it. Its DNS record is kept.",
 	"admin_login":   "The password set as ADMIN_PASSWORD when Caretakarr was started.",
+	"totp_code":     "The 6-digit code from your authenticator app. A backup code also works, once.",
+	"backup_codes":  "Each code works once if you lose your authenticator. Keep them somewhere safe; they are not shown again.",
+	"passkey_name":  "A label so you can tell your passkeys apart, such as Laptop or Phone.",
+	"secret_key":    "Authenticator codes are stored encrypted. Set CARETAKARR_SECRET_KEY (at least 32 characters, for example from openssl rand -hex 32) in .env and recreate the container to turn them on. Back it up with your data volume.",
 }
 
 // statusHelp explains every status word and what to do next. Keys are kind:state.
@@ -65,6 +69,8 @@ var errTable = []struct {
 		"Check the spelling, that the domain is added to your Cloudflare account, and that the API token can read that zone."}},
 	{"the token cannot see it", explained{"That domain's zone was not found in Cloudflare",
 		"Check the spelling, that the domain is added to your Cloudflare account, and that the API token can read that zone."}},
+	{"cannot be decrypted", explained{"The saved authenticator cannot be opened",
+		"CARETAKARR_SECRET_KEY is missing or different from when it was set up. Restore the old key, use a backup code, or run caretakarr 2fa-reset."}},
 	{"multiple a records", explained{"More than one A record has this name",
 		"Delete the extra records in Cloudflare so only one is left, then press Resync."}},
 	{"invalid access token", explained{"Cloudflare rejected the API token",
@@ -138,6 +144,10 @@ var helpSections = []helpSection{
 	{"sites", "Sites, domains and ports", `
 <p>A <strong>domain</strong> is the Cloudflare zone, such as <code>example.com</code>. A <strong>site</strong> is one address under it, such as <code>oc.example.com</code>. Use <strong>Add site</strong>: it finds the zone and adds the domain for you the first time.</p>
 <p>The <strong>backend port</strong> is the port your app listens on and differs for every app. It is not 443; Caddy provides HTTPS in front of it. The DNS record points at this server, not at the backend, so the backend can be on another machine.</p>`},
+	{"sign-in", "Sign-in security", `
+<p>Under <strong>Security</strong> you can add an <strong>authenticator app</strong> (a 6-digit code after the password) and <strong>passkeys</strong> (sign in with your fingerprint, face or device PIN instead of the password). A passkey sign-in counts as full two-factor, so it asks for no code. Passkeys work only on the HTTPS address, or on <code>localhost</code>.</p>
+<p>If you lose your authenticator and passkeys, use a backup code. If those are gone too, run <code>docker compose run --rm caretakarr caretakarr 2fa-reset</code>: it removes all of them and the password works alone again.</p>
+<p>Setting <code>TURNSTILE_SITE_KEY</code> and <code>TURNSTILE_SECRET</code> adds a Cloudflare Turnstile check to the password form on the HTTPS address. The recovery address (<code>UI_LISTEN</code>) skips it.</p>`},
 	{"certificates", "Certificates: wildcard or per host", `
 <p><strong>Wildcard</strong> (the default) gets one certificate for <code>*.example.com</code> that covers every site under the domain. New sites are instant, and the names of your sites stay out of public certificate logs.</p>
 <p><strong>Per host</strong> gets a separate certificate for each site, which is slower for each new site. A wildcard covers one level only: <code>oc.example.com</code> yes, <code>a.oc.example.com</code> no.</p>`},

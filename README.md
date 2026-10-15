@@ -66,6 +66,9 @@ scoped to the zones you want to manage. The same token is used for certificate i
 | `CARETAKARR_HOST_ZONE` | no | Cloudflare zone name for that record. Unset walks up the host's labels. |
 | `ACME_EMAIL` | yes | Let's Encrypt contact; a bare address. |
 | `ADMIN_PASSWORD` | no | Enables login. **Unset means the UI is open** (warning in the log and a red banner). |
+| `CARETAKARR_SECRET_KEY` | no | At least 32 characters (`openssl rand -hex 32`). Encrypts the authenticator-app seed in SQLite; without it that option is off. Back it up with `/data`: if it is lost, run `2fa-reset`. |
+| `REQUIRE_2FA` | no | `true`: a password login must be followed by an authenticator code, and a password-only session is limited to the Security page until one is set up. Needs `ADMIN_PASSWORD` and `CARETAKARR_SECRET_KEY`. |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | no | Both or neither. Adds a Cloudflare Turnstile check to the password form on `CARETAKARR_HOST`. The `UI_LISTEN` recovery address is exempt. Passkey and code steps have no widget. |
 | `ACME_STAGING` | no | `true` uses the Let's Encrypt staging CA. |
 | `ACME_PROPAGATION_DELAY`, `ACME_PROPAGATION_TIMEOUT` | no | DNS-01 tuning, e.g. `2m` / `10m`. Unset uses Caddy's defaults. |
 | `ACME_RESOLVERS` | no | Default `1.1.1.1,8.8.8.8`. |
@@ -77,6 +80,8 @@ scoped to the zones you want to manage. The same token is used for certificate i
 ## Warnings
 
 **`UI_LISTEN` is a recovery hatch, not a default.** The UI listens on loopback and Caddy proxies `CARETAKARR_HOST` to it. If Caddy is broken you can set `UI_LISTEN=0.0.0.0:8080` and publish the port to fix things, but then the UI is reachable without TLS. Without `ADMIN_PASSWORD` that is a full authentication bypass. Remove it again afterwards.
+
+**Two-factor and passkeys.** With `ADMIN_PASSWORD` set, the Security page adds an authenticator app (with 10 one-time backup codes) and passkeys. A passkey sign-in skips the code. Passkeys work on `https://CARETAKARR_HOST` and on `localhost`, and are tied to that hostname: changing `CARETAKARR_HOST` makes existing ones unusable. Lost everything? `docker compose run --rm caretakarr caretakarr 2fa-reset` removes the authenticator, backup codes and passkeys (it needs only the data volume); restart afterwards to end open sessions.
 
 **The Docker socket is root on your host.** Mounting `/var/run/docker.sock` enables container discovery, and gives anything that can reach Caretakarr's UI the same power over Docker. Keep it off unless you need it, set `ADMIN_PASSWORD`, and prefer a read-only socket proxy such as [`tecnativa/docker-socket-proxy`](https://github.com/Tecnativa/docker-socket-proxy) (point `DOCKER_SOCKET` at its socket).
 

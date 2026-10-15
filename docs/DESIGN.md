@@ -400,3 +400,140 @@ Store gets `GetUIDNS` / `UpsertUIDNS` reusing the `DNSRecord` struct (`RouteID` 
 | A later need for public-IP records | low, accepted | The validator is one function; a switch would be additive |
 | Zone walk picks a parent zone the user did not intend | low | `CARETAKARR_HOST_ZONE` override; tried names shown on error |
 | Behavioral change for domains/routes (public IPs now rejected) | low | No installs yet; error message lists allowed ranges |
+
+## 17. Admin login hardening: TOTP, passkeys, Turnstile
+
+Source: brainstorm of 2026-10-15; modelled on `../gochatserver` (`service/totp.go`, `service/passkeys.go`, `service/turnstile.go`). Single admin, no users table. Everything is inert when `ADMIN_PASSWORD` is unset.
+
+### 17.1 Decisions
+| Topic | Decision |
+|---|---|
+| Passkey role | Passwordless alternative. A passkey login is a full session, no TOTP prompt. Password (+TOTP) stays as fallback. |
+| Storage | SQLite (migration `004_2fa.sql`). The env-only secrets rule covers operator secrets only (`CLOUDFLARE_API_TOKEN`, `ADMIN_PASSWORD`, `CARETAKARR_SECRET_KEY`, `TURNSTILE_SECRET`). Enrolled credentials live in the DB. |
+| TOTP seed | AES-256-GCM, key = HKDF-SHA256(`CARETAKARR_SECRET_KEY`). Backup codes: SHA-256 hex (high entropy, no bcrypt). Passkey public keys: plain. |
+| Turnstile | Opt-in. Password step only. Enforced only when the request `Host` equals `CARETAKARR_HOST`; the `UI_LISTEN` recovery listener (LAN IP / localhost Host) is exempt. |
+| Passkey RP | RP ID = hostname of the request `Host`, accepted only if it equals `CARETAKARR_HOST` or is `localhost`. Origin = `https://` or `http://` (localhost only) + `Host`, port included. No new env var. Deviation from the brainstorm ("from `CARETAKARR_HOST`" only): `localhost` is a secure context, so on-box recovery and e2e can use passkeys. |
+| Enforcement | `REQUIRE_2FA=true`: a password login without TOTP yields a *limited* session (only `/security`, `/logout`, static) until TOTP is confirmed. Passkey login is always full. Needs `ADMIN_PASSWORD` and `CARETAKARR_SECRET_KEY`, else startup fails. |
+| Recovery | Backup codes; `caretakarr 2fa-reset` wipes TOTP, backup codes, passkeys. It reads only `DATA_DIR`, not the full config. Run it with `docker compose run --rm` (a stopped or restarting container cannot `exec`). Sessions are stateless, so restart to drop live ones. |
+| Audit | `slog` only: event, method, never codes, seeds or tokens. |
+| Skipped | Passkey rename (delete and re-add), mobile handoff, API tokens, audit table, "recently verified" state. |
+
+### 17.2 Config (`internal/config`)
+| Env | Rule |
+|---|---|
+| `CARETAKARR_SECRET_KEY` | Optional, at least 32 chars. Unset: TOTP enrollment disabled in UI (hint explains); passkeys and Turnstile still work. |
+| `REQUIRE_2FA` | Bool. True needs `ADMIN_PASSWORD` and `CARETAKARR_SECRET_KEY`; error names the missing variable. |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | Both or neither; one alone fails startup naming the other. With no `ADMIN_PASSWORD`: warn, inert. |
+| `TURNSTILE_BASE_URL` | Test hook only (like `CLOUDFLARE_BASE_URL`): siteverify endpoint override. |
+
+### 17.3 Components
+```mermaid
+flowchart LR
+  Login[POST /login] --> T{Host == CARETAKARR_HOST<br/>and Turnstile on?}
+  T -->|yes| TV[turnstile.Verify]
+  T -->|no| PW
+  TV --> PW[checkPassword + attempt]
+  PW --> Q{TOTP enabled?}
+  Q -->|no, REQUIRE_2FA| Lim[limited session]
+  Q -->|no| Full[full session]
+  Q -->|yes| Pend[pending token<br/>in memory, 5 min, 5 tries]
+  Pend --> Code[POST /login/totp<br/>TOTP or backup code] --> Full
+  PK[POST /login/passkey/finish] --> Full
+  Lim --> Sec[/security: enroll TOTP/] --> Full
+```
+
+New code, all in existing packages unless noted:
+- `internal/secretbox` (new, ~40 lines): `Seal(key, plaintext)` / `Open(key, blob)`, random 12-byte nonce prepended, fixed AAD. Wrong key and tampering return an error.
+- `internal/web/turnstile.go`: port of gochat's `Turnstile.Verify`. Fails closed. Checks `success`, `action == "login"`, and `hostname == CARETAKARR_HOST` (always pinned). Client IP from `clientIP`.
+- `internal/web/totp.go`: `pquerna/otp/totp` (SHA1, 6 digits, 30 s, skew 1). Accepts a code only for a step greater than stored `last_step` (replay). Backup codes: 10 random codes shaped `xxxxx-xxxxx`, stored as SHA-256 hex, marked used atomically (`UPDATE ... WHERE used_at IS NULL`, check rows affected).
+- `internal/web/passkeys.go`: `go-webauthn/webauthn` built per request from the RP rule above. A `webauthn.User` adapter for the one admin: fixed handle `"caretakarr-admin"`, name `admin`, credentials loaded from the DB filtered by `rp_id`. Attestation `none`, resident key required, user verification required, existing credentials excluded on registration, cap 10. `CloneWarning` rejects and logs. Sign count, backup state and `last_used_at` persisted after each login.
+- `authn` (`auth.go`): `newCookie` takes a level (`full` or `enroll`); payload `exp` or `exp:e`, signed. `valid` returns the level. New in-memory maps behind the existing mutex: `pending` (token to expiry, tries) and `ceremonies` (id to `SessionData`, kind, expiry; capped at 64, expired entries swept on insert). Single use: `take` deletes on read. A restart drops both, which just restarts the login.
+- `protected(h)`: unchanged signature. Adds: level `enroll` may only reach `/security*`, `/logout`; anything else redirects to `/security`. `REQUIRE_2FA` is enforced by the cookie level, not by a DB query per request.
+- Throttle: reuse `attempt(ip)` with separate buckets: `ip` (password and TOTP step) and `pk:`+`ip` (passkey begin/finish).
+
+### 17.4 Data (`004_2fa.sql`)
+```sql
+CREATE TABLE totp (
+  id        INTEGER PRIMARY KEY CHECK (id = 1),
+  secret    BLOB NOT NULL,                       -- secretbox(nonce||ciphertext)
+  enabled   INTEGER NOT NULL DEFAULT 0,          -- 0 = pending confirmation
+  last_step INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE backup_codes (
+  code_hash TEXT PRIMARY KEY,
+  used_at   TEXT
+);
+CREATE TABLE passkeys (
+  id            TEXT PRIMARY KEY,                -- random hex
+  rp_id         TEXT NOT NULL,
+  credential_id BLOB NOT NULL UNIQUE,
+  credential    TEXT NOT NULL,                   -- go-webauthn Credential as JSON
+  name          TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  last_used_at  TEXT
+);
+```
+Store gets small methods on the existing `Store`: `GetTOTP/SaveTOTP/EnableTOTP/BumpTOTPStep/DeleteTOTP`, `ReplaceBackupCodes/UseBackupCode/CountBackupCodes`, `ListPasskeys/AddPasskey/UpdatePasskey/DeletePasskey`, `ResetAuth` (all three tables in one tx). Pending TOTP rows (`enabled=0`) are overwritten by the next enrollment attempt.
+
+### 17.5 Web
+| Route | Auth | Behaviour |
+|---|---|---|
+| `GET /login` | none | Password form; passkey button via `static/auth.js` when `PublicKeyCredential` exists and the request is HTTPS or localhost and at least one passkey for this RP exists; Turnstile widget (`data-action="login"`) when enforced. |
+| `POST /login` | none | Order: throttle, Turnstile (if enforced), password. Success: `HX-Redirect` to `/` (full), `/login/totp` (pending cookie `caretakarr_pending`, HttpOnly, SameSite Strict), or `/security` (limited). |
+| `GET/POST /login/totp` | pending | 6-digit code or backup code. Wrong: 401 plain text, tries decrement; at 0 the pending token dies. |
+| `POST /login/passkey/begin`, `/finish` | none | JSON via `fetch` (sends `HX-Request`, so CSRF middleware applies unchanged). Finish sets the full cookie. Every failure is one generic 401. |
+| `GET /security` | full or limited | TOTP status and enrollment, backup-code count, passkey list, add/delete. Limited sessions see only the TOTP section. |
+| `POST /security/totp/begin` | full or limited | Needs password. Stores pending seed, returns fragment with secret, `otpauth://` URI and a QR PNG data URI (`key.Image`, uses `boombuler/barcode`, already a dependency of `pquerna/otp`). |
+| `POST /security/totp/confirm` | full or limited | Valid code enables TOTP, creates backup codes, upgrades a limited cookie to full, answers 200 with the codes fragment, shown once. Deliberate exception to "mutating handlers answer 204": the codes cannot be redirected through. |
+| `POST /security/totp/disable`, `/security/backup-codes/regenerate` | full | Need password + current code. Disabled under `REQUIRE_2FA`. |
+| `POST /security/passkeys/begin`, `/finish`; `DELETE /security/passkeys/{id}` | full | Begin re-authenticates with password (+ code when TOTP is on). |
+| `POST /logout` | any | Unchanged. |
+
+All errors go through `fail()`; new hints, `statusHelp` and `errTable` entries in `help.go` (wrong password, wrong or used code, too many attempts, Turnstile failed, TOTP unreadable, passkey unsupported over plain HTTP, key not set). `help_test.go` guards them. `internal/web/static/auth.js`: embedded, no build step; native `PublicKeyCredential.parseCreationOptionsFromJSON` / `parseRequestOptionsFromJSON` / `toJSON()`, and `turnstile.reset()` after a failed login swap.
+
+### 17.6 CLI
+`caretakarr 2fa-reset`: opens `DATA_DIR/caretakarr.db` only (no `config.Load`, so it works without the other required env), calls `ResetAuth`, prints counts. Registered in `main` next to `import`.
+
+### 17.7 Edge cases
+- TOTP enabled but `CARETAKARR_SECRET_KEY` missing or wrong: startup logs an error (no crash loop). The TOTP step refuses codes with a message pointing at backup codes and `2fa-reset`; backup codes still work.
+- Host change: stored passkeys keep their old `rp_id`, are listed as "other host", and never match; deletable.
+- Passkey registered at `localhost` and one at the public host coexist.
+- Caddy must keep the original `Host` and set `X-Forwarded-For` toward the UI upstream (reverse_proxy defaults); an integration test pins this because both the Turnstile exemption and the throttle rely on it.
+- `REQUIRE_2FA` with only passkeys enrolled: password login still lands in a limited session. Deliberate: the password path always needs TOTP.
+- Turnstile token is single use: the widget resets after every failed submit.
+
+### 17.8 Test plan
+| Layer | Cases |
+|---|---|
+| `secretbox` | round trip; wrong key; flipped bit; short blob |
+| `config` | key length; `REQUIRE_2FA` without password or key; Turnstile one-of; booleans |
+| `store` | migration 004 on fresh and v3 DBs; one-row `totp`; backup code single use; `ResetAuth` empties all three |
+| `web` TOTP | enroll then login; wrong, replayed, expired and used-backup codes; pending token dies after 5 tries; disable needs password + code; limited session confined to `/security` then upgraded; unreadable seed path |
+| `web` Turnstile | httptest siteverify: missing token, `success:false`, wrong hostname, wrong action, network error all reject; Host `CARETAKARR_HOST` enforced; other Host exempt; unset env = off |
+| `web` passkeys | `descope/virtualwebauthn` full ceremonies: register, login without TOTP prompt, wrong origin, replayed or expired ceremony, sign-count regression, re-auth required, cap 10, other-RP credential ignored |
+| CLI | `2fa-reset` clears state and works without the other env vars |
+| e2e | Playwright CDP virtual authenticator: enroll passkey at `localhost`, log out, passkey login; TOTP enroll with a code computed in the spec (`otplib`), login, backup code login; widget not exercised (exempt Host) |
+| integration | Caddy-fronted request keeps `Host`; `X-Forwarded-For` reaches the UI |
+
+### 17.9 Dependencies and docs
+- Add `github.com/go-webauthn/webauthn` (v0.18.2 as in gochat; verify API with Context7), `github.com/pquerna/otp` (v1.5.0); test-only `github.com/descope/virtualwebauthn`. Check licenses and credit them in `NOTICE`.
+- Update `docs/REQUIREMENTS.md` item 11, the `CLAUDE.md` secrets rule and required/optional env list, and the README env table.
+
+### 17.10 Risks
+| Risk | Level | Mitigation |
+|---|---|---|
+| Recovery listener exposed beyond the LAN bypasses Turnstile (spoofed or IP `Host`) | moderate, accepted | Password throttle and TOTP still apply; docs say keep `UI_LISTEN` on loopback/LAN |
+| Cloudflare outage blocks password login | moderate | Passkey login unaffected; unsetting the env restores password login |
+| Lost `CARETAKARR_SECRET_KEY` | moderate | `2fa-reset`; docs say back it up with `/data` |
+| `Host` header drives RP ID | low | Whitelisted to `CARETAKARR_HOST` or `localhost` |
+| New attack surface on unauthenticated endpoints (passkey begin allocates state) | low | Cap of 64 ceremonies, TTL 5 min, per-IP bucket |
+| Stateless sessions cannot be revoked individually | low, accepted | Restart; non-goal |
+
+### 17.11 Slices (for `/sc:workflow`)
+1. `secretbox` + config additions.
+2. Turnstile verify + login wiring.
+3. Migration 004 + store methods + `2fa-reset`.
+4. TOTP: enroll, login step, backup codes, cookie levels, `REQUIRE_2FA`.
+5. Passkeys: registration, login, `auth.js`.
+6. Docs, `NOTICE`, help text, e2e.

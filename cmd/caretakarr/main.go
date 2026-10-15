@@ -35,8 +35,13 @@ import (
 
 func main() {
 	cmd := run
-	if len(os.Args) > 1 && os.Args[1] == "import" {
-		cmd = func() error { return runImport(os.Args[2:], os.Stdout) }
+	if len(os.Args) > 1 {
+		switch os.Args[1] {
+		case "import":
+			cmd = func() error { return runImport(os.Args[2:], os.Stdout) }
+		case "2fa-reset":
+			cmd = func() error { return runReset(os.Stdout) }
+		}
 	}
 	if err := cmd(); err != nil {
 		slog.Error("caretakarr failed", "error", err)

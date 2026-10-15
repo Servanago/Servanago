@@ -26,6 +26,7 @@ func newServer(t *testing.T, password string) *Server {
 type req struct {
 	method, path, body string
 	peer               string
+	host               string // default caretakarr.example.com
 	hdr                map[string]string
 	cookies            []*http.Cookie
 }
@@ -36,6 +37,9 @@ func (s *Server) do(r req) *httptest.ResponseRecorder {
 	}
 	hr := httptest.NewRequest(r.method, r.path, strings.NewReader(r.body))
 	hr.Host = "caretakarr.example.com"
+	if r.host != "" {
+		hr.Host = r.host
+	}
 	if r.peer != "" {
 		hr.RemoteAddr = r.peer
 	} else {

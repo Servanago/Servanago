@@ -1,0 +1,17 @@
+{{define "content"}}
+<div class="login-box">
+<div class="login-brand">
+<img src="/static/caretakarr-mark.svg" alt="" width="86" height="96">
+<span class="wordmark">Care<b>takarr</b></span>
+</div>
+<article>
+<h1>Second factor</h1>
+<form hx-post="/login/totp" hx-target="#msg">
+<input type="text" name="code" placeholder="Code" aria-label="Code" autocomplete="one-time-code" autocapitalize="none" spellcheck="false" autofocus required>
+{{hint "totp_code"}}
+<button type="submit">Verify</button>
+<p id="msg" role="alert"></p>
+</form>
+</article>
+</div>
+{{end}}

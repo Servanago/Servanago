@@ -26,6 +26,7 @@ export default defineConfig({
         ACME_EMAIL: 'e2e@example.com',
         ACME_STAGING: 'true',
         ADMIN_PASSWORD: 'e2e-pass',
+        CARETAKARR_SECRET_KEY: 'e2e-secret-key-0123456789abcdef-e2e',
         UI_LISTEN: UI,
         HTTP_PORT: '28080',
         HTTPS_PORT: '28443',

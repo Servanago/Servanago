@@ -116,3 +116,39 @@ func TestLoadOverrides(t *testing.T) {
 		t.Errorf("%+v", c)
 	}
 }
+
+func TestAuthHardeningConfig(t *testing.T) {
+	key := strings.Repeat("k", 32)
+	merge := func(kv ...string) map[string]string {
+		m := valid()
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return m
+	}
+	bad := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{"short key", merge("CARETAKARR_SECRET_KEY", "short"), "CARETAKARR_SECRET_KEY"},
+		{"require without password", merge("REQUIRE_2FA", "true", "CARETAKARR_SECRET_KEY", key), "ADMIN_PASSWORD"},
+		{"require without key", merge("REQUIRE_2FA", "true", "ADMIN_PASSWORD", "pw"), "CARETAKARR_SECRET_KEY"},
+		{"require not a bool", merge("REQUIRE_2FA", "yes please"), "REQUIRE_2FA"},
+		{"site key alone", merge("TURNSTILE_SITE_KEY", "s"), "TURNSTILE_SECRET"},
+		{"secret alone", merge("TURNSTILE_SECRET", "s"), "TURNSTILE_SITE_KEY"},
+	}
+	for _, c := range bad {
+		t.Run(c.name, func(t *testing.T) {
+			_, err := Load(env(c.env))
+			if err == nil || !strings.Contains(err.Error(), c.want) {
+				t.Fatalf("want error naming %s, got %v", c.want, err)
+			}
+		})
+	}
+	c, err := Load(env(merge("REQUIRE_2FA", "true", "ADMIN_PASSWORD", "pw", "CARETAKARR_SECRET_KEY", key,
+		"TURNSTILE_SITE_KEY", "site", "TURNSTILE_SECRET", "sec", "TURNSTILE_BASE_URL", "http://x")))
+	if err != nil || !c.Require2FA || c.SecretKey != key || c.TurnstileSiteKey != "site" || c.TurnstileSecret != "sec" || c.TurnstileBaseURL != "http://x" {
+		t.Fatalf("%+v %v", c, err)
+	}
+}

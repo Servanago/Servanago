@@ -31,6 +31,11 @@ type Config struct {
 	CFBaseURL          string // test hook: point cloudflare-go at a mock (e2e); empty = real API
 	HTTPPort           int    // Caddy listen ports; default 80/443, overridable for unprivileged runs
 	HTTPSPort          int
+	SecretKey          string // seals TOTP seeds at rest; empty = TOTP enrollment off
+	Require2FA         bool
+	TurnstileSiteKey   string // both set = Turnstile on the password step
+	TurnstileSecret    string
+	TurnstileBaseURL   string // test hook: siteverify endpoint override; empty = Cloudflare
 }
 
 // Load reads configuration through getenv (os.Getenv in production) and reports every problem at once.
@@ -102,6 +107,33 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("ACME_STAGING: %q is not a boolean", v))
 		}
 		c.Staging = b
+	}
+	c.SecretKey = getenv("CARETAKARR_SECRET_KEY")
+	c.TurnstileSiteKey = strings.TrimSpace(getenv("TURNSTILE_SITE_KEY"))
+	c.TurnstileSecret = strings.TrimSpace(getenv("TURNSTILE_SECRET"))
+	c.TurnstileBaseURL = strings.TrimSpace(getenv("TURNSTILE_BASE_URL"))
+	if v := strings.TrimSpace(getenv("REQUIRE_2FA")); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("REQUIRE_2FA: %q is not a boolean", v))
+		}
+		c.Require2FA = b
+	}
+	if c.SecretKey != "" && len(c.SecretKey) < 32 {
+		errs = append(errs, errors.New("CARETAKARR_SECRET_KEY: must be at least 32 characters (try: openssl rand -hex 32)"))
+	}
+	if c.Require2FA && c.AdminPassword == "" {
+		errs = append(errs, errors.New("REQUIRE_2FA needs ADMIN_PASSWORD"))
+	}
+	if c.Require2FA && c.SecretKey == "" {
+		errs = append(errs, errors.New("REQUIRE_2FA needs CARETAKARR_SECRET_KEY"))
+	}
+	if (c.TurnstileSiteKey == "") != (c.TurnstileSecret == "") {
+		if c.TurnstileSiteKey == "" {
+			errs = append(errs, errors.New("TURNSTILE_SITE_KEY is required when TURNSTILE_SECRET is set"))
+		} else {
+			errs = append(errs, errors.New("TURNSTILE_SECRET is required when TURNSTILE_SITE_KEY is set"))
+		}
 	}
 	if c.CloudflareToken != "" && !cfToken.MatchString(c.CloudflareToken) {
 		errs = append(errs, errors.New("CLOUDFLARE_API_TOKEN: not a valid Cloudflare API token format (no quotes or braces)"))

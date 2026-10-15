@@ -68,7 +68,7 @@ func (s *Server) takeFlashes() []string {
 
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
-	for _, p := range []string{"dashboard", "login", "domains", "route", "site", "logs", "help"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "domains", "route", "site", "logs", "help"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/docker.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -76,7 +76,11 @@ func New(d Deps) *Server {
 	}
 	if d.Cfg.AdminPassword == "" {
 		slog.Warn("ADMIN_PASSWORD is not set: the web UI is open to anyone who can reach it")
+		if d.Cfg.TurnstileSecret != "" || d.Cfg.SecretKey != "" {
+			slog.Warn("2FA, passkeys and Turnstile are inactive while ADMIN_PASSWORD is unset")
+		}
 	}
+	s.warnUnreadableSeed()
 	return s
 }
 
@@ -97,6 +101,18 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /login", s.loginPage)
 	mux.HandleFunc("POST /login", s.loginSubmit)
 	mux.HandleFunc("POST /logout", s.logout)
+	mux.HandleFunc("GET /login/totp", s.loginTOTPPage)
+	mux.HandleFunc("POST /login/totp", s.loginTOTPSubmit)
+	mux.HandleFunc("POST /login/passkey/begin", s.passkeyLoginBegin)
+	mux.HandleFunc("POST /login/passkey/finish", s.passkeyLoginFinish)
+	mux.Handle("GET /security", s.security(s.securityPage, true))
+	mux.Handle("POST /security/totp/begin", s.security(s.totpBegin, true))
+	mux.Handle("POST /security/totp/confirm", s.security(s.totpConfirm, true))
+	mux.Handle("POST /security/totp/disable", s.security(s.totpDisable, false))
+	mux.Handle("POST /security/backup-codes", s.security(s.backupRegenerate, false))
+	mux.Handle("POST /security/passkeys/begin", s.security(s.passkeyRegisterBegin, false))
+	mux.Handle("POST /security/passkeys/finish", s.security(s.passkeyRegisterFinish, false))
+	mux.Handle("DELETE /security/passkeys/{id}", s.security(s.passkeyDelete, false))
 	mux.Handle("GET /{$}", s.protected(s.dashboard))
 	mux.Handle("GET /help", s.protected(s.helpPage))
 	mux.Handle("GET /status", s.protected(s.status))
