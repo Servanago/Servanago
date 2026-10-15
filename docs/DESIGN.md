@@ -537,3 +537,127 @@ All errors go through `fail()`; new hints, `statusHelp` and `errTable` entries i
 4. TOTP: enroll, login step, backup codes, cookie levels, `REQUIRE_2FA`.
 5. Passkeys: registration, login, `auth.js`.
 6. Docs, `NOTICE`, help text, e2e.
+
+## 18. Site access gate: magic-link auth for served routes
+
+Source: brainstorm of 2026-10-15, from the specs in `../caddy-access-gateway` (external forward-auth service). That design is superseded where it conflicts: no second binary, no YAML, no systemd unit, no Postmark, no separate DB, and sessions are not indefinite. What carries over: threat model (single-use hashed tokens, enumeration neutrality, open-redirect safety, fail-closed, host normalization) and its test lists. This protects *served sites*, not the Caretakarr UI; magic-link identities are fully decoupled from the admin login and grant no UI access.
+
+### 18.1 Decisions
+| Topic | Decision |
+|---|---|
+| Home | Embedded Caddy handler module in the Caretakarr binary (same pattern as `caddylog`): `internal/caddygate`, registered via `caddy.RegisterModule` in `init`, rendered JSON names it as a middleware. Gate checks read the same SQLite; no HTTP hop. |
+| Scope | Per route. `routes.gate_mode`: `''` (default, ungated), `'acl'` (allowlist of emails/email domains), `'open'` (any valid email, no allowlist). |
+| Gate location | Portal, form, verify all served by the gate module on the route's own host under `/_gate/*`. No portal subdomain, so no cookie ever needs scope beyond the route's host. |
+| Sessions | One identity row per email. The cookie value is the session secret — HKDF over `CARETAKARR_SECRET_KEY`, the email and the row's random nonce — and only its SHA-256 is stored (`token_hash`), so at rest nothing can mint the cookie but the row can still be revoked by deletion. Because the derivation is stable for a given (email, nonce), the same cookie works on every gated route the identity is allowed on. Requires `CARETAKARR_SECRET_KEY`; a gated route without it is refused at the form and flagged at startup (issuance fails closed, sessions still check). |
+| Session check | Cookie → SHA-256 → `token_hash` lookup → not expired → identity holds a live grant for this host (ACL grant or `open` route) → bump sliding window and pass. Never key any cache by route id alone (rowid reuse rule). |
+| Sliding TTL | Per mode: ACL grants renew the window to 30 days, open routes to 7 days. `expire` is recomputed on every passing check with the granting route's mode window. Expired rows are deleted at check time. |
+| ACL edit | Inside the same `Mutate` tx: shrinking a route's ACL deletes identities whose last live grant was on this route (auto-revoke). Unchanged sessions never lose access for grant survives. |
+| Magic links | Opaque 256-bit token, URL path form `/_gate/verify/<token>`; only the SHA-256 stored with host, 15 min expiry, consumed atomically (`UPDATE ... SET consumed_at WHERE token_hash=? AND consumed_at IS NULL`, check rows affected) before the session is minted. Never logged. |
+| Enumeration | Identical "check your email" response whether or not the email has a grant. ACL lookup happens before sending; nothing in the response varies. |
+| Email | Generic SMTP via stdlib `net/smtp` (TLS): host, port, user, password, `MAIL FROM` all env-only (`SMTP_*`), so the operator-secrets rule holds. One app-wide setting shared by all gated routes. Sending failure = generic response anyway; a token row exists but no session was minted, and the request already counted against rate limits. |
+| Rate limits | In-memory, same shape as `authn`: per-IP request bucket (default 20/h), per-email (5/h), per-IP token attempts (30/h). Time-windowed, no permanent lockout. |
+| Fail closed | Store error in the gate handler → 503, never `next`. No session → portal or 403, never the upstream. |
+| Security | Cookie `caretakarr_gate`: HttpOnly, SameSite Lax (verify arrives via link from email), `Secure` when the request came in over TLS, host-scoped `Path=/`. No JS on gate pages, plain HTML forms; the gate's `POST /_gate/request` changes no state beyond an in-memory-counted token row, so no CSRF token (documented). html/template auto-escaping everywhere; `fail()`/plain-language errors per house rule. |
+| Non-goals | No logout link (revocation is the operator's, or let it slide), no per-token audit table (slog events only), no UI for editing ACLs outside the route form, no SMTP settings in SQLite. |
+
+### 18.2 Config (`internal/config`)
+| Env | Rule |
+|---|---|
+| `ACME_ISSUER` | Optional: `internal` switches the whole render to Caddy's internal CA (self-signed; offline setups and e2e). Unset = Let's Encrypt. |
+| `SMTP_HOST` | Hostname of the submission server. Empty = gate feature inert. |
+| `SMTP_PORT` | Default `587`. |
+| `SMTP_USER`, `SMTP_PASS` | Credentials for the submission server (`SMTP_PASS` is a secret: env-only). |
+| `MAIL_FROM` | Bare address (like `ACME_EMAIL`), validated the same way. |
+
+All optional. Creating or enabling a gated route with `SMTP_HOST`/`MAIL_FROM` or `CARETAKARR_SECRET_KEY` unset fails at the form with a help-text error naming the env vars; if the environment changes after a gated route exists, issuance fails closed (logged, plain refusal page) — config still loads, no crash loop.
+
+### 18.3 Components
+```mermaid
+flowchart LR
+  Req[GET gated host/path] --> G[caretakarr_gate handler]
+  G -->|store error| F503[503 fail closed]
+  G -->|valid session,<br/>live grant| N[next: allowlist, basic auth, proxy]
+  G -->|no session| Gate[/_gate/request form]
+  Gate --> P1[POST /_gate/request] --> A{acl: grant?/open} -->|no/any| G2[identical check-email page]
+  A -->|acl yes| Tok[token row + SMTP send] --> G2
+  M[GET /_gate/verify/&#60;token&#62;] --> V{hash found,<br/>not consumed,<br/>not expired,<br/>host matches} -->|yes| S[upsert identity,<br/>set cookie<br/>host-scoped] --> R[redirect /]
+  V -->|no| Dead[expired or invalid page]
+```
+
+New packages, all following the `caddylog` module pattern:
+- `internal/caddygate` (new): the handler module, ID `caddy.http.handlers.caretakarr_gate`, config `{host: "<route host>", mode: "acl"|"open"}` (rendered from the DB, so the host the config pins is the one the DB says). Package-level `var Service atomic.Value` set by `main` before the first `caddy.Load` (like `caddylog.Sink`); holds the store handle, TTL windows, mailer and limiter. `ServeHTTP` implements everything above. Reserved paths: `GET/POST /_gate/request`, `GET /_gate/verify/{token}`, everything else falls through to `next`.
+- `internal/caddycfg/render.go`: when `r.GateMode` is set, the subroute's first route entry is the gate middleware (`{"handler": "caretakarr_gate", "host": ..., "mode": ...}`), terminal false, ahead of the allowlist/basic-auth/proxy chain so all of them must pass. Existing non-gated goldens do not change; two new golden files (`acl`, `open`).
+- `internal/store`: `Route.GateMode`, `routeCols` and `CreateRoute/UpdateRoute/scanRoute` gain the column. New methods: `SetGateMode/GetGateMode` on routes, `GrantList/SetGrants(GetGrantsByRoute, AddGrant, RemoveGrant)`, `IdentityUpsert (from verify)`, `SessionValid(tokenHash) (ok, mode)`, `TouchSession(tokenHash, window)`, `DeleteIdentity(email)`, `IdentitiesForSecurity(email, grants, last_seen views)`, `IssueToken/ConsumeToken` (atomic), `PruneExpired`.
+- Matching helper in `internal/gatelogic` (small, pure): `normalizeHost`, `grantsAllow(grants, email)`, TTL windows; fully unit-tested.
+- `internal/web`: route form gains a protection section (mode select; ACL textarea, one entry per line, unambiguous `alice@example.com` exact / `@example.com` domain, validated on submit: non-@ lines must parse as addresses, @ lines must carry a valid domain); parse/save wired through `applyControls` and the `Mutate` overlay pattern like every other route field. Security page: gate section listing identities (email, grants, last seen, expire) with revoke-all-for-email; route rows show a gate badge. All new hints/statuses through `help.go`.
+- `internal/smtpx` (new, ~60 lines): tiny `Mailer` interface `Send(to, subject, body)`, stdlib `net/smtp` implementation, test hook `SMTP_BASE_URL`-style override not needed — tests inject a fake `Mailer` through the registry; only e2e needs a real SMTP target.
+
+### 18.4 Data (`005_site_access.sql`)
+```sql
+ALTER TABLE routes ADD COLUMN gate_mode TEXT NOT NULL DEFAULT '';
+CREATE TABLE gate_grants (
+  route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+  mode     TEXT NOT NULL CHECK (mode IN ('email', 'domain')),
+  value    TEXT NOT NULL,
+  UNIQUE (route_id, mode, value)
+);
+CREATE TABLE gate_identities (
+  email      TEXT PRIMARY KEY,
+  token_hash TEXT NOT NULL UNIQUE,     -- SHA-256 of the session cookie value
+  created_at TEXT NOT NULL,
+  last_seen  TEXT NOT NULL,
+  expire     TEXT NOT NULL             -- sliding window recomputed per check
+);
+CREATE TABLE gate_tokens (
+  token_hash  TEXT PRIMARY KEY,        -- SHA-256 of the magic-link token
+  host        TEXT NOT NULL,           -- verify is host-pinned
+  email       TEXT NOT NULL,
+  created_at  TEXT NOT NULL,
+  expires_at  TEXT NOT NULL,
+  consumed_at TEXT
+);
+```
+Deleting a route cascades its grants; identities survive (an email may still hold grants elsewhere).
+
+### 18.5 Web and flow
+The route form's protection section only exists when the route is enabled; disabling a gated route ungates silently (Caddy never sees the route). `POST /routes`/`PUT /routes/{id}` keep the 204+`HX-Redirect` contract. The gate pages are plain Go templates rendered by `caddygate` (no htmx, no UI session, no flash machinery) — `text/html` with the same brand tokens is enough.
+
+### 18.6 Edge cases
+- Gate + allowlist on one route: both apply (gate middleware passes only valid sessions, then the 403 static handler still blocks disallowed IPs; order does the composition).
+- Gate + basic auth: both pass; basic-auth browsers additionally answer to Caddy. Documented combination, not tested against real deployments — e2e covers gate alone.
+- Route renamed: the rendered `host` config changes via `Mutate`; old magic tokens stay host-pinned and now check against the old host, so they fail (page says expired).
+- Route deleted mid-login: grants cascade away; a token row verifies but no grant exists at check time, so the identity is minted and immediately invalid for that host — harmless dead row for 7/30 days.
+- `open` route + spam: the enumeration-neutral page always shows, but tokens are only generated for parseable emails and rate caps apply per IP.
+- The Caretakarr UI host can never be gated (`checkRoute` already refuses it), and the reserved `/_gate` path belongs to the gate module only, so no interaction with UI routes.
+- Caddy reloads (route edits unrelated to the gate) rebuild the gate handler instances; session cookies keep working because state is the DB, not the module instance.
+
+### 18.7 Test plan
+| Layer | Cases |
+|---|---|
+| `gatelogic` (pure) | host normalize (case, trailing dot); grants-allow matrix (exact email, domain rule, mixed, unauthorized); TTL windows per mode |
+| `store` | migration 005 on fresh and v4 DBs; identity upsert; token consume is exactly-once (concurrent test); sliding expire moves only on passing checks; ACL-shrink prune keeps sessions with a surviving grant; delete route cascades grants, keeps identities |
+| `caddycfg` | golden JSON for `gate_mode='acl'` and `'open'`; gate middleware ordered before basic-auth and allowlist entries; ungated routes byte-identical to current goldens |
+| `caddygate` | in-process Caddy + httptest upstream (serial package pattern): unauthenticated gets the form, never the upstream; magic-link round trip with the fake mailer; cookie honored on the second visit; expired/used/foreign-host token → expired page, no session; wrong-host cookie → portal; store failure → 503 upstream never reached; open mode accepts any parseable email without a grant |
+| `web` | route form: ACL textarea lines validated (`@example.com` domain, malformed lines rejected with help text), mode switch shown/hidden in UI; gate badge; identity revoke deletes the row; grants edit auto-revokes orphans |
+| e2e | one spec, unique domain: enable gate `open` on a route via the form; visit host → form; submit email → SMTP capture (tiny SMTP sink in the e2e harness) → verify link → redirected in; content loads; operator sees identity in Security and revokes; content is gated again |
+| housekeeping | no real SMTP anywhere in tests; `make check` gate per slice |
+
+### 18.8 Dependencies and docs
+- No new Go dependencies: stdlib `net/smtp`, `net/mail`, `crypto/sha256`; no `NOTICE` change.
+- `docs/REQUIREMENTS.md` gains the site-access-gate item; README gets the SMTP env rows; `help.go` first-use hints.
+
+### 18.9 Risks
+| Risk | Level | Mitigation |
+|---|---|---|
+| Gate handler in the hot path adds a DB read per request | low | modernc SQLite with WAL and one small hashed lookup; staging traffic is tiny; revisit with an in-process cache of valid hashes if it ever matters |
+| Token in URL leaks (referer, browser history) | low, accepted | single-use, 15 min, consumed in one GET; no access log ships request paths (the ring holds app logs only); page loads no off-host resources |
+| Shared token value across hosts is a bearer credential | low, accepted | staging threat model; operator revocation is instant, sliding TTL bounds exposure |
+| e2e needs a real SMTP dialogue from the harness | moderate | the mailer is interface-injected; the e2e hook is a ~50-line TS SMTP sink or a plain HTTP "capture" endpoint behind a test hook env var, whichever is smaller |
+| SMTP outage silently denies legit users (fail closed) | moderate, accepted | startup banner names the problem; route form validates configured SMTP before offering the gate |
+
+### 18.10 Slices (for `/sc:workflow`)
+1. Migration 005 + `Route.GateMode` + store methods (grants, identities, tokens) — store tests first.
+2. `gatelogic` matching + token issue/consume + sliding TTL — pure logic, table-driven.
+3. `caddycfg` golden goldens for gate modes + `caddygate` pass/guard + in-process Caddy integration tests.
+4. Web: route form section + ACL editor + validation + Security page gate section + help text.
+5. SMTP mailer + portal pages + full flow + e2e + docs (REQUIREMENTS, README env table).

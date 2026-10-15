@@ -40,7 +40,10 @@ type cfFake struct {
 }
 
 // domainServer returns an open-mode server wired to a fake Cloudflare.
-func domainServer(t *testing.T, cf *cfFake) *Server {
+func domainServer(t *testing.T, cf *cfFake) *Server { return cfgServer(t, cf, config.Config{}) }
+
+// cfgServer is domainServer with an arbitrary config (the gate tests need SMTP + secret set).
+func cfgServer(t *testing.T, cf *cfFake, cfg config.Config) *Server {
 	t.Helper()
 	cf.dns = cftest.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -68,7 +71,7 @@ func domainServer(t *testing.T, cf *cfFake) *Server {
 	client := cfdns.New("tok", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
 	mon := probe.NewMonitor(st, "127.0.0.1:1")
 	mon.Dial = func(context.Context, string, time.Duration) error { return errors.New("refused") } // never touch the real network
-	return New(Deps{Cfg: config.Config{}, Store: st, Apply: txApplier{st}, CF: client, DNS: dnssync.New(client, st),
+	return New(Deps{Cfg: cfg, Store: st, Apply: txApplier{st}, CF: client, DNS: dnssync.New(client, st),
 		Probe: mon})
 }
 

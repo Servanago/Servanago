@@ -28,8 +28,9 @@ type Route struct {
 	BasicUser     string
 	BasicHash     string // bcrypt
 	Preset        string
-	Stream        bool  // no response buffering (flush_interval -1)
-	MaxBody       int64 // request body limit in bytes; 0 = Caddy default
+	Stream        bool   // no response buffering (flush_interval -1)
+	MaxBody       int64  // request body limit in bytes; 0 = Caddy default
+	GateMode      string // "" | acl | open: the magic-link gate (gate.go)
 }
 
 type DNSRecord struct {
@@ -102,21 +103,21 @@ func (s *Store) DeleteDomain(ctx context.Context, id int64) error {
 }
 
 const routeCols = "id, domain_id, subdomain, scheme, upstream_host, upstream_port, tls_skip_verify, enabled, " +
-	"COALESCE(record_ip,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), COALESCE(preset,''), stream, max_body"
+	"COALESCE(record_ip,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), COALESCE(preset,''), stream, max_body, gate_mode"
 
 func scanRoute(r interface{ Scan(...any) error }) (Route, error) {
 	var x Route
 	err := r.Scan(&x.ID, &x.DomainID, &x.Subdomain, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.TLSSkipVerify,
-		&x.Enabled, &x.RecordIP, &x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Preset, &x.Stream, &x.MaxBody)
+		&x.Enabled, &x.RecordIP, &x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Preset, &x.Stream, &x.MaxBody, &x.GateMode)
 	return x, err
 }
 
 func (s *Store) CreateRoute(ctx context.Context, r Route) (Route, error) {
 	res, err := s.q.ExecContext(ctx, `INSERT INTO routes (domain_id, subdomain, scheme, upstream_host, upstream_port,
-		tls_skip_verify, enabled, record_ip, allowlist, basic_user, basic_hash, preset, stream, max_body)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		tls_skip_verify, enabled, record_ip, allowlist, basic_user, basic_hash, preset, stream, max_body, gate_mode)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.DomainID, r.Subdomain, r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled,
-		nullStr(r.RecordIP), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), nullStr(r.Preset), r.Stream, r.MaxBody)
+		nullStr(r.RecordIP), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), nullStr(r.Preset), r.Stream, r.MaxBody, r.GateMode)
 	if err != nil {
 		return Route{}, fmt.Errorf("create route %s: %w", r.Subdomain, err)
 	}
@@ -152,9 +153,9 @@ func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
 
 func (s *Store) UpdateRoute(ctx context.Context, r Route) error {
 	_, err := s.q.ExecContext(ctx, `UPDATE routes SET subdomain=?, scheme=?, upstream_host=?, upstream_port=?,
-		tls_skip_verify=?, enabled=?, record_ip=?, allowlist=?, basic_user=?, basic_hash=?, preset=?, stream=?, max_body=? WHERE id=?`,
+		tls_skip_verify=?, enabled=?, record_ip=?, allowlist=?, basic_user=?, basic_hash=?, preset=?, stream=?, max_body=?, gate_mode=? WHERE id=?`,
 		r.Subdomain, r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled, nullStr(r.RecordIP),
-		r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), nullStr(r.Preset), r.Stream, r.MaxBody, r.ID)
+		r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), nullStr(r.Preset), r.Stream, r.MaxBody, r.GateMode, r.ID)
 	if err != nil {
 		return fmt.Errorf("update route %d: %w", r.ID, err)
 	}

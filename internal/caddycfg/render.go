@@ -75,7 +75,7 @@ func Render(st State, o Options) ([]byte, error) {
 	routes := []any{hostMatch(o.UIHost, m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": o.UIUpstream}}})}
 	perHost := map[int64][]string{}
 	for _, x := range hr {
-		h, err := routeHandler(x.r)
+		h, err := routeHandler(x.host, x.r)
 		if err != nil {
 			return nil, err
 		}
@@ -150,7 +150,7 @@ func issuer(o Options) m {
 	return i
 }
 
-func routeHandler(r store.Route) (any, error) {
+func routeHandler(host string, r store.Route) (any, error) {
 	proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
 	if r.Scheme == "https" {
 		tls := m{}
@@ -166,11 +166,14 @@ func routeHandler(r store.Route) (any, error) {
 	if r.MaxBody > 0 {
 		handlers = []any{m{"handler": "request_body", "max_size": r.MaxBody}, proxy}
 	}
-	if r.Allowlist == "" && r.BasicUser == "" && len(handlers) == 1 {
+	if r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(handlers) == 1 {
 		return proxy, nil
 	}
 
 	var sub []any
+	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
+		sub = append(sub, m{"handle": []any{m{"handler": "caretakarr_gate", "host": host, "mode": r.GateMode, "route_id": r.ID}}})
+	}
 	if cidrs := strings.Fields(r.Allowlist); len(cidrs) > 0 {
 		sub = append(sub, m{
 			"match":    []any{m{"not": []any{m{"remote_ip": m{"ranges": cidrs}}}}},

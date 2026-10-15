@@ -7,11 +7,16 @@ const UI = '127.0.0.1:28081';
 export default defineConfig({
   testDir: './tests',
   workers: 1,
-  use: { baseURL: `http://${UI}` },
+  use: { baseURL: `http://${UI}`, launchOptions: { args: ['--host-resolver-rules=MAP *.gate.example.test 127.0.0.1'] } },
   webServer: [
     {
       command: 'bun cf-mock.ts',
       url: 'http://127.0.0.1:28099/user/tokens/verify',
+      reuseExistingServer: false,
+    },
+    {
+      command: 'bun smtp-mock.ts',
+      url: 'http://127.0.0.1:28098/ping',
       reuseExistingServer: false,
     },
     {
@@ -31,6 +36,12 @@ export default defineConfig({
         HTTP_PORT: '28080',
         HTTPS_PORT: '28443',
         DATA_DIR: './data',
+        ACME_ISSUER: 'internal',
+        SMTP_HOST: '127.0.0.1',
+        SMTP_PORT: '28097',
+        MAIL_FROM: 'e2e@example.com',
+        SMTP_USER: '',
+        SMTP_PASS: '',
       },
     },
   ],

@@ -35,6 +35,26 @@
 
 {{if not .Data.Limited}}
 <article>
+<h2>Site access sessions</h2>
+{{if .Data.GateIdentities}}
+<table>
+<thead><tr><th>Email</th><th>Grants</th><th>Last seen</th><th>Valid until</th><th></th></tr></thead>
+<tbody>
+{{range .Data.GateIdentities}}
+<tr><td>{{.Email}}</td><td>{{if .Rules}}{{.Rules}}{{else}}—{{end}}</td><td>{{.LastSeen}}</td><td>{{.Expire}}</td>
+<td><form hx-post="/security/gate/revoke" hx-target="#gate-msg" hx-confirm="Revoke {{.Email}}? Its access dies on every gated site at once.">
+<input type="hidden" name="email" value="{{.Email}}">
+<button type="submit" class="outline secondary">Revoke</button></form></td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p>None. Sites use magic-link access when their edit form asks for one.</p>{{end}}
+<p id="gate-msg" role="alert"></p>
+</article>
+{{end}}
+
+{{if not .Data.Limited}}
+<article>
 <h2>Passkeys</h2>
 {{if .Data.Passkeys}}
 <table>

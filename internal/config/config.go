@@ -36,6 +36,15 @@ type Config struct {
 	TurnstileSiteKey   string // both set = Turnstile on the password step
 	TurnstileSecret    string
 	TurnstileBaseURL   string // test hook: siteverify endpoint override; empty = Cloudflare
+	// Site access gate (§18). Optional: unset means ungated routes only. Secrets env-only.
+	SMTPHost string
+	SMTPPort int
+	SMTPUser string
+	SMTPPass string
+	MailFrom string
+	// ACME_ISSUER=internal switches the whole render to Caddy's internal CA (self-signed):
+	// used by e2e and offline setups; default "acme" is the production path.
+	Issuer string
 }
 
 // Load reads configuration through getenv (os.Getenv in production) and reports every problem at once.
@@ -112,6 +121,12 @@ func Load(getenv func(string) string) (Config, error) {
 	c.TurnstileSiteKey = strings.TrimSpace(getenv("TURNSTILE_SITE_KEY"))
 	c.TurnstileSecret = strings.TrimSpace(getenv("TURNSTILE_SECRET"))
 	c.TurnstileBaseURL = strings.TrimSpace(getenv("TURNSTILE_BASE_URL"))
+	c.SMTPHost = strings.TrimSpace(getenv("SMTP_HOST"))
+	c.SMTPPort = port("SMTP_PORT", 587)
+	c.SMTPUser = strings.TrimSpace(getenv("SMTP_USER"))
+	c.SMTPPass = getenv("SMTP_PASS")
+	c.MailFrom = strings.TrimSpace(getenv("MAIL_FROM"))
+	c.Issuer = strings.ToLower(strings.TrimSpace(getenv("ACME_ISSUER")))
 	if v := strings.TrimSpace(getenv("REQUIRE_2FA")); v != "" {
 		b, err := strconv.ParseBool(v)
 		if err != nil {
@@ -156,6 +171,20 @@ func Load(getenv func(string) string) (Config, error) {
 		if a, err := mail.ParseAddress(c.ACMEEmail); err != nil || a.Address != c.ACMEEmail {
 			errs = append(errs, fmt.Errorf("ACME_EMAIL: %q is not a bare email address", c.ACMEEmail))
 		}
+	}
+	if c.SMTPHost != "" && c.MailFrom == "" {
+		errs = append(errs, errors.New("MAIL_FROM is required when SMTP_HOST is set"))
+	}
+	if c.MailFrom != "" && c.SMTPHost == "" {
+		errs = append(errs, errors.New("SMTP_HOST is required when MAIL_FROM is set"))
+	}
+	if c.MailFrom != "" {
+		if a, err := mail.ParseAddress(c.MailFrom); err != nil || a.Address != c.MailFrom {
+			errs = append(errs, fmt.Errorf("MAIL_FROM: %q is not a bare email address", c.MailFrom))
+		}
+	}
+	if c.Issuer != "" && c.Issuer != "acme" && c.Issuer != "internal" {
+		errs = append(errs, fmt.Errorf("ACME_ISSUER: %q is acme or internal", c.Issuer))
 	}
 	if err := errors.Join(errs...); err != nil {
 		return Config{}, fmt.Errorf("invalid configuration: %w", err)

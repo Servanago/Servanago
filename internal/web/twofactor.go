@@ -218,13 +218,14 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 }
 
 type securityData struct {
-	Limited     bool // REQUIRE_2FA session that must enroll TOTP first
-	Require2FA  bool
-	HasKey      bool
-	TOTPEnabled bool
-	BackupLeft  int
-	PasskeysOK  bool // this request can use WebAuthn
-	Passkeys    []passkeyView
+	Limited        bool // REQUIRE_2FA session that must enroll TOTP first
+	Require2FA     bool
+	HasKey         bool
+	TOTPEnabled    bool
+	BackupLeft     int
+	PasskeysOK     bool // this request can use WebAuthn
+	Passkeys       []passkeyView
+	GateIdentities []gateIdentityView
 }
 
 func (s *Server) securityPage(w http.ResponseWriter, r *http.Request) {
@@ -241,6 +242,11 @@ func (s *Server) securityPage(w http.ResponseWriter, r *http.Request) {
 	left, _ := s.deps.Store.CountBackupCodes(ctx)
 	d := securityData{Limited: s.auth.level(r) == levelEnroll, Require2FA: s.deps.Cfg.Require2FA,
 		HasKey: s.deps.Cfg.SecretKey != "", TOTPEnabled: ok && t.Enabled, BackupLeft: left}
+	if gs, err := s.gateIdentitiesData(ctx); err == nil {
+		d.GateIdentities = gs
+	} else {
+		slog.Error("gate identities", "error", err)
+	}
 	if !d.Limited {
 		d.PasskeysOK = s.rpAllowed(r)
 		d.Passkeys, err = s.passkeyViews(r)

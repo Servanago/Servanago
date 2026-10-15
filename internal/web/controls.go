@@ -35,6 +35,14 @@ func applyControls(r *store.Route, v url.Values) error {
 	}
 	r.Allowlist = strings.Join(cidrs, "\n")
 
+	gate := strings.TrimSpace(v.Get("gate_mode"))
+	switch gate {
+	case "", "acl", "open":
+	default:
+		return fmt.Errorf("access mode %q is unknown: use none, acl or open", gate)
+	}
+	r.GateMode = gate
+
 	r.Stream, r.MaxBody = v.Get("stream") != "", 0
 	if s := strings.TrimSpace(v.Get("max_body")); s != "" {
 		n, err := config.ParseSize(s)

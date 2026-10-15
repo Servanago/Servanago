@@ -36,6 +36,9 @@ var hints = map[string]string{
 	"backup_codes":  "Each code works once if you lose your authenticator. Keep them somewhere safe; they are not shown again.",
 	"passkey_name":  "A label so you can tell your passkeys apart, such as Laptop or Phone.",
 	"secret_key":    "Authenticator codes are stored encrypted. Set CARETAKARR_SECRET_KEY (at least 32 characters, for example from openssl rand -hex 32) in .env and recreate the container to turn them on. Back it up with your data volume.",
+	"gate_mode":     "A magic link (sent by email, valid for 15 minutes and single-use) opens the site only after it is clicked. With the allowlist, only listed emails and @domain rules get a link; with any email, anyone with a working inbox can ask for one.",
+	"gate_acl":      "One rule per line: alice@example.com admits exactly that address; @contractor.example admits everyone at that domain. Rules are matched after lowering case; a session is shared between all gated sites that allow the address.",
+	"smtp_setup":    "Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and MAIL_FROM in .env and recreate the container. A gated site cannot send links until then.",
 }
 
 // statusHelp explains every status word and what to do next. Keys are kind:state.
@@ -157,7 +160,8 @@ var helpSections = []helpSection{
 	{"lan-only", "Private addresses only", `
 <p>Caretakarr only publishes <strong>private</strong> addresses: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, and 100.64-127.x.x (Tailscale). Your apps are reachable from your home network or tailnet, not from the open internet. Public addresses and IPv6 are not supported.</p>`},
 	{"access", "Limiting who can open a site", `
-<p>On a site's edit page you can limit it to certain networks (<strong>Allowed sources</strong>, for example <code>192.168.0.0/16</code> for your whole home network) and add a <strong>username and password</strong>. Everyone else gets an error. The password is stored only as a hash.</p>`},
+<p>On a site's edit page you can limit it to certain networks (<strong>Allowed sources</strong>, for example <code>192.168.0.0/16</code> for your whole home network) and add a <strong>username and password</strong>. Everyone else gets an error. The password is stored only as a hash.</p>
+<p><strong>Magic-link access</strong> goes one step further: after the allowlist (if you use one), the site asks for an email address and sends a single-use link. Sessions last 30 days with an allowlist, 7 days with any email, sliding: activity extends them. Revoke one identity under <strong>Security</strong> and its access dies on every gated site at once.</p>`},
 	{"troubleshooting", "Troubleshooting", ``}, // list is generated from errTable
 }
 

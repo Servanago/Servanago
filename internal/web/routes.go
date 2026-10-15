@@ -123,6 +123,8 @@ type routeForm struct {
 	Presets       []presets.Preset
 	DeleteConfirm string
 	Docker        dockerPanel
+	GateACL       string // textarea content for an existing ACL
+	MailOK        bool   // email delivery configured; the gate section is shown only then
 }
 
 // deleteConfirm tells the user exactly what deleting the route does to its A record.
@@ -152,7 +154,13 @@ func (s *Server) routeFormPage(w http.ResponseWriter, r *http.Request, rt store.
 		t, _ := dnsTargetOf(r, s.deps.Store, rt)
 		confirm = deleteConfirm(t)
 	}
-	form := routeForm{Route: rt, Edit: edit, Domains: ds, Presets: presets.All, DeleteConfirm: confirm}
+	form := routeForm{Route: rt, Edit: edit, Domains: ds, Presets: presets.All, DeleteConfirm: confirm,
+		MailOK: s.deps.Cfg.SMTPHost != "" && s.deps.Cfg.MailFrom != "" && s.deps.Cfg.SecretKey != ""}
+	if edit {
+		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {
+			form.GateACL = gateACLText(gs)
+		}
+	}
 	if !edit {
 		form.Docker = s.dockerPanel(r)
 	}
@@ -215,6 +223,11 @@ func (s *Server) createRoute(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	grants, err := s.parseGate(rt, r.PostForm)
+	if err != nil {
+		failErr(w, err)
+		return
+	}
 	var created store.Route
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		if err := s.checkRoute(r, tx, rt); err != nil {
@@ -222,7 +235,10 @@ func (s *Server) createRoute(w http.ResponseWriter, r *http.Request) {
 		}
 		var err error
 		created, err = tx.CreateRoute(r.Context(), rt)
-		return err
+		if err != nil {
+			return err
+		}
+		return tx.ReplaceGrants(r.Context(), created.ID, grants)
 	})
 	if err != nil {
 		failErr(w, err)
@@ -248,6 +264,11 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
+	grants, err := s.parseGate(in, r.PostForm)
+	if err != nil {
+		failErr(w, err)
+		return
+	}
 	var old dnsTarget
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		cur, err := tx.GetRoute(r.Context(), id)
@@ -259,13 +280,17 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 		cur.DomainID, cur.Subdomain, cur.Scheme = in.DomainID, in.Subdomain, in.Scheme
 		cur.UpstreamHost, cur.UpstreamPort = in.UpstreamHost, in.UpstreamPort
 		cur.TLSSkipVerify, cur.Enabled, cur.Preset, cur.RecordIP = in.TLSSkipVerify, in.Enabled, in.Preset, in.RecordIP
+		cur.GateMode = in.GateMode
 		if err := applyControls(&cur, r.PostForm); err != nil {
 			return err
 		}
 		if err := s.checkRoute(r, tx, cur); err != nil {
 			return err
 		}
-		return tx.UpdateRoute(r.Context(), cur)
+		if err := tx.UpdateRoute(r.Context(), cur); err != nil {
+			return err
+		}
+		return tx.ReplaceGrants(r.Context(), cur.ID, grants)
 	})
 	if err != nil {
 		failErr(w, err)

@@ -54,4 +54,9 @@ test('row actions share one line and show a tooltip', async ({ page }) => {
   expect(Math.abs(edit!.y - toggle!.y)).toBeLessThan(2);
   expect(Math.abs(toggle!.y - del!.y)).toBeLessThan(2);
   await expect(row.getByRole('button', { name: 'Delete', exact: true })).toHaveAttribute('data-tooltip', /Delete this site/);
+
+  // Shared server: take the route back out so later specs (checklist state) are unaffected.
+  await row.getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
+  await expect(page.getByRole('cell', { name: 'readarr.icons.example.net' })).toBeHidden();
 });

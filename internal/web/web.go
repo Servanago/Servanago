@@ -113,6 +113,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /security/passkeys/begin", s.security(s.passkeyRegisterBegin, false))
 	mux.Handle("POST /security/passkeys/finish", s.security(s.passkeyRegisterFinish, false))
 	mux.Handle("DELETE /security/passkeys/{id}", s.security(s.passkeyDelete, false))
+	mux.Handle("POST /security/gate/revoke", s.security(s.revokeGateIdentity, false))
 	mux.Handle("GET /{$}", s.protected(s.dashboard))
 	mux.Handle("GET /help", s.protected(s.helpPage))
 	mux.Handle("GET /status", s.protected(s.status))

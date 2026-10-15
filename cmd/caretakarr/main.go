@@ -23,12 +23,14 @@ import (
 
 	"github.com/caretakarr/caretakarr/internal/apply"
 	"github.com/caretakarr/caretakarr/internal/caddycfg"
+	"github.com/caretakarr/caretakarr/internal/caddygate"
 	"github.com/caretakarr/caretakarr/internal/caddylog"
 	"github.com/caretakarr/caretakarr/internal/cfdns"
 	"github.com/caretakarr/caretakarr/internal/config"
 	"github.com/caretakarr/caretakarr/internal/discovery"
 	"github.com/caretakarr/caretakarr/internal/dnssync"
 	"github.com/caretakarr/caretakarr/internal/probe"
+	"github.com/caretakarr/caretakarr/internal/smtpx"
 	"github.com/caretakarr/caretakarr/internal/store"
 	"github.com/caretakarr/caretakarr/internal/web"
 )
@@ -67,10 +69,20 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	issuer := caddycfg.ACME
+	if cfg.Issuer == "internal" { // ACME_ISSUER=internal: self-signed, used by e2e and offline setups
+		issuer = caddycfg.Internal
+	}
+	// The gate module reads SQLite directly in the Caddy request path; without an installed
+	// service every gated route fails closed with 503, never open.
+	caddygate.Install(caddygate.New(st, smtpx.Dialer{
+		Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass,
+	}, cfg.MailFrom, cfg.SecretKey, cfg.HTTPSPort))
 	svc := apply.New(st, caddycfg.Options{
 		UIHost: cfg.Host, UIUpstream: uiUpstream, Email: cfg.ACMEEmail, Staging: cfg.Staging,
 		HTTPPort: cfg.HTTPPort, HTTPSPort: cfg.HTTPSPort, StoragePath: filepath.Join(cfg.DataDir, "caddy"),
 		PropagationDelay: cfg.PropagationDelay, PropagationTimeout: cfg.PropagationTimeout, Resolvers: cfg.Resolvers,
+		Issuer: issuer,
 	})
 	if err := svc.Start(context.Background()); err != nil {
 		return err

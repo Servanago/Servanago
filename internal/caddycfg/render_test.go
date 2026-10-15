@@ -65,6 +65,9 @@ func TestRenderGolden(t *testing.T) {
 		{"per_host_empty", opts(), State{[]store.Domain{perHost}, nil}},
 		{"internal_issuer", internal, State{[]store.Domain{dom}, []store.Route{route}}},
 		{"banking_homelab", opts(), State{[]store.Domain{dom}, []store.Route{{ID: 1, DomainID: 1, Subdomain: "banking", Scheme: "http", UpstreamHost: "192.168.25.165", UpstreamPort: 8766, Enabled: true}}}},
+		{"gate_acl", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode = "acl" })}}},
+		{"gate_open", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode = "open" })}}},
+		{"gate_acl_allowlist", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode, r.Allowlist = "acl", "192.168.0.0/16" })}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
