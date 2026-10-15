@@ -29,7 +29,7 @@
   --ct-shadow-focus: 0 0 0 3px rgba(22, 199, 243, 0.24);
 }
 /* Pico scales the root up to 21px on wide screens; every rem size here follows this one value. */
-html { font-size: 87.5%; }
+html { font-size: 90.5%; }
 html, body {
   background: var(--ct-bg);
   color: var(--ct-text);
