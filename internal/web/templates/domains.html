@@ -1,36 +1,39 @@
 {{define "content"}}
 <h1>Domains {{helplink "sites"}}</h1>
-<p>A domain is a Cloudflare zone, such as <code>example.com</code>. You normally do not add one by hand: <a href="/sites/new">Add site</a> finds the zone and adds it for you. Use this page to see them, or to add one ahead of time.</p>
+{{with .Data}}
+{{if .DNSOn}}<p>A domain is a Cloudflare zone, such as <code>example.com</code>. You normally do not add one by hand: <a href="/sites/new">Add site</a> finds the zone and adds it for you. Use this page to see them, or to add one ahead of time.</p>
+{{else}}<p>A domain is the name your sites live under, such as <code>example.com</code>. Add it here before you add a site under it.</p>{{end}}
 <article>
-{{if .Data}}
+{{if .Rows}}
 <table>
-<thead><tr><th>Domain</th><th>Default IP</th><th>Certificates</th><th>Routes</th><th></th></tr></thead>
+<thead><tr><th>Domain</th>{{if .DNSOn}}<th>Default IP</th>{{end}}<th>Certificates</th><th>Routes</th><th></th></tr></thead>
 <tbody>
-{{range .Data}}
+{{range .Rows}}
 <tr>
-<td>{{.Name}}</td><td>{{.DefaultIP}}</td><td>{{.CertMode}}</td><td>{{.Routes}}</td>
-<td><button class="outline danger" hx-delete="/domains/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}? Its DNS records and certificates are not touched.">Remove</button></td>
+<td>{{.Name}}</td>{{if $.Data.DNSOn}}<td>{{.DefaultIP}}</td>{{end}}<td>{{.CertMode}}</td><td>{{.Routes}}</td>
+<td><button class="outline danger" hx-delete="/domains/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}? {{if $.Data.DNSOn}}Its DNS records and certificates are not touched.{{else}}Its certificates are not touched.{{end}}">Remove</button></td>
 </tr>
 {{end}}
 </tbody>
 </table>
-{{else}}<p>No domains yet. They appear here automatically when you add your first site.</p>{{end}}
+{{else}}<p>No domains yet. {{if .DNSOn}}They appear here automatically when you add your first site.{{else}}Add one below.{{end}}</p>{{end}}
 <p id="msg" role="alert"></p>
 </article>
 <article>
 <header>Add domain</header>
 <form hx-post="/domains" hx-target="#msg">
 <label>Domain <input name="name" placeholder="example.com" required></label>
-{{hint "domain"}}
-<label>Default IP for A records <input name="default_ip" placeholder="192.168.1.10" required></label>
+{{if .DNSOn}}{{hint "domain"}}{{else}}{{hint "domain_nodns"}}{{end}}
+{{if .DNSOn}}<label>Default IP for A records <input name="default_ip" placeholder="192.168.1.10" required></label>
 {{hint "default_ip"}} {{helplink "lan-only"}}
 <label>Certificates
 <select name="cert_mode">
 <option value="wildcard">Wildcard (one *.domain certificate)</option>
 <option value="per_host">Per host (one certificate per route)</option>
 </select></label>
-{{hint "cert_mode"}} {{helplink "certificates"}}
+{{hint "cert_mode"}} {{helplink "certificates"}}{{end}}
 <button type="submit">Add domain</button>
 </form>
 </article>
+{{end}}
 {{end}}

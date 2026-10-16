@@ -103,11 +103,15 @@ func TestChecklist(t *testing.T) {
 		t.Errorf("token bad: %s", got)
 	}
 
-	// UI host record only appears when SERVANAGO_HOST_IP is set up
+	// The UI address's DNS record item appears only with a host card (Cloudflare configured);
+	// its certificate item is always shown.
 	for _, it := range get() {
-		if strings.Contains(it.Label, "UI address") {
-			t.Error("host item shown without a configured host")
+		if strings.Contains(it.Label, "DNS record") {
+			t.Error("DNS record item shown without a host card")
 		}
+	}
+	if got := state(get(), "valid certificate"); got == "" {
+		t.Error("the UI address certificate item must show without DNS management")
 	}
 	for want, card := range map[string]*hostCard{
 		"ok":   {DNS: statusRecord("synced")},

@@ -21,7 +21,8 @@ import (
 )
 
 // runImport implements `servanago import [-dry-run] <Caddyfile>`. It writes SQLite and Cloudflare directly and
-// does not touch a running Caddy: stop the container first, then start it to serve the imported routes.
+// does not touch a running Caddy: stop the service first, then start it to serve the imported routes.
+// It needs Cloudflare (zone lookup and A records), so it refuses to run without CLOUDFLARE_API_TOKEN.
 func runImport(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
 	dry := fs.Bool("dry-run", false, "show what would be imported; change nothing")
@@ -34,6 +35,9 @@ func runImport(args []string, out io.Writer) error {
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return err
+	}
+	if !cfg.DNSEnabled() {
+		return errors.New("import looks up Cloudflare zones and creates DNS records: set CLOUDFLARE_API_TOKEN (and SERVANAGO_HOST_IP) first")
 	}
 	f, err := os.Open(fs.Arg(0))
 	if err != nil {

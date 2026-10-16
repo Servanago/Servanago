@@ -1,0 +1,77 @@
+{
+  "admin": {
+    "config": {
+      "persist": false
+    },
+    "disabled": true
+  },
+  "apps": {
+    "http": {
+      "http_port": 80,
+      "https_port": 443,
+      "servers": {
+        "srv0": {
+          "listen": [
+            ":443"
+          ],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "upstreams": [
+                    {
+                      "dial": "127.0.0.1:8080"
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "servanago.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "automation": {
+        "policies": [
+          {
+            "issuers": [
+              {
+                "email": "me@example.com",
+                "module": "acme"
+              }
+            ],
+            "subjects": [
+              "servanago.example.com"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "logging": {
+    "logs": {
+      "default": {
+        "encoder": {
+          "format": "json"
+        },
+        "level": "INFO",
+        "writer": {
+          "output": "servanago"
+        }
+      }
+    }
+  },
+  "storage": {
+    "module": "file_system",
+    "root": "/data/caddy"
+  }
+}

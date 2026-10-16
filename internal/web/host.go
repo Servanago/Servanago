@@ -27,6 +27,10 @@ func (s *Server) hostCard(ctx context.Context) *hostCard {
 
 func (s *Server) hostDNS(takeOver bool) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		if !s.dnsOn() {
+			http.NotFound(w, r)
+			return
+		}
 		ctx, cancel := detached(r)
 		defer cancel()
 		if err := s.deps.DNS.ReconcileHost(ctx, takeOver); err != nil {

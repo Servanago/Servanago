@@ -67,7 +67,10 @@ func (s *Server) domainsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "domains", http.StatusOK, page{Title: "Domains", Data: rows})
+	s.render(w, "domains", http.StatusOK, page{Title: "Domains", Data: struct {
+		Rows  []domainRow
+		DNSOn bool
+	}{rows, s.dnsOn()}})
 }
 
 func (s *Server) addDomain(w http.ResponseWriter, r *http.Request) {
@@ -76,25 +79,37 @@ func (s *Server) addDomain(w http.ResponseWriter, r *http.Request) {
 	mode := r.PostFormValue("cert_mode")
 	if mode == "" {
 		mode = "wildcard"
+		if !s.dnsOn() {
+			mode = "per_host"
+		}
 	}
 	if err := config.ValidateDomain(name); err != nil {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
-		return
-	}
-	if _, err := config.ValidateLANIP(ip); err != nil {
-		fail(w, http.StatusUnprocessableEntity, "default IP: "+err.Error())
 		return
 	}
 	if mode != "wildcard" && mode != "per_host" {
 		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("cert_mode %q must be wildcard or per_host", mode))
 		return
 	}
-	zone, err := s.deps.CF.ZoneID(r.Context(), name)
-	if err != nil {
-		fail(w, http.StatusUnprocessableEntity, err.Error())
-		return
+	zone := "" // without Cloudflare a domain has no zone, no default record IP, and certificates are per host
+	if s.dnsOn() {
+		if _, err := config.ValidateLANIP(ip); err != nil {
+			fail(w, http.StatusUnprocessableEntity, "default IP: "+err.Error())
+			return
+		}
+		var err error
+		if zone, err = s.deps.CF.ZoneID(r.Context(), name); err != nil {
+			fail(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+	} else {
+		ip = ""
+		if mode == "wildcard" {
+			fail(w, http.StatusUnprocessableEntity, "Wildcard certificates need Cloudflare DNS (set CLOUDFLARE_API_TOKEN). Use per_host, or leave the choice empty.")
+			return
+		}
 	}
-	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
+	err := s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		_, err := tx.CreateDomain(r.Context(), store.Domain{Name: name, ZoneID: zone, DefaultIP: ip, CertMode: mode})
 		return err
 	})

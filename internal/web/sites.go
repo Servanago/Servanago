@@ -14,6 +14,7 @@ type addSiteData struct {
 	Hostname, Host string
 	Port           int
 	ServerIP       string // where the A record will point; shown in the live preview
+	DNSOn          bool   // Cloudflare is configured; otherwise there is no DNS record to preview
 }
 
 // newSitePage supports prefill via ?hostname=&host=&port=.
@@ -21,7 +22,7 @@ func (s *Server) newSitePage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	port, _ := strconv.Atoi(q.Get("port"))
 	s.render(w, "site", http.StatusOK, page{Title: "Add site", Data: addSiteData{
-		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, ServerIP: s.deps.Cfg.HostIP}})
+		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, ServerIP: s.deps.Cfg.HostIP, DNSOn: s.dnsOn()}})
 }
 
 // addSite turns "oc.example.com -> 192.168.25.165:9200" into the managed domain (if new), the route and its A record.
@@ -63,6 +64,16 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 	zoneName := ""
 	if managed != nil {
 		zoneName = managed.Name
+	} else if !s.dnsOn() {
+		// No Cloudflare, so no zone lookup: the hostname can only belong to a domain added by hand.
+		for _, d := range domains {
+			if hostname == d.Name {
+				fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is a domain itself; use a subdomain such as app.%s", hostname, d.Name))
+				return
+			}
+		}
+		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("No domain matches %s. Add its domain (for example %s) on the Domains page first; without a Cloudflare token ServanaGo cannot look it up.", hostname, suggestDomain(hostname)))
+		return
 	} else {
 		if _, err := config.ValidateLANIP(s.deps.Cfg.HostIP); err != nil {
 			fail(w, http.StatusUnprocessableEntity, "SERVANAGO_HOST_IP: "+err.Error())
@@ -111,4 +122,12 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 	s.reconcile(r, created.ID)
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// suggestDomain is the hostname minus its first label: a hint for the "add the domain first" message, not a zone lookup.
+func suggestDomain(hostname string) string {
+	if _, rest, ok := strings.Cut(hostname, "."); ok && strings.Contains(rest, ".") {
+		return rest
+	}
+	return hostname
 }

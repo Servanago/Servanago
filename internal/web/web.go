@@ -81,8 +81,14 @@ func New(d Deps) *Server {
 	return s
 }
 
+// dnsOn reports whether Cloudflare is configured. Without it there is no zone lookup, no A-record sync and no DNS column.
+func (s *Server) dnsOn() bool { return s.deps.CF != nil && s.deps.DNS != nil }
+
 // VerifyToken checks the Cloudflare token once and records a failure for the UI banner.
 func (s *Server) VerifyToken(ctx context.Context) {
+	if !s.dnsOn() {
+		return
+	}
 	if err := s.deps.CF.VerifyToken(ctx); err != nil {
 		slog.Error("cloudflare token check failed", "error", err)
 		s.cfErr.Store(err.Error())
@@ -197,5 +203,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Host      *hostCard
 		Checklist []checkItem
 		SetupDone bool
-	}{domains, routes, host, items, setupDone(items)}})
+		DNSOn     bool
+	}{domains, routes, host, items, setupDone(items), s.dnsOn()}})
 }

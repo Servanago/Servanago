@@ -5,7 +5,7 @@
 <form hx-post="/sites" hx-target="#msg">
 <label>Hostname
 <input name="hostname" id="hostname" value="{{.Hostname}}" placeholder="oc.example.com" autocomplete="off" required></label>
-{{hint "hostname"}}
+{{if .DNSOn}}{{hint "hostname"}}{{else}}{{hint "hostname_nodns"}}{{end}}
 <fieldset>
 <legend>Backend: where Caddy forwards requests {{helplink "sites"}}</legend>
 <div class="grid">
@@ -41,9 +41,10 @@ function preview() {
   var h = $('hostname').value.trim(), host = field('upstream_host').value.trim(), port = $('upstream_port').value.trim();
   var out = $('preview');
   if (!h || !host || !port) { out.textContent = 'Fill in the hostname and backend to see what will be created.'; return; }
+  var dnsOn = {{if .DNSOn}}true{{else}}false{{end}};
   out.textContent = 'Visitors open https://' + h + '. Caddy forwards to ' + field('scheme').value + '://' + host + ':' + port +
-    '. ServanaGo creates (or keeps) a DNS record ' + h + ' pointing to ' + (out.dataset.serverIp || 'this server') +
-    ', and gets a certificate for it.';
+    (dnsOn ? '. ServanaGo creates (or keeps) a DNS record ' + h + ' pointing to ' + (out.dataset.serverIp || 'this server') + ', and gets a certificate for it.'
+           : '. ServanaGo gets a certificate for it. Point ' + h + ' at this server in your DNS yourself.');
 }
 ['hostname', 'upstream_port'].forEach(function (id) { $(id).addEventListener('input', preview); });
 ['upstream_host', 'scheme'].forEach(function (n) { field(n).addEventListener('input', preview); });

@@ -56,6 +56,7 @@ type routeRow struct {
 	Host   string
 	DNS    store.DNSRecord
 	HasDNS bool
+	DNSOn  bool // Cloudflare is configured; otherwise the DNS column and actions are hidden
 	// Probed is false for disabled routes: nothing is served, so nothing is checked.
 	Probed   bool
 	Upstream string // up | down
@@ -91,7 +92,7 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	rows := make([]routeRow, len(rs))
 	for i, x := range rs {
 		d, ok := byRoute[x.ID]
-		rows[i] = routeRow{Route: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: d, HasDNS: ok}
+		rows[i] = routeRow{Route: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: d, HasDNS: ok, DNSOn: s.dnsOn()}
 		rows[i].Probed = x.Enabled && s.deps.Probe != nil
 	}
 	// Probes wait on the network, so run them side by side; each goroutine writes only its own row.
@@ -119,6 +120,7 @@ type routeForm struct {
 	Edit          bool
 	Domains       []store.Domain
 	DeleteConfirm string
+	DNSOn         bool   // Cloudflare is configured; otherwise the DNS record fields are hidden
 	GateACL       string // textarea content for an existing ACL
 	MailOK        bool   // email delivery configured; the gate section is shown only then
 }
@@ -150,7 +152,7 @@ func (s *Server) routeFormPage(w http.ResponseWriter, r *http.Request, rt store.
 		t, _ := dnsTargetOf(r, s.deps.Store, rt)
 		confirm = deleteConfirm(t)
 	}
-	form := routeForm{Route: rt, Edit: edit, Domains: ds, DeleteConfirm: confirm,
+	form := routeForm{Route: rt, Edit: edit, Domains: ds, DeleteConfirm: confirm, DNSOn: s.dnsOn(),
 		MailOK: s.deps.Cfg.SMTPHost != "" && s.deps.Cfg.MailFrom != "" && s.deps.Cfg.SecretKey != ""}
 	if edit {
 		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {
@@ -352,6 +354,9 @@ func dnsTargetOf(r *http.Request, q *store.Store, rt store.Route) (dnsTarget, er
 }
 
 func (s *Server) reconcile(r *http.Request, routeID int64) {
+	if !s.dnsOn() {
+		return
+	}
 	ctx, cancel := detached(r)
 	defer cancel()
 	if err := s.deps.DNS.Reconcile(ctx, routeID); err != nil {
@@ -361,7 +366,7 @@ func (s *Server) reconcile(r *http.Request, routeID int64) {
 
 // removeRecord deletes the route's A record when ServanaGo owns it; failures become a one-time notice.
 func (s *Server) removeRecord(r *http.Request, t dnsTarget) {
-	if !t.hasRow {
+	if !s.dnsOn() || !t.hasRow {
 		return
 	}
 	ctx, cancel := detached(r)
@@ -380,6 +385,10 @@ func (s *Server) takeOverDNS(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) dnsAction(w http.ResponseWriter, r *http.Request, act func(context.Context, int64) error) {
+	if !s.dnsOn() {
+		http.NotFound(w, r)
+		return
+	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		fail(w, http.StatusBadRequest, "bad route id")

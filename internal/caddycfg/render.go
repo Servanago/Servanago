@@ -31,6 +31,7 @@ type Options struct {
 	HTTPPort, HTTPSPort int
 	StoragePath         string
 	Issuer              Issuer
+	HTTP01              bool          // no Cloudflare: default ACME challenges instead of DNS-01; wildcard domains render per host
 	PropagationDelay    time.Duration // 0 = omit
 	PropagationTimeout  time.Duration // 0 = omit
 	Resolvers           []string
@@ -80,7 +81,7 @@ func Render(st State, o Options) ([]byte, error) {
 			return nil, err
 		}
 		routes = append(routes, hostMatch(x.host, h))
-		if domains[x.r.DomainID].CertMode == "per_host" {
+		if o.HTTP01 || domains[x.r.DomainID].CertMode == "per_host" {
 			perHost[x.r.DomainID] = append(perHost[x.r.DomainID], x.host)
 		}
 	}
@@ -89,8 +90,8 @@ func Render(st State, o Options) ([]byte, error) {
 	ds := append([]store.Domain(nil), st.Domains...)
 	sort.Slice(ds, func(i, j int) bool { return ds[i].Name < ds[j].Name })
 	for _, d := range ds {
-		switch d.CertMode {
-		case "per_host":
+		switch {
+		case o.HTTP01 || d.CertMode == "per_host": // a wildcard cannot be validated over HTTP-01
 			if hosts := perHost[d.ID]; len(hosts) > 0 {
 				policies = append(policies, policy(hosts, o))
 			}
@@ -130,17 +131,20 @@ func issuer(o Options) m {
 	if o.Issuer == Internal {
 		return m{"module": "internal"}
 	}
-	dns := m{
-		"provider":  m{"name": "cloudflare", "api_token": "{env.CLOUDFLARE_API_TOKEN}"},
-		"resolvers": o.Resolvers,
+	i := m{"module": "acme", "email": o.Email}
+	if !o.HTTP01 { // HTTP01: Caddy's default challenges, HTTP-01 and TLS-ALPN-01
+		dns := m{
+			"provider":  m{"name": "cloudflare", "api_token": "{env.CLOUDFLARE_API_TOKEN}"},
+			"resolvers": o.Resolvers,
+		}
+		if o.PropagationDelay > 0 {
+			dns["propagation_delay"] = o.PropagationDelay.String()
+		}
+		if o.PropagationTimeout > 0 {
+			dns["propagation_timeout"] = o.PropagationTimeout.String()
+		}
+		i["challenges"] = m{"dns": dns}
 	}
-	if o.PropagationDelay > 0 {
-		dns["propagation_delay"] = o.PropagationDelay.String()
-	}
-	if o.PropagationTimeout > 0 {
-		dns["propagation_timeout"] = o.PropagationTimeout.String()
-	}
-	i := m{"module": "acme", "email": o.Email, "challenges": m{"dns": dns}}
 	switch {
 	case o.CA != "":
 		i["ca"] = o.CA

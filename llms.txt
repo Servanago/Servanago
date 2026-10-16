@@ -1,15 +1,15 @@
 # ServanaGo
 
-> Lightweight self-hosted web runtime manager: a Go app with a web UI, embedded Caddy, SQLite and (planned) systemd integration. Status: early. The code is still the inherited baseline, a single-process Caddy front end that publishes reverse-proxy routes under Cloudflare-managed domains. Static sites, Node.js and PHP-FPM runtimes, systemd supervision and native packaging are planned (see docs/ROADMAP.md), not shipped. MIT licensed.
+> Lightweight self-hosted web runtime manager: a Go app with a web UI, embedded Caddy, SQLite and (planned) systemd integration. Status: early. The code is still the inherited baseline, a single-process Caddy front end that publishes reverse-proxy routes under domains, with optional Cloudflare integration (DNS-01 certificates and A records). Static sites, Node.js and PHP-FPM runtimes, systemd supervision and native packaging are planned (see docs/ROADMAP.md), not shipped. MIT licensed.
 
 Target platform: native host, Debian 12+ / Ubuntu 22.04+ with systemd. There is no container image and no package yet; run it from source.
 
 ## Run from source
 
-Prerequisites: Go, a domain whose DNS is on Cloudflare, a Cloudflare API token with `Zone:Zone:Read` and `Zone:DNS:Edit`, and a private LAN or Tailscale IPv4 for the server (public addresses are not supported until roadmap milestone M1).
+Prerequisites: Go and a domain. Cloudflare is optional: with a Cloudflare API token (`Zone:Zone:Read` and `Zone:DNS:Edit`) ServanaGo uses DNS-01 certificates (wildcards available) and manages A records; without one it uses per-host HTTP-01/TLS-ALPN certificates (ports 80 and 443 reachable from the internet), manages no DNS, and each domain is added by hand on the Domains page. Addresses published or stored as record targets must be private or CGNAT IPv4 until roadmap milestone M1.
 
 1. `make build` produces `bin/servanago`.
-2. `cp .env.example .env` and fill it in. Required: `CLOUDFLARE_API_TOKEN`, `SERVANAGO_HOST` (hostname for the UI), `SERVANAGO_HOST_IP` (private IPv4 it resolves to), `ACME_EMAIL` (bare address). Set `ADMIN_PASSWORD`: unset means the UI is open.
+2. `cp .env.example .env` and fill it in. Required: `SERVANAGO_HOST` (hostname for the UI), `ACME_EMAIL` (bare address). Optional Cloudflare: `CLOUDFLARE_API_TOKEN`, which then also requires `SERVANAGO_HOST_IP` (private IPv4 the host resolves to). Set `ADMIN_PASSWORD`: unset means the UI is open.
 3. ServanaGo reads the process environment only; export the file (`set -a; . ./.env; set +a`) and run `DATA_DIR="$PWD/data" ./bin/servanago` as an unprivileged user. To bind 80/443: `sudo setcap cap_net_bind_service=+ep bin/servanago`, or set `HTTP_PORT` and `HTTPS_PORT`.
 4. Open `https://<SERVANAGO_HOST>` and log in. ServanaGo creates the `SERVANAGO_HOST` A record itself.
 
@@ -19,7 +19,8 @@ Startup fails fast naming the missing or invalid variable. Set `ACME_STAGING=tru
 
 Environment variables (secrets are read from the environment only, never stored in SQLite or logs):
 
-- `CLOUDFLARE_API_TOKEN`, `SERVANAGO_HOST`, `SERVANAGO_HOST_IP`, `ACME_EMAIL`: required.
+- `SERVANAGO_HOST`, `ACME_EMAIL`: required.
+- `CLOUDFLARE_API_TOKEN` (optional), `SERVANAGO_HOST_IP` (required with a token).
 - `SERVANAGO_HOST_ZONE`: Cloudflare zone of the host; set it if zone auto-detection fails.
 - `ADMIN_PASSWORD`: enables login. `SERVANAGO_SECRET_KEY` (32+ chars) enables the authenticator app; `REQUIRE_2FA` enforces it; `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` add Turnstile to the password form.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`: email for the optional magic-link site gate.
@@ -30,7 +31,7 @@ Environment variables (secrets are read from the environment only, never stored 
 
 All management is through the web UI (htmx, server-rendered); there is no public REST API.
 
-- Add a site: `/sites/new`. Enter hostname (`oc.example.com`), backend host or IP, and backend port as separate fields. ServanaGo finds the Cloudflare zone, adds the domain if new, creates the route and A record. Equivalent to the Caddyfile `oc.example.com { reverse_proxy http://192.168.25.165:9200 }`.
+- Add a site: `/sites/new`. Enter hostname (`oc.example.com`), backend host or IP, and backend port as separate fields. With Cloudflare, ServanaGo finds the zone, adds the domain if new, creates the route and A record; without it, add the domain on `/domains` first and point DNS at the server yourself. Equivalent to the Caddyfile `oc.example.com { reverse_proxy http://192.168.25.165:9200 }`.
 - Domains: `/domains`. Per domain, `cert_mode` is `wildcard` (default) or `per_host`; `default_ip` is where its A records point.
 - Routes: `/routes/{id}`. Enable/disable, CIDR allowlist, basic auth, streaming, upload limit, per-route DNS record IP, optional magic-link gate.
 - Dashboard `/`: upstream health, certificate expiry, DNS state, UI host record card. `/logs`: live Caddy/ACME log. `/help`: plain-language help. `/security`: authenticator app, passkeys, gate identities.

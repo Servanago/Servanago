@@ -38,6 +38,8 @@ func TestRenderGolden(t *testing.T) {
 	internal.Issuer, internal.HTTPPort, internal.HTTPSPort = Internal, 18080, 18443
 	perHost := dom
 	perHost.CertMode = "per_host"
+	http01 := opts()
+	http01.HTTP01 = true
 
 	tests := []struct {
 		name  string
@@ -64,6 +66,10 @@ func TestRenderGolden(t *testing.T) {
 		{"per_host_all_disabled", opts(), State{[]store.Domain{perHost}, []store.Route{with(route, func(r *store.Route) { r.Enabled = false })}}},
 		{"per_host_empty", opts(), State{[]store.Domain{perHost}, nil}},
 		{"internal_issuer", internal, State{[]store.Domain{dom}, []store.Route{route}}},
+		// No Cloudflare: default ACME challenges. A wildcard domain cannot be validated over HTTP-01, so it renders per host.
+		{"http01_bootstrap", http01, State{}},
+		{"http01_wildcard_domain", http01, State{[]store.Domain{dom}, []store.Route{route, with(route, func(r *store.Route) { r.ID, r.Subdomain = 2, "radarr" }), with(route, func(r *store.Route) { r.ID, r.Subdomain, r.Enabled = 3, "off", false })}}},
+		{"http01_per_host_domain", http01, State{[]store.Domain{perHost}, []store.Route{route}}},
 		{"banking_homelab", opts(), State{[]store.Domain{dom}, []store.Route{{ID: 1, DomainID: 1, Subdomain: "banking", Scheme: "http", UpstreamHost: "192.168.25.165", UpstreamPort: 8766, Enabled: true}}}},
 		{"gate_acl", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode = "acl" })}}},
 		{"gate_open", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode = "open" })}}},
@@ -192,5 +198,25 @@ func TestRenderUsesServanagoNames(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(s), "caretak"+"arr") { // split so a rename sweep does not rewrite it
 		t.Error("rendered config still mentions the old product name")
+	}
+}
+
+func TestHTTP01RendersNoDNSChallengeAndNoWildcards(t *testing.T) {
+	o := opts()
+	o.HTTP01 = true
+	got, err := Render(State{[]store.Domain{dom}, []store.Route{route}}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, banned := range []string{"challenges", "cloudflare", "CLOUDFLARE_API_TOKEN", "propagation", `"*.example.com"`} {
+		if strings.Contains(s, banned) {
+			t.Errorf("HTTP-01 config must not contain %q", banned)
+		}
+	}
+	for _, want := range []string{`"module":"acme"`, `"sonarr.example.com"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("HTTP-01 config lacks %s", want)
+		}
 	}
 }

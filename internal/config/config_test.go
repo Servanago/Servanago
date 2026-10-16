@@ -24,7 +24,8 @@ func TestLoadErrors(t *testing.T) {
 		env  map[string]string
 		want []string // substrings that must appear in the error
 	}{
-		{"all missing", nil, []string{"CLOUDFLARE_API_TOKEN", "SERVANAGO_HOST", "ACME_EMAIL", "SERVANAGO_HOST_IP"}},
+		{"all missing", nil, []string{"SERVANAGO_HOST", "ACME_EMAIL"}},
+		{"token without host ip", map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "SERVANAGO_HOST": "h.example.com", "ACME_EMAIL": "me@example.com"}, []string{"SERVANAGO_HOST_IP", "CLOUDFLARE_API_TOKEN"}},
 		{"host ip public", with("SERVANAGO_HOST_IP", "203.0.113.10"), []string{"SERVANAGO_HOST_IP", "private"}},
 		{"host ip ipv6", with("SERVANAGO_HOST_IP", "fd00::1"), []string{"SERVANAGO_HOST_IP"}},
 		{"zone not a suffix of host", with("SERVANAGO_HOST_ZONE", "other.org"), []string{"SERVANAGO_HOST_ZONE"}},
@@ -161,5 +162,32 @@ func TestLoadUsesServanagoEnvNames(t *testing.T) {
 	_, err = Load(env(map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), old + "HOST": "panel.example.com", "ACME_EMAIL": "me@example.com", old + "HOST_IP": "192.168.25.165"}))
 	if err == nil || !strings.Contains(err.Error(), "SERVANAGO_HOST") || strings.Contains(err.Error(), old) {
 		t.Fatalf("want an error naming SERVANAGO_HOST only, got %v", err)
+	}
+}
+
+// Cloudflare is optional: without a token ServanaGo serves sites with the default ACME challenges and manages no DNS.
+func TestLoadWithoutCloudflare(t *testing.T) {
+	c, err := Load(env(map[string]string{"SERVANAGO_HOST": "panel.example.com", "ACME_EMAIL": "me@example.com"}))
+	if err != nil {
+		t.Fatalf("no token must be valid: %v", err)
+	}
+	if c.CloudflareToken != "" || c.HostIP != "" {
+		t.Errorf("unexpected values: %+v", c)
+	}
+	if c.DNSEnabled() {
+		t.Error("DNS management must be off without a token")
+	}
+	if _, err := Load(env(map[string]string{"SERVANAGO_HOST": "panel.example.com", "ACME_EMAIL": "me@example.com", "CLOUDFLARE_API_TOKEN": "bad token"})); err == nil {
+		t.Error("a malformed token must still be rejected")
+	}
+	if c, err := Load(env(valid())); err != nil || !c.DNSEnabled() {
+		t.Errorf("a valid token turns DNS management on: %v", err)
+	}
+}
+
+func TestLoadErrorsDoNotAskForCloudflareWhenAbsent(t *testing.T) {
+	_, err := Load(env(nil))
+	if err == nil || strings.Contains(err.Error(), "CLOUDFLARE_API_TOKEN") || strings.Contains(err.Error(), "SERVANAGO_HOST_IP") {
+		t.Fatalf("error must not demand Cloudflare settings: %v", err)
 	}
 }

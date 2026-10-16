@@ -8,7 +8,7 @@
 <select name="domain_id" required>
 {{range .Domains}}<option value="{{.ID}}"{{if eq .ID $.Data.Route.DomainID}} selected{{end}}>{{.Name}}</option>{{end}}
 </select></label>
-{{hint "domain"}}
+{{if .DNSOn}}{{hint "domain"}}{{else}}{{hint "domain_nodns"}}{{end}}
 <label>Subdomain <input name="subdomain" id="subdomain" value="{{.Route.Subdomain}}" placeholder="app" required></label>
 {{hint "subdomain"}}
 <label>Upstream scheme
@@ -21,8 +21,8 @@
 {{hint "upstream_host"}}
 <label>Upstream port <input name="upstream_port" id="upstream_port" type="number" min="1" max="65535" value="{{if .Route.UpstreamPort}}{{.Route.UpstreamPort}}{{end}}" required></label>
 {{hint "upstream_port"}}
-<label>DNS record IP (blank = the domain's default IP) <input name="record_ip" value="{{.Route.RecordIP}}" placeholder="192.168.1.20"></label>
-{{hint "record_ip"}} {{helplink "lan-only"}}
+{{if .DNSOn}}<label>DNS record IP (blank = the domain's default IP) <input name="record_ip" value="{{.Route.RecordIP}}" placeholder="192.168.1.20"></label>
+{{hint "record_ip"}} {{helplink "lan-only"}}{{end}}
 <label><input type="checkbox" name="tls_skip_verify"{{if .Route.TLSSkipVerify}} checked{{end}}> Skip TLS verification (self-signed https upstream)</label>
 {{hint "skip_verify"}}
 <label><input type="checkbox" name="stream"{{if .Route.Stream}} checked{{end}}> Send responses as they arrive (streaming)</label>

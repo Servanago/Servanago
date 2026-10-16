@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -110,5 +111,25 @@ func TestImportSummaryCountsParserSkips(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "would add 0, skipped 3") {
 		t.Errorf("summary = %q", out.String())
+	}
+}
+
+// import creates DNS records and looks up zones, so it needs Cloudflare; it must say so before touching anything.
+func TestImportNeedsCloudflare(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("SERVANAGO_HOST", "panel.example.com")
+	t.Setenv("ACME_EMAIL", "me@example.com")
+	t.Setenv("CLOUDFLARE_API_TOKEN", "")
+	t.Setenv("DATA_DIR", dir+"/data")
+	caddyfile := dir + "/Caddyfile"
+	if err := os.WriteFile(caddyfile, []byte("app.example.com {\n\treverse_proxy http://10.0.0.1:80\n}\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := runImport([]string{caddyfile}, &bytes.Buffer{})
+	if err == nil || !strings.Contains(err.Error(), "CLOUDFLARE_API_TOKEN") {
+		t.Fatalf("want an error naming CLOUDFLARE_API_TOKEN, got %v", err)
+	}
+	if _, serr := os.Stat(dir + "/data"); serr == nil {
+		t.Error("the data directory must not be created when import refuses to run")
 	}
 }

@@ -10,21 +10,23 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 
 ## What works today
 
-- Certificates via ACME DNS-01 on Cloudflare: no inbound ports are needed for issuance, and LAN-only upstreams work. Per domain, one wildcard certificate (default) or one certificate per host.
-- Creates and removes the matching Cloudflare A records (DNS-only, never proxied), including the record for the UI host itself.
+- Certificates over HTTP-01/TLS-ALPN by default, one per host, with no DNS provider at all (ports 80 and 443 must be reachable from the internet).
+- Optional Cloudflare: with an API token, certificates use ACME DNS-01 (no inbound ports needed for issuance, LAN-only upstreams work), a domain can have one wildcard certificate, and ServanaGo creates and removes the matching A records (DNS-only, never proxied), including the record for the UI host itself.
 - Per-route enable/disable, CIDR allowlist, basic auth, streaming and upload limits, and an optional magic-link site gate.
 - Admin login with optional authenticator app, backup codes, passkeys and Cloudflare Turnstile.
 - Upstream health, certificate expiry, DNS state and a live Caddy/ACME log in the UI.
 - Built-in help for people new to DNS and TLS: a hint under every field, a live preview of what *Add site* will create, plain-language explanations of errors and status words, a getting-started checklist and a Help page.
 - A single static Go binary; all state in one data directory.
 
-**LAN and tailnet only, for now.** Every address ServanaGo publishes must be private IPv4 (10/8, 172.16/12, 192.168/16) or CGNAT (100.64/10, Tailscale). Public IPs, IPv6 and Cloudflare-proxied (orange cloud) records are not supported, and `CLOUDFLARE_API_TOKEN` is required. Both limits are lifted in roadmap milestone M1.
+**Private addresses only, for now.** Every address ServanaGo publishes or stores as a record target must be private IPv4 (10/8, 172.16/12, 192.168/16) or CGNAT (100.64/10, Tailscale). Public IPs, IPv6 and Cloudflare-proxied (orange cloud) records are not supported. That limit is lifted in roadmap milestone M1.
+
+**Without Cloudflare** (no `CLOUDFLARE_API_TOKEN`): add each domain on the *Domains* page before adding sites under it (ServanaGo cannot look up a zone), certificates are per host, and you point DNS at the server yourself. A site must be a single label under its domain (`app.example.com` under `example.com`) until the site model lands in M2.
 
 ## Run it from source
 
 There is no package or image yet. ServanaGo reads its configuration from the process environment only; it does not load `.env` itself.
 
-1. Create a Cloudflare API token (see below).
+1. Optional: create a Cloudflare API token (see below) if you want DNS-01 certificates and automatic A records.
 2. Build the binary (Go and no other toolchain; no Node build step):
 
    ```sh
@@ -36,7 +38,7 @@ There is no package or image yet. ServanaGo reads its configuration from the pro
    cp .env.example .env
    ```
 
-   `CLOUDFLARE_API_TOKEN`, `SERVANAGO_HOST`, `SERVANAGO_HOST_IP` and `ACME_EMAIL` are required. Set `ADMIN_PASSWORD` too.
+   `SERVANAGO_HOST` and `ACME_EMAIL` are required, plus `SERVANAGO_HOST_IP` if you set `CLOUDFLARE_API_TOKEN`. Set `ADMIN_PASSWORD` too.
 4. Run it as an unprivileged user. Either let it bind 80 and 443 with a capability, or choose other ports:
 
    ```sh
@@ -45,12 +47,12 @@ There is no package or image yet. ServanaGo reads its configuration from the pro
    DATA_DIR="$PWD/data" ./bin/servanago
    ```
 
-   ServanaGo creates the `SERVANAGO_HOST` A record itself (pointing at `SERVANAGO_HOST_IP`), so there is no manual DNS step.
-5. Open `https://<SERVANAGO_HOST>`. The dashboard's *UI host* card shows the record's state. Click **Add site** and enter the hostname (`oc.example.com`) and its backend: host or IP plus its own **Backend port** field (`192.168.25.165` and `9200`). ServanaGo finds the Cloudflare zone, adds the domain if it is new, and creates the route and A record. That is the Caddyfile equivalent of `oc.example.com { reverse_proxy http://192.168.25.165:9200 }`.
+   With a Cloudflare token, ServanaGo creates the `SERVANAGO_HOST` A record itself (pointing at `SERVANAGO_HOST_IP`). Without one, point `SERVANAGO_HOST` at this server in your own DNS first, because Let's Encrypt validates over HTTP-01.
+5. Open `https://<SERVANAGO_HOST>`. With Cloudflare, the dashboard's *UI host* card shows the record's state. Click **Add site** and enter the hostname (`oc.example.com`) and its backend: host or IP plus its own **Backend port** field (`192.168.25.165` and `9200`). With Cloudflare, ServanaGo finds the zone, adds the domain if it is new, and creates the route and A record; without it, add `example.com` on the *Domains* page first. That is the Caddyfile equivalent of `oc.example.com { reverse_proxy http://192.168.25.165:9200 }`.
 
 If the zone for `SERVANAGO_HOST` can't be found, set `SERVANAGO_HOST_ZONE`. If a different A record already exists for that name, the card shows a conflict and a *Take over* button; nothing is overwritten until you click it. To try it without burning Let's Encrypt rate limits, set `ACME_STAGING=true`.
 
-## Cloudflare token
+## Cloudflare token (optional)
 
 Create a custom API token at *My Profile → API Tokens* with:
 
@@ -63,10 +65,10 @@ scoped to the zones you want to manage. The same token is used for certificate i
 
 | Variable | Required | Meaning |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | yes | Token above. |
+| `CLOUDFLARE_API_TOKEN` | no | Token above. Unset: no DNS management, per-host HTTP-01 certificates. Set: DNS-01 certificates (wildcards available) and A-record sync. A malformed token is rejected at startup. |
 | `SERVANAGO_HOST` | yes | Hostname the UI is served on. It gets its own certificate. |
-| `SERVANAGO_HOST_IP` | yes | Address `SERVANAGO_HOST` resolves to; ServanaGo creates and syncs that A record. Private IPv4 only: 10/8, 172.16/12, 192.168/16, or 100.64/10 (Tailscale). The same rule applies to every domain and route IP. |
-| `SERVANAGO_HOST_ZONE` | no | Cloudflare zone name for that record. Unset walks up the host's labels. |
+| `SERVANAGO_HOST_IP` | with a token | Address `SERVANAGO_HOST` resolves to; ServanaGo creates and syncs that A record. Private IPv4 only: 10/8, 172.16/12, 192.168/16, or 100.64/10 (Tailscale). The same rule applies to every domain and route IP. |
+| `SERVANAGO_HOST_ZONE` | no | Cloudflare zone name for that record (with a token). Unset walks up the host's labels. |
 | `ACME_EMAIL` | yes | Let's Encrypt contact; a bare address. |
 | `ADMIN_PASSWORD` | no | Enables login. **Unset means the UI is open** (warning in the log and a red banner). |
 | `SERVANAGO_SECRET_KEY` | no | At least 32 characters (`openssl rand -hex 32`). Encrypts the authenticator-app seed in SQLite; without it that option is off. Back it up with the data directory: if it is lost, run `2fa-reset`. |

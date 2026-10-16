@@ -26,6 +26,7 @@ CLAUDE.md
 .claude/
 .env
 data/
+data-nocf/
 /bin/
 /servanago
 

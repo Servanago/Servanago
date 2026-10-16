@@ -46,6 +46,10 @@ type Config struct {
 	Issuer string
 }
 
+// DNSEnabled reports whether Cloudflare is configured: DNS-01 certificates and A-record sync are on.
+// Without a token ServanaGo uses the default ACME challenges and manages no DNS.
+func (c Config) DNSEnabled() bool { return c.CloudflareToken != "" }
+
 // Load reads configuration through getenv (os.Getenv in production) and reports every problem at once.
 func Load(getenv func(string) string) (Config, error) {
 	var errs []error
@@ -92,9 +96,9 @@ func Load(getenv func(string) string) (Config, error) {
 		CFBaseURL:          strings.TrimSpace(getenv("CLOUDFLARE_BASE_URL")),
 		HTTPPort:           port("HTTP_PORT", 80),
 		HTTPSPort:          port("HTTPS_PORT", 443),
-		CloudflareToken:    req("CLOUDFLARE_API_TOKEN"),
+		CloudflareToken:    strings.TrimSpace(getenv("CLOUDFLARE_API_TOKEN")), // optional: unset = no DNS management, default ACME challenges
 		Host:               req("SERVANAGO_HOST"),
-		HostIP:             req("SERVANAGO_HOST_IP"),
+		HostIP:             strings.TrimSpace(getenv("SERVANAGO_HOST_IP")),
 		HostZone:           strings.ToLower(strings.TrimSpace(getenv("SERVANAGO_HOST_ZONE"))),
 		ACMEEmail:          req("ACME_EMAIL"),
 		AdminPassword:      getenv("ADMIN_PASSWORD"),
@@ -147,6 +151,9 @@ func Load(getenv func(string) string) (Config, error) {
 		} else {
 			errs = append(errs, errors.New("TURNSTILE_SECRET is required when TURNSTILE_SITE_KEY is set"))
 		}
+	}
+	if c.CloudflareToken != "" && c.HostIP == "" {
+		errs = append(errs, errors.New("SERVANAGO_HOST_IP is required when CLOUDFLARE_API_TOKEN is set (the A record ServanaGo manages for SERVANAGO_HOST points at it)"))
 	}
 	if c.CloudflareToken != "" && !cfToken.MatchString(c.CloudflareToken) {
 		errs = append(errs, errors.New("CLOUDFLARE_API_TOKEN: not a valid Cloudflare API token format (no quotes or braces)"))

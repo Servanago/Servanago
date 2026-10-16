@@ -1,7 +1,7 @@
 {{define "routes"}}
 {{if .}}
 <table>
-<thead><tr><th>Host</th><th>Backend</th><th>State</th><th>Certificate {{helplink "statuses"}}</th><th>DNS {{helplink "statuses"}}</th><th></th></tr></thead>
+<thead><tr><th>Host</th><th>Backend</th><th>State</th><th>Certificate {{helplink "statuses"}}</th>{{if (index . 0).DNSOn}}<th>DNS {{helplink "statuses"}}</th>{{end}}<th></th></tr></thead>
 <tbody>
 {{range .}}
 <tr>
@@ -12,7 +12,7 @@
 {{if not .Cert.NotAfter.IsZero}}<br><small>expires {{.Cert.NotAfter.Format "2006-01-02"}}</small>{{end}}
 {{if eq .Cert.State "pending"}}<small class="next">{{.CertWait}}</small>{{else if and $c.Next (or (ne .Cert.State "error") (not .Cert.Err))}}<small class="next">{{$c.Next}}</small>{{end}}
 {{if .Cert.Err}}<div class="explain">{{errhtml .Cert.Err}}</div>{{end}}{{end}}</td>
-<td>
+{{if .DNSOn}}<td>
 {{if .HasDNS}}{{$d := status "dns" .DNS.State}}<span class="dns-{{.DNS.State}}" title="{{$d.Meaning}}">{{.DNS.State}}</span>
 {{if and $d.Next (or (ne .DNS.State "error") (not .DNS.Error))}}<small class="next">{{$d.Next}}</small>{{end}}
 {{if .DNS.Error}}<div class="explain">{{errhtml .DNS.Error}}</div>{{end}}
@@ -20,10 +20,10 @@
 {{else if eq .DNS.State "error"}}<button class="outline icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Retry" data-tooltip="Try the DNS update again">{{icon "refresh"}}</button>
 {{else}}<button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Resync" data-tooltip="Check the record in Cloudflare again">{{icon "refresh"}}</button>{{end}}
 {{else}}{{$d := status "dns" "pending"}}<span class="dns-pending" title="{{$d.Meaning}}">pending</span><small class="next">{{$d.Next}}</small>{{end}}
-</td>
+</td>{{end}}
 <td class="actions">
 <a class="icon-btn" href="/routes/{{.ID}}" aria-label="Edit" data-tooltip="Edit this site">{{icon "edit"}}</a>
-<button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg" aria-label="{{if .Enabled}}Disable{{else}}Enable{{end}}" data-tooltip="{{if .Enabled}}Disable: stop serving this site, keep its DNS record{{else}}Enable: start serving this site again{{end}}">{{if .Enabled}}{{icon "pause"}}{{else}}{{icon "play"}}{{end}}</button>
+<button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg" aria-label="{{if .Enabled}}Disable{{else}}Enable{{end}}" data-tooltip="{{if .Enabled}}Disable: stop serving this site{{if .DNSOn}}, keep its DNS record{{end}}{{else}}Enable: start serving this site again{{end}}">{{if .Enabled}}{{icon "pause"}}{{else}}{{icon "play"}}{{end}}</button>
 <button class="outline danger icon-btn delete-route" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{if .OwnsRecord}}{{.DNS.Content}}{{end}}" aria-label="Delete" data-tooltip="Delete this site">{{icon "trash"}}</button>
 </td>
 </tr>
@@ -69,8 +69,8 @@
 <h3>Delete <span class="dlg-host"></span>?</h3>
 <p>The site stops being served and the route is removed. This cannot be undone.</p>
 <form hx-delete="/routes/0" hx-target="find .dlg-msg">
-<label class="dlg-owned" hidden><input type="checkbox" name="delete_dns"> Also delete the DNS record <span class="dlg-record"></span> in Cloudflare</label>
-<p class="dlg-kept" hidden>The DNS record is left in place: ServanaGo did not create it, or there is none.</p>
+{{if .DNSOn}}<label class="dlg-owned" hidden><input type="checkbox" name="delete_dns"> Also delete the DNS record <span class="dlg-record"></span> in Cloudflare</label>
+<p class="dlg-kept" hidden>The DNS record is left in place: ServanaGo did not create it, or there is none.</p>{{end}}
 <p class="dlg-msg" role="alert"></p>
 <footer>
 <button type="button" class="outline secondary" onclick="document.getElementById('delete-dialog').close()">Cancel</button>
@@ -88,10 +88,10 @@ document.addEventListener('click', function (e) {
   htmx.process(f); // htmx captures the URL when it binds the form, so re-bind after changing it
   f.reset();
   d.querySelector('.dlg-host').textContent = b.dataset.host;
-  d.querySelector('.dlg-record').textContent = b.dataset.host + ' → ' + ip;
+  {{if .DNSOn}}d.querySelector('.dlg-record').textContent = b.dataset.host + ' → ' + ip;
   d.querySelector('.dlg-owned').hidden = !ip;
   d.querySelector('.dlg-kept').hidden = !!ip;
-  d.querySelector('.dlg-msg').textContent = '';
+  {{end}}d.querySelector('.dlg-msg').textContent = '';
   d.showModal();
 });
 </script>

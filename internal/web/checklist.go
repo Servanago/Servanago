@@ -17,12 +17,16 @@ type checkItem struct {
 }
 
 // checklist reports whether the basics work: token, the UI address (DNS + certificate), a first site.
-// host is nil when SERVANAGO_HOST_IP is not configured, which hides the UI-address items.
+// The token and UI-address DNS items show only with Cloudflare configured (host is nil without DNS management).
 func (s *Server) checklist(ctx context.Context, routes []routeRow, host *hostCard) []checkItem {
-	items := []checkItem{s.tokenItem()}
-	if host != nil {
-		items = append(items, hostDNSItem(host), s.hostCertItem(ctx))
+	var items []checkItem
+	if s.dnsOn() {
+		items = append(items, s.tokenItem())
 	}
+	if host != nil {
+		items = append(items, hostDNSItem(host))
+	}
+	items = append(items, s.hostCertItem(ctx))
 	first := checkItem{Label: "Add your first site", State: "ok", Help: "sites"}
 	if len(routes) == 0 {
 		first.State = "todo"
