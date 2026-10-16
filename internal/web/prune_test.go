@@ -34,3 +34,17 @@ func TestHelpTextIsNotContainerSpecific(t *testing.T) {
 		}
 	}
 }
+
+// The sign-in pages are served to visitors who are not signed in: no app navigation, no Sign out.
+func TestLoginPageHasNoAppNavigation(t *testing.T) {
+	s := newServer(t, "secret")
+	body := s.do(req{path: "/login"}).Body.String()
+	if !strings.Contains(body, `name="password"`) {
+		t.Fatalf("not the login form: %s", body)
+	}
+	for _, banned := range []string{"Sign out", `href="/domains"`, `href="/logs"`, `href="/security"`, `href="/sites/new"`} {
+		if strings.Contains(body, banned) {
+			t.Errorf("login page shows %q to an unauthenticated visitor", banned)
+		}
+	}
+}

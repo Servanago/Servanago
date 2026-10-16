@@ -141,12 +141,14 @@ type page struct {
 	CFErr      string
 	Flash      []string
 	LoggedIn   bool
+	Bare       bool // sign-in pages: brand only, no app navigation
 	Data       any
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, status int, p page) {
 	p.Open = !s.auth.enabled()
 	p.LoggedIn = s.auth.enabled()
+	p.Bare = name == "login" || name == "login_totp"
 	p.Flash = s.takeFlashes()
 	if s.startupErr != nil {
 		if err := s.startupErr(); err != nil {
