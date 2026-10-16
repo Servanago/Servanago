@@ -1,10 +1,10 @@
 # ServanaGo — Requirements
 
-Status: draft from `/sc:brainstorm`. License: MIT. Next step: `/sc:design`.
+Status: **inherited baseline requirements**, written for the container-based Caretakarr this project forked from. They describe what the current code does. The target product (native host, site model, runtimes, root helper) and its milestones are in [`ROADMAP.md`](ROADMAP.md); this file is reworked as those milestones land. Items removed in M0 are marked. License: MIT.
 
-## Goal
+## Goal (baseline)
 
-One Docker container, one Go process, that lets self-hosters put their arr stack behind a real domain they manage on Cloudflare, with valid HTTPS certificates and no inbound ports required for issuance. A simple web UI manages domains and routes. Caddy config is fully generated from SQLite.
+One Go process that lets self-hosters publish web apps behind a real domain they manage on Cloudflare, with valid HTTPS certificates and no inbound ports required for issuance. A simple web UI manages domains and routes. Caddy config is fully generated from SQLite.
 
 ## Decisions made
 
@@ -13,7 +13,7 @@ One Docker container, one Go process, that lets self-hosters put their arr stack
 | Caddy topology | Embedded in the Go binary (`caddy/v2` + `caddy-dns/cloudflare` as Go imports, `caddy.Load`). No xcaddy, no supervisor, no separate admin-API client. Needs a spike to confirm. |
 | UI auth | Optional `ADMIN_PASSWORD` in `.env`. If unset, UI is open and a loud startup warning is logged. |
 | DNS scope | ServanaGo creates/updates/deletes Cloudflare A records per route, using the official `cloudflare-go` SDK. |
-| Upstream entry | Manual entry with arr presets by default. Docker socket discovery is opt-in, only active if the user mounts the socket. |
+| Upstream entry | Manual entry: scheme, host or IP, port. (Arr presets and opt-in Docker discovery were removed in M0.) |
 | Hostname model | Subdomain per service under managed domains. One wildcard cert per domain. |
 | Frontend | Go templates + htmx + Pico or Tailwind, served from `embed.FS`. No Node build step. |
 | Route controls (v1) | Enable/disable toggle, LAN-only IP allowlist, per-route basic auth. |
@@ -36,20 +36,20 @@ One Docker container, one Go process, that lets self-hosters put their arr stack
 2. **Domains.** Add and remove domains. Validate that the domain is a zone reachable by the token. Reject `.local`, `.internal`, `.home.arpa`, IP literals and other names Caddy would send to its internal CA.
 3. **Certs.** Per-domain `cert_mode`: `wildcard` (default, one `*.domain` cert) or `per_host` (one cert per route hostname, like a plain Caddyfile). Both via DNS-01 with Cloudflare. Apply propagation delay and timeout only if set, and resolvers from `.env`. Switching mode re-renders and Caddy issues what is missing.
 4. **Routes.** A route is subdomain + upstream host/IP + port + scheme (http/https, with skip-verify option for self-signed upstreams) under a managed domain.
-5. **Presets.** Built-in arr presets with default ports: Sonarr, Radarr, Lidarr, Readarr, Prowlarr, Bazarr, Overseerr, Jellyseerr, qBittorrent, SABnzbd, Tautulli, Plex, Jellyfin, Emby. The preset fills the subdomain and port and can be overridden.
+5. ~~**Presets.**~~ Removed in M0.
 6. **DNS records.** On route create, update and delete, manage the matching A record in Cloudflare. Each route gets a DNS-only (grey cloud) record by default. Record IP is user-supplied per domain (default target IP). Show the sync state of each record.
 7. **Route controls.** Enable/disable toggle, optional CIDR allowlist (403 outside), optional basic auth (bcrypt hash stored in SQLite).
-8. **Docker discovery (opt-in).** If a Docker socket is mounted, list containers and exposed ports, and pre-fill a route from one. Hidden when no socket is present.
+8. ~~**Docker discovery (opt-in).**~~ Removed in M0.
 9. **Apply loop.** Every change writes SQLite, regenerates the full Caddy JSON, and applies it atomically. If Caddy rejects the config, the previous config stays live, the UI shows the error, and the DB change is reverted.
 10. **Status.** Per-route health (upstream reachable), per-domain cert state (issued / pending / error, expiry), per-record DNS state.
 10a. **Logs page.** Caddy log lines (including ACME/issuance errors) captured in an in-memory ring buffer and shown in the UI, filterable by level. Not persisted.
 11. **Auth.** If `ADMIN_PASSWORD` is set: login page, session cookie (HttpOnly, SameSite), rate-limited attempts. Optional second factors (authenticator app, passkeys), optional Turnstile on the password step, `REQUIRE_2FA`, and a `2fa-reset` command: see `docs/DESIGN.md` §17. Separately, a per-route optional **site access gate**: the site asks for a magic link (single-use token emailed via SMTP) before anything is proxied, with per-domain or open enrollment, shared sessions and operator revocation: see `docs/DESIGN.md` §18.
-12. **Persistence.** All state in one SQLite file plus Caddy's cert storage, both under one `/data` volume. Backup is copying `/data`.
+12. **Persistence.** All state in one SQLite file plus Caddy's cert storage, both under one data directory (`DATA_DIR`, default `/data` until native packaging in M3). Backup is copying it.
 
 ## Non-functional requirements
 
-- Single static binary, multi-stage Dockerfile, image on a minimal base. Multi-arch (amd64, arm64).
-- One volume (`/data`), ports 80 and 443 for Caddy, no separate admin port. No Caddy admin API exposed on the network.
+- Single static binary (amd64, arm64). The container image was removed in M0; the target is native-host packaging (M3).
+- One data directory, ports 80 and 443 for Caddy, no separate admin port. No Caddy admin API exposed on the network.
 - Idle memory target under 100 MB. Cold start to serving under 5 seconds with existing certs.
 - Secrets never written to SQLite or logs. The token is read from the environment only.
 - Structured logs (`slog`) with a configurable level.
@@ -58,18 +58,17 @@ One Docker container, one Go process, that lets self-hosters put their arr stack
 
 ## User stories and acceptance
 
-- *As a self-hoster,* I set `CF_API_TOKEN` and `SERVANAGO_HOST`, run `docker compose up`, and open `https://SERVANAGO_HOST` with a valid cert. **Accept:** no manual Caddy or DNS steps beyond pointing that host at the server.
+- *As a self-hoster,* I set `CLOUDFLARE_API_TOKEN` and `SERVANAGO_HOST` (plus `SERVANAGO_HOST_IP` and `ACME_EMAIL`), run the binary, and open `https://SERVANAGO_HOST` with a valid cert. **Accept:** no manual Caddy or DNS steps beyond pointing that host at the server.
 - *I add `example.com`.* **Accept:** wildcard cert issues, status shows the expiry date.
 - *I add Sonarr at `192.168.1.20:8989` as `sonarr`.* **Accept:** `https://sonarr.example.com` works with a valid cert, websockets included, and the A record exists in Cloudflare.
 - *I restrict a route to my LAN.* **Accept:** a request from outside the CIDR gets 403.
 - *I submit a bad upstream or Cloudflare error.* **Accept:** the live config is unchanged and the UI shows the exact error.
-- *I restart the container.* **Accept:** all routes come back from SQLite with no re-issuance.
+- *I restart the process.* **Accept:** all routes come back from SQLite with no re-issuance.
 
 ## Risks
 
 - Embedded Caddy lifecycle (signal handling, reload from inside the process) is unverified. Spike first.
 - The A-record IP for LAN-only setups may differ from the public IP. Per-domain default IP is required, and dynamic IP/DDNS is out of scope.
-- Docker discovery gives the container host-level power. Document it, recommend a read-only socket proxy, keep it off by default.
 - Open UI with no `ADMIN_PASSWORD` plus a public hostname is a footgun. The startup warning is the only guard in v1.
 - Let's Encrypt rate limits. Default staging for first run is worth considering.
 

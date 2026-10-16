@@ -1,54 +1,39 @@
-# M0: fork and rebrand
+# M1: decouple Cloudflare
 
-Baseline on `c1133b3` (Caretakarr head), measured before any change:
-- `go test -race ./cmd/... ./internal/...` passes (~4 min)
-- `make lint` is clean with golangci-lint v1.64.8 built with Go 1.26 (CI's version; the preinstalled v2 rejects `.golangci.yml`)
-- e2e: 27 pass, 1 skipped. In this sandbox it needs the proxy env unset (`env -u HTTPS_PROXY -u https_proxy -u HTTP_PROXY -u http_proxy`) and a local, git-excluded `e2e/playwright.local.config.ts` pointing at `/opt/pw-browsers/chromium` (installed build 1194, Playwright wants 1248)
+Goal: ServanaGo works for any public hostname with no Cloudflare account. Cloudflare DNS-01 and A-record sync stay as an optional feature. Baseline for every stage: `go test -race`, lint and e2e (27 specs) green on `main` after M0.
 
-## Stage 1: Rename caretakarr -> servanago
-**Goal**: Every identifier, path, env var and string says `servanago`; behavior unchanged.
+Status of this plan: stages and criteria are a first cut; Stage 2 has an open design question (below) that must be answered before it starts.
+
+## Stage 1: Cloudflare becomes optional
+**Goal**: Start, serve and manage sites with `CLOUDFLARE_API_TOKEN` unset.
 **Success Criteria**:
-- Module `github.com/servanago/servanago`; binary `servanago`; image/Dockerfile names updated (Dockerfile stays until Stage 3 decides its fate)
-- Env prefix `CARETAKARR_*` -> `SERVANAGO_*` (HOST, HOST_IP, HOST_ZONE, SECRET_KEY); `.env.example`, compose files, e2e config updated
-- Caddy module IDs `caretakarr_gate` -> `servanago_gate`, log writer `caretakarr` -> `servanago`; gate cookie `caretakarr_gate` -> `servanago_gate`; CLI `2fa-reset` unchanged
-- `rg -i caretakarr` hits only: NOTICE/LICENSE credit lines, the git history note, and assets deferred to Stage 2
-- `make test`, `make lint`, e2e identical to baseline
-**Tests**: A test asserting the rendered Caddy JSON uses `servanago` module IDs and the log writer name (extend `caddycfg` golden, run `-update` and review the diff); `config` tests for `SERVANAGO_*` names incl. the fail-fast messages naming the variable; existing suites unchanged otherwise.
-**Status**: Complete (go test -race, lint and e2e 27/27 match baseline; README hero image path is dangling until Stage 2/4; `caretakarr-assets/` untouched until Stage 2)
+- `config.Load` no longer requires `CLOUDFLARE_API_TOKEN`; `SERVANAGO_HOST_IP` is required only when DNS sync is on. A set token is still validated (the format check that otherwise makes Caddy's config unloadable stays)
+- `cfdns`, `dnssync` and the token check are constructed only when a token is set; with none, `web.Deps.CF`/`DNS` are nil and every handler tolerates that
+- With no token the UI hides the Cloudflare banner, DNS columns and record actions, the UI-host DNS card and the checklist items about the token and DNS; Add site skips zone lookup and domain-to-zone matching
+**Tests**: config table tests (token unset ok; set-but-malformed still rejected; host IP required only with a token); web tests with nil `CF`/`DNS` for dashboard, add site, route edit and delete; e2e run started without a token (new project in the Playwright config).
+**Status**: Not Started
 
-## Stage 2: Brand assets and theme
-**Goal**: UI shows ServanaGo identity.
+## Stage 2: HTTP-01 / TLS-ALPN default issuer
+**Goal**: Certificates for public hostnames with no DNS provider.
 **Success Criteria**:
-- `caretakarr-assets/` removed from the tree; pack's `original-concept` PNGs (logo, favicon set, web/PWA icons) and tokens added under `internal/web/static/`
-- `caretakarr.css` replaced by `servanago.css` built from `--sg-*` tokens, mapped onto Pico via `:root[data-theme="dark"]`; primary buttons use green-800 `#08764B`
-- Favicon/touch icons wired in `layout.html`; page titles say ServanaGo
-- No side-stripe borders or glow shadows
-**Tests**: e2e login/dashboard/sites specs pass; a Go test that every asset the layout references exists in the embed FS; screenshot of login and dashboard reviewed by eye.
-**Status**: Complete. Notes:
-- Stage 1 missed the topbar/login wordmark (`Care<b>takarr</b>`, split by a tag); fixed here and now pinned by `TestTemplatesUseBrandAndExistingStatics`
-- The pack's original-concept icon PNGs are opaque (baked light surround) and the 512px one is cropped; the icon panel is the only complete tile. Icons are derived from it by `docs/brand/keyout.py` (see `docs/brand/README.md`). The wordmark PNG ships unmodified for the README only
-- Dark-surface contrast: pack slate-500 muted text and the success/danger/info semantics fail AA on the dark UI; the theme uses lifted variants, pinned by `TestThemeMeetsContrast`
-- Not done (out of scope): form field borders (`--sg-border` on `--sg-bg`) are ~1.7:1, as in the inherited theme; WCAG 1.4.11 wants 3:1 for input boundaries
+- `caddycfg` renders an ACME issuer with no `challenges.dns` by default; the DNS-01 issuer is rendered only where selected (see open question)
+- Golden files for: default HTTP-01, DNS-01 wildcard, DNS-01 per host, mixed domains
+- Domains no longer need a Cloudflare zone ID (migration `006` relaxes `domains.zone_id` to nullable or empty-allowed)
+**Open question (needs a decision before this stage)**: how is DNS-01 chosen when a token exists? Options: (a) per domain, a `challenge` field next to `cert_mode`; (b) global, DNS-01 whenever a token is set; (c) per domain, but only wildcard mode implies DNS-01 and per-host implies HTTP-01. Recommendation: (a) with default HTTP-01, since a token existing says nothing about whether a host is reachable from the internet.
+**Tests**: golden renders; integration test applying the default issuer against the in-process Caddy with the internal CA; migration test from a v5 DB with data.
+**Status**: Not Started
 
-## Stage 3: Prune arr-stack features
-**Goal**: Remove code that has no place in a hosting manager; nothing else changes.
+## Stage 3: Public addresses and names
+**Goal**: Stop rejecting what a hosting manager must accept.
 **Success Criteria**:
-- `internal/discovery`, `internal/presets`, `docker.html`, `DOCKER_SOCKET`, docker e2e spec and UI hooks removed; preset field removed from forms and help text
-- `routes.preset` column left in place and unused (no migration: dropping a SQLite column means a table rebuild for no gain); reads and edits ignore it
-- Dockerfile, compose files, `.dockerignore`, `make docker` and CI image job removed (native-only v1)
-- `make check` green; dependency list does not grow
-**Tests**: existing suites minus deleted ones; `help_test.go` still passes (no dangling hints); `TestLegacyPresetColumnIsIgnored` (a row with a legacy preset value reads and edits cleanly).
-**Status**: Complete. Notes:
-- UI help text no longer names Docker or the arr apps; "recreate the container" became "restart ServanaGo" and "the environment file". The real commands and file path wait for M3 packaging
-- Kept the `?host=&port=` / `?sub=` prefill on the add pages: not Docker-specific code
-- `config` still defaults `DATA_DIR` to `/data` (a container default); change it with the native layout in M3
-- e2e specs that picked a preset now fill subdomain and port explicitly; the Docker spec was deleted with the feature (it was the one skipped test)
+- `ValidateLANIP` becomes `ValidateIP`: any valid IPv4 accepted (LAN, CGNAT, public); IPv6 stays rejected until a stage adds AAAA support; loopback, unspecified, multicast and link-local stay rejected
+- Hostname rules unchanged (`.local`, `.internal`, `.home.arpa`, IP literals still rejected); upstream hosts may be public
+- Help text, README, DESIGN §16 and the "LAN only" warning updated
+**Tests**: table tests for every address class; web tests for domain, route and UI-host IP fields; the e2e "public IPs are rejected" spec is replaced, not deleted: it asserts the new rule (public accepted, loopback rejected).
+**Status**: Not Started
 
-## Stage 4: Docs and release plumbing
-**Goal**: Repo describes Servanago as a lightweight runtime manager.
-**Success Criteria**:
-- README, `llms.txt`, `docs/REQUIREMENTS.md`, `docs/DESIGN.md` reframed (no "arr stack"; native-only, Phase 0 decisions, milestone list); NOTICE keeps all third-party credits
-- CI workflow renamed; image job removed (native-only); tag flow documented
-- `IMPLEMENTATION_PLAN.md` for M1 written; this file deleted
-**Tests**: `make check` green on a clean clone.
+## Stage 4: Docs and gate
+**Goal**: Docs describe optional Cloudflare; the whole suite passes.
+**Success Criteria**: README config table marks Cloudflare variables optional and groups them; ROADMAP M1 marked Done; `make check` green on a clean clone; plan file deleted.
+**Tests**: `make check`.
 **Status**: Not Started

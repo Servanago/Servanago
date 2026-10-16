@@ -1,6 +1,6 @@
 # ServanaGo — Architecture
 
-Status: draft from `/sc:design`. Inputs: `docs/REQUIREMENTS.md`. Next: `/sc:workflow` to produce `IMPLEMENTATION_PLAN.md`.
+Status: **inherited baseline design**, written for the container-based Caretakarr this project forked from. It describes how the current code works. The product direction (native host, site model, runtimes, helper) is in [`ROADMAP.md`](ROADMAP.md), and later milestones rework these sections. Docker discovery, presets and container packaging were removed in M0; their sections are marked below and kept only as history. Inputs: `docs/REQUIREMENTS.md`.
 
 ## 1. Decisions closing the requirements' open questions
 
@@ -27,24 +27,21 @@ Status: draft from `/sc:design`. Inputs: `docs/REQUIREMENTS.md`. Next: `/sc:work
 ```mermaid
 flowchart LR
   Browser -->|443 / 80| Caddy
-  subgraph Container [one process: servanago]
+  subgraph Process [one process: servanago]
     Caddy[Embedded Caddy<br/>routes, wildcard certs]
     UI[Web UI + handlers<br/>127.0.0.1:8080]
     Apply[Apply service<br/>mutex, tx, render, Load]
     Store[(SQLite<br/>/data/servanago.db)]
     DNS[cloudflare-go<br/>DNS sync]
     Health[Health + cert probes]
-    Docker[Docker discovery<br/>optional]
   end
   Caddy -->|SERVANAGO_HOST| UI
-  Caddy -->|per route| Arr[(arr upstreams)]
+  Caddy -->|per route| Up[(upstreams)]
   UI --> Apply --> Store
   Apply -->|caddy.Load| Caddy
   Apply --> DNS --> CF[(Cloudflare API)]
   Caddy -->|ACME DNS-01| CF
   Health --> Caddy
-  UI --> Docker
-  Docker -.-> Sock[/var/run/docker.sock/]
 ```
 
 The UI listens only on loopback. Caddy proxies `SERVANAGO_HOST` to it, so the UI gets the same TLS as everything else. Optional `UI_LISTEN` (default `127.0.0.1:8080`) can be set to `0.0.0.0:8080` and published for recovery when Caddy is broken. Document this as an auth bypass if `ADMIN_PASSWORD` is unset.
@@ -59,13 +56,10 @@ internal/caddycfg/            pure func: (State, Options) -> []byte JSON
 internal/apply/               mutex + tx + render + caddy.Load + DNS reconcile
 internal/cfdns/               zone lookup, A record upsert/delete/adopt
 internal/web/                 handlers, templates/, static/ (embed.FS), auth, CSRF
-internal/presets/             static slice of arr services + default ports
-internal/discovery/           Docker /containers/json over unix socket (stdlib)
 internal/probe/               TCP upstream check, loopback TLS cert probe
 ```
 
-Choices: `modernc.org/sqlite` is pure Go, so `CGO_ENABLED=0` gives a static, multi-arch binary with no toolchain pain. Docker discovery uses stdlib HTTP over the unix socket, which avoids the moby client dependency tree.
-
+Choices: `modernc.org/sqlite` is pure Go, so `CGO_ENABLED=0` gives a static, multi-arch binary with no toolchain pain.
 ## 4. Data model
 
 ```sql
@@ -91,7 +85,7 @@ CREATE TABLE routes (
   allowlist       TEXT NOT NULL DEFAULT '',-- newline-separated CIDRs, '' = open
   basic_user      TEXT,
   basic_hash      TEXT,                    -- bcrypt; both NULL = no auth
-  preset          TEXT,
+  preset          TEXT,                    -- legacy: unused since M0, column kept (no table rebuild)
   UNIQUE (domain_id, subdomain)
 );
 
@@ -229,7 +223,7 @@ sequenceDiagram
 - CSRF: `SameSite=Strict` plus reject non-GET without `HX-Request` or with a mismatched `Origin`.
 - Unset password: all requests pass, a startup `WARN` log, and a red dashboard banner.
 - Client IP for throttling comes from `X-Forwarded-For` only when the peer is loopback (i.e. from Caddy).
-- Upstream form: preset dropdown fills subdomain and port. Docker discovery panel appears only if the socket exists.
+- Upstream form: scheme, backend host or IP, backend port (the preset dropdown and Docker panel were removed in M0).
 
 ## 9. Status and probes
 
@@ -260,21 +254,15 @@ Rendered config: `"logging":{"logs":{"default":{"writer":{"output":"servanago"},
 
 Because `Sink` is a package global, tests that assert on log lines run serially along with the other Caddy integration tests.
 
-## 10. Docker discovery (opt-in)
+## 10. Docker discovery (removed in M0)
 
-`GET http://unix/containers/json` over `/var/run/docker.sock`. Show name, image, exposed private ports, networks. Pre-fill route with the container name as the upstream host (resolvable only if on a shared user-defined network; the UI says so). Docs recommend a read-only socket proxy (e.g. `tecnativa/docker-socket-proxy`) instead of the raw socket.
+Removed: it gave anything that could reach the UI the power of the Docker socket, and a native-host manager has no use for it.
 
 ## 11. Build and runtime
 
-```
-builder: golang:<ver>  CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"
-final:   gcr.io/distroless/static:nonroot  (has CA certs; UID 65532)
-/data volume; ports 80, 443, 443/udp (HTTP/3)
-```
+`CGO_ENABLED=0 go build -trimpath -ldflags="-s -w"` produces one static binary. The container image, compose files and `make docker` were removed in M0 (native-host only); native packaging, the systemd unit and the directory layout are milestone M3 in [`ROADMAP.md`](ROADMAP.md). Until then the process runs from source as an unprivileged user, with `cap_net_bind_service` or custom `HTTP_PORT`/`HTTPS_PORT` (the README has the steps).
 
-- Non-root can bind 80/443 because Docker ≥20.10 sets `ip_unprivileged_port_start=0`. Document that `/data` must be writable by UID 65532.
-- `docker-compose.yml`: servanago service, `./data:/data`, `.env`. Optional commented socket mount. `docker-compose.dev.yml` sets `ACME_STAGING=true`.
-- Module path `github.com/servanago/servanago`. GitHub Actions: `make check`, then multi-arch (amd64, arm64) image build to `ghcr.io/servanago/servanago` on tag.
+- Module path `github.com/servanago/servanago`. GitHub Actions run `make check`; there is no release artifact yet.
 - Dependencies (`caddyserver/caddy/v2`, `caddy-dns/cloudflare`, `cloudflare-go/v7`) pinned in `go.mod` at the latest stable tags when slice 0 starts. Renovate or Dependabot bumps afterward.
 - Ship `LICENSE` (MIT) and `NOTICE` (Caddy, caddy-dns/cloudflare: Apache-2.0).
 
@@ -287,7 +275,7 @@ final:   gcr.io/distroless/static:nonroot  (has CA certs; UID 65532)
 | `config` | unit | Env parsing, rejects bad hostnames and `.local`-style domains |
 | `cfdns` | unit | `httptest` server + `WithBaseURL`: create, adopt, conflict, owned-delete, adopted-no-delete |
 | `apply` | integration | Real in-process Caddy on high ports, `Issuer=Internal`, `httptest` upstream: route works, bad config rolls back DB and keeps old route live, websocket upgrade passes |
-| `web` | unit + e2e | Handler tests for auth/CSRF/throttle; Playwright for add-domain, add-route-from-preset, toggle, delete-with-confirm |
+| `web` | unit + e2e | Handler tests for auth/CSRF/throttle; Playwright for add-domain, add-route, toggle, delete-with-confirm |
 | startup | integration | Corrupt route row → bootstrap-only fallback + banner |
 
 Caveat: embedded Caddy is process-global (`caddy.Load` uses package state). Integration tests must run serially and call `caddy.Stop()` in cleanup.
@@ -300,9 +288,9 @@ Caveat: embedded Caddy is process-global (`caddy.Load` uses package state). Inte
 | `admin.disabled` / `config.persist` field names | low | Spike confirms against current Caddy before slice 1 |
 | Config in DB makes Caddy unable to start | moderate | Bootstrap fallback (§6) |
 | Open UI footgun | moderate | Warning log + red banner; document `ADMIN_PASSWORD` |
-| Docker socket = host root | high if enabled | Opt-in, docs push socket proxy |
+| Docker socket = host root | n/a | Removed in M0 with Docker discovery |
 | Wildcard issuance slow or failing silently | moderate | Cert probe and Logs page (§9) |
-| Custom Caddy log writer module registration | low | Spike confirms; fallback is `docker logs` |
+| Custom Caddy log writer module registration | low | Spike confirmed; the writer also tees to stderr, so the process log (journald under systemd) keeps working |
 | `modernc.org/sqlite` perf | low | Workload is a few rows |
 
 ## 14. Suggested slices (for `/sc:workflow`)
@@ -313,13 +301,13 @@ Caveat: embedded Caddy is process-global (`caddy.Load` uses package state). Inte
 3. `apply` service + real-Caddy integration test (UI host route).
 4. Web skeleton: layout, auth, CSRF, dashboard.
 5. Domains: Cloudflare zone lookup (`cfdns` part 1).
-6. Routes + presets + apply; website routing works end to end.
+6. Routes + presets (presets removed in M0) + apply; website routing works end to end.
 7. DNS record sync (create / adopt / conflict / owned delete).
 8. Route controls: toggle, allowlist, basic auth.
 9. Probes and status UI.
-10. Docker discovery (opt-in).
+10. Docker discovery (opt-in; removed in M0).
 11. Caddy log ring buffer + Logs page.
-12. Dockerfile, compose, CI, docs, license/NOTICE.
+12. Dockerfile, compose, CI, docs, license/NOTICE (Dockerfile and compose removed in M0).
 
 ## 15. Explicit non-goals (v1)
 
@@ -414,7 +402,7 @@ Source: brainstorm of 2026-10-15; modelled on `../gochatserver` (`service/totp.g
 | Turnstile | Opt-in. Password step only. Enforced only when the request `Host` equals `SERVANAGO_HOST`; the `UI_LISTEN` recovery listener (LAN IP / localhost Host) is exempt. |
 | Passkey RP | RP ID = hostname of the request `Host`, accepted only if it equals `SERVANAGO_HOST` or is `localhost`. Origin = `https://` or `http://` (localhost only) + `Host`, port included. No new env var. Deviation from the brainstorm ("from `SERVANAGO_HOST`" only): `localhost` is a secure context, so on-box recovery and e2e can use passkeys. |
 | Enforcement | `REQUIRE_2FA=true`: a password login without TOTP yields a *limited* session (only `/security`, `/logout`, static) until TOTP is confirmed. Passkey login is always full. Needs `ADMIN_PASSWORD` and `SERVANAGO_SECRET_KEY`, else startup fails. |
-| Recovery | Backup codes; `servanago 2fa-reset` wipes TOTP, backup codes, passkeys. It reads only `DATA_DIR`, not the full config. Run it with `docker compose run --rm` (a stopped or restarting container cannot `exec`). Sessions are stateless, so restart to drop live ones. |
+| Recovery | Backup codes; `servanago 2fa-reset` wipes TOTP, backup codes, passkeys. It reads only `DATA_DIR`, not the full config. Run it on the server with the service stopped, as the same user and `DATA_DIR` as the service. Sessions are stateless, so restart to drop live ones. |
 | Audit | `slog` only: event, method, never codes, seeds or tokens. |
 | Skipped | Passkey rename (delete and re-add), mobile handoff, API tokens, audit table, "recently verified" state. |
 
