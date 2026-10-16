@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -37,7 +38,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 	mustDomain(t, s, "example.com")
 	var v int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 5 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 6 {
 		t.Fatalf("user_version %d %v", v, err)
 	}
 	s.Close()
@@ -141,7 +142,7 @@ func TestDNSRecordCascade(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	d := mustDomain(t, s, "example.com")
 	r, _ := s.CreateRoute(ctx, route(d.ID, "sonarr"))
-	if _, err := s.GetDNS(ctx, r.ID); err == nil {
+	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err == nil {
 		t.Error("want not found before upsert")
 	}
 	rec := DNSRecord{RouteID: r.ID, CFRecordID: "cf1", Content: "10.0.0.1", Owned: true, State: "synced"}
@@ -152,8 +153,8 @@ func TestDNSRecordCascade(t *testing.T) {
 	if err := s.UpsertDNS(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.GetDNS(ctx, r.ID)
-	if err != nil || got.State != "error" || got.Error != "boom" || !got.Owned {
+	got, err := s.GetDNS(ctx, r.ID, FamilyA)
+	if err != nil || got.State != "error" || got.Error != "boom" || !got.Owned || got.Family != FamilyA {
 		t.Fatalf("%+v %v", got, err)
 	}
 	if err := s.UpsertDNS(ctx, DNSRecord{RouteID: r.ID, State: "weird"}); err == nil {
@@ -162,7 +163,7 @@ func TestDNSRecordCascade(t *testing.T) {
 	if err := s.DeleteRoute(ctx, r.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetDNS(ctx, r.ID); err == nil {
+	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err == nil {
 		t.Error("dns record survived route delete")
 	}
 }
@@ -207,7 +208,7 @@ func TestListAndDeleteDNS(t *testing.T) {
 
 func TestUIDNSRecord(t *testing.T) {
 	s, ctx := open(t), context.Background()
-	if _, err := s.GetUIDNS(ctx); err == nil {
+	if _, err := s.GetUIDNS(ctx, FamilyA); err == nil {
 		t.Fatal("want not found before upsert")
 	}
 	rec := DNSRecord{CFRecordID: "cf1", Content: "192.168.1.5", Owned: true, State: "synced", SyncedAt: "now"}
@@ -218,15 +219,15 @@ func TestUIDNSRecord(t *testing.T) {
 	if err := s.UpsertUIDNS(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.GetUIDNS(ctx)
+	got, err := s.GetUIDNS(ctx, FamilyA)
 	if err != nil || got.State != "conflict" || got.Error != "points elsewhere" || got.Owned || got.CFRecordID != "cf1" {
 		t.Fatalf("%+v %v", got, err)
 	}
 	if err := s.UpsertUIDNS(ctx, DNSRecord{State: "weird"}); err == nil {
 		t.Error("bad state accepted")
 	}
-	if _, err := s.db.Exec("INSERT INTO ui_dns_record (id, state) VALUES (2, 'pending')"); err == nil {
-		t.Error("second row accepted")
+	if _, err := s.db.Exec("INSERT INTO ui_dns_record (family, state) VALUES ('MX', 'pending')"); err == nil {
+		t.Error("an unknown record family was accepted")
 	}
 }
 
@@ -339,5 +340,157 @@ func TestLegacyPresetColumnIsIgnored(t *testing.T) {
 	var preset string
 	if err := s.q.QueryRowContext(ctx, "SELECT COALESCE(preset,'') FROM routes WHERE id=?", r.ID).Scan(&preset); err != nil || preset != "Sonarr" {
 		t.Errorf("update must leave the legacy column alone: %q, %v", preset, err)
+	}
+}
+
+func TestDNSRecordsPerFamily(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	d := mustDomain(t, s, "example.com")
+	r, _ := s.CreateRoute(ctx, route(d.ID, "app"))
+	a := DNSRecord{RouteID: r.ID, Family: FamilyA, CFRecordID: "a1", Content: "203.0.113.5", Owned: true, State: "synced"}
+	aaaa := DNSRecord{RouteID: r.ID, Family: FamilyAAAA, CFRecordID: "q1", Content: "2001:db8::5", Owned: false, State: "conflict", Error: "x"}
+	for _, rec := range []DNSRecord{a, aaaa} {
+		if err := s.UpsertDNS(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	gotA, err := s.GetDNS(ctx, r.ID, FamilyA)
+	if err != nil || gotA.Content != "203.0.113.5" || gotA.State != "synced" {
+		t.Fatalf("A: %+v %v", gotA, err)
+	}
+	gotQ, err := s.GetDNS(ctx, r.ID, FamilyAAAA)
+	if err != nil || gotQ.Content != "2001:db8::5" || gotQ.State != "conflict" || gotQ.Family != FamilyAAAA {
+		t.Fatalf("AAAA: %+v %v", gotQ, err)
+	}
+	if all, _ := s.ListDNS(ctx); len(all) != 2 || all[0].Family != FamilyA || all[1].Family != FamilyAAAA {
+		t.Fatalf("list must give A then AAAA: %+v", all)
+	}
+	if err := s.UpsertDNS(ctx, DNSRecord{RouteID: r.ID, Family: "MX", State: "synced"}); err == nil {
+		t.Error("an unknown family was accepted")
+	}
+	if err := s.DeleteDNSRecord(ctx, r.ID, FamilyAAAA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetDNS(ctx, r.ID, FamilyAAAA); err == nil {
+		t.Error("AAAA row survived its delete")
+	}
+	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err != nil {
+		t.Errorf("deleting AAAA must leave A: %v", err)
+	}
+	_ = s.UpsertDNS(ctx, aaaa)
+	if err := s.DeleteDNS(ctx, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := s.ListDNS(ctx); len(all) != 0 {
+		t.Errorf("DeleteDNS must remove every family: %+v", all)
+	}
+	_ = s.UpsertDNS(ctx, a)
+	_ = s.UpsertDNS(ctx, aaaa)
+	if err := s.DeleteRoute(ctx, r.ID); err != nil {
+		t.Fatal(err)
+	}
+	if all, _ := s.ListDNS(ctx); len(all) != 0 {
+		t.Errorf("rows survived the route: %+v", all)
+	}
+}
+
+func TestUIDNSPerFamily(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	_ = s.UpsertUIDNS(ctx, DNSRecord{Family: FamilyA, Content: "203.0.113.9", State: "synced", Owned: true})
+	_ = s.UpsertUIDNS(ctx, DNSRecord{Family: FamilyAAAA, Content: "2001:db8::9", State: "pending", Owned: true})
+	if r, err := s.GetUIDNS(ctx, FamilyAAAA); err != nil || r.Content != "2001:db8::9" || r.State != "pending" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if all, err := s.ListUIDNS(ctx); err != nil || len(all) != 2 {
+		t.Fatalf("%+v %v", all, err)
+	}
+	if err := s.DeleteUIDNS(ctx, FamilyAAAA); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.GetUIDNS(ctx, FamilyAAAA); err == nil {
+		t.Error("AAAA host row survived")
+	}
+	if _, err := s.GetUIDNS(ctx, FamilyA); err != nil {
+		t.Errorf("A host row must stay: %v", err)
+	}
+}
+
+func TestIPv6FieldsRoundTrip(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	d, err := s.CreateDomain(ctx, Domain{Name: "example.com", ZoneID: "z", DefaultIP: "10.0.0.1", DefaultIP6: "2001:db8::1", CertMode: "wildcard"})
+	if err != nil || d.DefaultIP6 != "2001:db8::1" {
+		t.Fatalf("%+v %v", d, err)
+	}
+	d.DefaultIP6 = ""
+	if err := s.UpdateDomain(ctx, d); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetDomain(ctx, d.ID); got.DefaultIP6 != "" {
+		t.Errorf("default_ip6 not cleared: %+v", got)
+	}
+	r := route(d.ID, "app")
+	r.RecordIP6 = "2001:db8::77"
+	r, err = s.CreateRoute(ctx, r)
+	if err != nil || r.RecordIP6 != "2001:db8::77" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	r.RecordIP6 = ""
+	if err := s.UpdateRoute(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetRoute(ctx, r.ID); got.RecordIP6 != "" {
+		t.Errorf("record_ip6 not cleared: %+v", got)
+	}
+}
+
+// A database created before dual-stack (user_version 5, with DNS rows) must upgrade without losing them.
+func TestMigration006KeepsExistingDNSRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "old.db")
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"001_init.sql", "002_ui_dns.sql", "003_proxy_tuning.sql", "004_2fa.sql", "005_site_access.sql"} {
+		body, err := migrationFS.ReadFile("migrations/" + name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := db.Exec(string(body)); err != nil {
+			t.Fatalf("%s: %v", name, err)
+		}
+	}
+	for _, q := range []string{
+		"INSERT INTO domains (id, name, zone_id, default_ip) VALUES (1, 'example.com', 'z1', '192.168.1.1')",
+		"INSERT INTO routes (id, domain_id, subdomain, upstream_host, upstream_port) VALUES (7, 1, 'app', '10.0.0.2', 80)",
+		"INSERT INTO dns_records (route_id, cf_record_id, content, owned, state, error, synced_at) VALUES (7, 'cf9', '192.168.1.1', 1, 'synced', NULL, 't0')",
+		"INSERT INTO ui_dns_record (id, cf_record_id, content, owned, state) VALUES (1, 'cfui', '192.168.1.1', 0, 'conflict')",
+		"PRAGMA user_version = 5",
+	} {
+		if _, err := db.Exec(q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	db.Close()
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatalf("upgrade: %v", err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+	rec, err := s.GetDNS(ctx, 7, FamilyA)
+	if err != nil || rec.CFRecordID != "cf9" || rec.Content != "192.168.1.1" || !rec.Owned || rec.State != "synced" || rec.SyncedAt != "t0" || rec.Family != FamilyA {
+		t.Fatalf("route record lost or changed: %+v %v", rec, err)
+	}
+	ui, err := s.GetUIDNS(ctx, FamilyA)
+	if err != nil || ui.CFRecordID != "cfui" || ui.Owned || ui.State != "conflict" {
+		t.Fatalf("UI record lost or changed: %+v %v", ui, err)
+	}
+	d, _ := s.GetDomain(ctx, 1)
+	if d.DefaultIP6 != "" || d.DefaultIP != "192.168.1.1" {
+		t.Errorf("domain after upgrade: %+v", d)
+	}
+	if err := s.UpsertDNS(ctx, DNSRecord{RouteID: 7, Family: FamilyAAAA, Content: "2001:db8::1", State: "synced", Owned: true}); err != nil {
+		t.Errorf("AAAA rows must work after the upgrade: %v", err)
 	}
 }

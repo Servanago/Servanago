@@ -53,7 +53,7 @@ Multi-tenant isolation claims, deployment releases and rollback, Git integration
 
 ## Known gaps carried from the baseline
 
-- Every published address must currently be private IPv4 or CGNAT (lifted in M1). `CLOUDFLARE_API_TOKEN` is already optional: without it a domain is added by hand and certificates are per host over HTTP-01.
+- IPv6 is dual-stack only: an AAAA record needs the IPv4 A record beside it, so an IPv6-only site is not supported. `CLOUDFLARE_API_TOKEN` is optional: without it a domain is added by hand and certificates are per host over HTTP-01.
 - Without Cloudflare there is no zone lookup, so a site must be a single label under a domain added by hand; hostnames become first-class in M2.
 - `DATA_DIR` defaults to `/data`, a container path (changed in M3).
 - The mark is shipped as processed PNGs; a traced vector replaces them later (`docs/brand/README.md`).

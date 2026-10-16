@@ -50,13 +50,13 @@ func (s *Server) tokenItem() checkItem {
 
 func hostDNSItem(h *hostCard) checkItem {
 	it := checkItem{Label: "UI address has its DNS record", Help: "statuses"}
-	switch h.DNS.State {
+	switch h.State() {
 	case "synced":
 		it.State = "ok"
 	case "conflict":
 		it.State, it.Detail = "bad", template.HTML(html.EscapeString(statusHelp["dns:conflict"].Next))
 	case "error":
-		it.State, it.Detail = "bad", template.HTML(errorHTML(h.DNS.Error))
+		it.State, it.Detail = "bad", template.HTML(errorHTML(h.Error()))
 	default:
 		it.State, it.Detail = "todo", "Syncing..."
 	}

@@ -50,14 +50,27 @@ func ValidateLabel(l string) error {
 	return nil
 }
 
-var cgnat = netip.MustParsePrefix("100.64.0.0/10")
+var reservedV4 = netip.MustParsePrefix("240.0.0.0/4")
+var thisNetworkV4 = netip.MustParsePrefix("0.0.0.0/8")
 
-// ValidateLANIP accepts private IPv4 (10/8, 172.16/12, 192.168/16) and CGNAT (100.64/10, Tailscale).
-// ServanaGo never publishes public addresses.
-func ValidateLANIP(s string) (netip.Addr, error) {
+// ValidateIP accepts any IPv4 address a server can have: public, private (10/8, 172.16/12, 192.168/16)
+// or CGNAT (100.64/10, Tailscale). Loopback, link-local, multicast, broadcast, reserved and "this network"
+// addresses are refused, and so is IPv6: use ValidateIP6 for AAAA targets.
+func ValidateIP(s string) (netip.Addr, error) {
 	a, err := netip.ParseAddr(s)
-	if err != nil || !a.Is4() || !(a.IsPrivate() || cgnat.Contains(a)) {
-		return netip.Addr{}, fmt.Errorf("%q must be a private IPv4 address (10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 or 100.64.0.0/10)", s)
+	if err != nil || !a.Is4() || !a.IsGlobalUnicast() || reservedV4.Contains(a) || thisNetworkV4.Contains(a) {
+		return netip.Addr{}, fmt.Errorf("%q must be a usable IPv4 address (loopback, link-local, multicast and reserved addresses, and IPv6, are not)", s)
+	}
+	return a, nil
+}
+
+// ValidateIP6 accepts a global unicast IPv6 address (public, or unique-local fc00::/7). Loopback, the
+// unspecified address, link-local, multicast, IPv4-mapped addresses, scoped addresses (fe80::1%eth0) and
+// any IPv4 text are refused.
+func ValidateIP6(s string) (netip.Addr, error) {
+	a, err := netip.ParseAddr(s)
+	if err != nil || !a.Is6() || a.Is4In6() || a.Zone() != "" || !a.IsGlobalUnicast() {
+		return netip.Addr{}, fmt.Errorf("%q must be a usable IPv6 address (loopback, link-local, multicast and IPv4-mapped addresses, and IPv4, are not)", s)
 	}
 	return a, nil
 }

@@ -18,7 +18,7 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 - Built-in help for people new to DNS and TLS: a hint under every field, a live preview of what *Add site* will create, plain-language explanations of errors and status words, a getting-started checklist and a Help page.
 - A single static Go binary; all state in one data directory.
 
-**Private addresses only, for now.** Every address ServanaGo publishes or stores as a record target must be private IPv4 (10/8, 172.16/12, 192.168/16) or CGNAT (100.64/10, Tailscale). Public IPs, IPv6 and Cloudflare-proxied (orange cloud) records are not supported. That limit is lifted in roadmap milestone M1.
+**Addresses.** An A record target (`SERVANAGO_HOST_IP`, a domain's default IP, a route's DNS record IP) can be any usable IPv4 address: public, private (10/8, 172.16/12, 192.168/16) or CGNAT (100.64/10, Tailscale). Loopback, link-local, multicast and reserved addresses are refused. **IPv6 is dual-stack:** an optional IPv6 address next to each IPv4 one (`SERVANAGO_HOST_IP6`, a domain's IPv6, a route's AAAA record IPv6) makes ServanaGo manage an AAAA record beside the A record, with its own state, conflict and take-over handling. The IPv4 address stays required, and an IPv6-only site is not supported. Cloudflare-proxied (orange cloud) records are not supported either.
 
 **Without Cloudflare** (no `CLOUDFLARE_API_TOKEN`): add each domain on the *Domains* page before adding sites under it (ServanaGo cannot look up a zone), certificates are per host, and you point DNS at the server yourself. A site must be a single label under its domain (`app.example.com` under `example.com`) until the site model lands in M2.
 
@@ -67,7 +67,8 @@ scoped to the zones you want to manage. The same token is used for certificate i
 |---|---|---|
 | `CLOUDFLARE_API_TOKEN` | no | Token above. Unset: no DNS management, per-host HTTP-01 certificates. Set: DNS-01 certificates (wildcards available) and A-record sync. A malformed token is rejected at startup. |
 | `SERVANAGO_HOST` | yes | Hostname the UI is served on. It gets its own certificate. |
-| `SERVANAGO_HOST_IP` | with a token | Address `SERVANAGO_HOST` resolves to; ServanaGo creates and syncs that A record. Private IPv4 only: 10/8, 172.16/12, 192.168/16, or 100.64/10 (Tailscale). The same rule applies to every domain and route IP. |
+| `SERVANAGO_HOST_IP` | with a token | Address `SERVANAGO_HOST` resolves to; ServanaGo creates and syncs that A record. Any usable IPv4 address (public, private or Tailscale); the same rule applies to every domain and route IP. |
+| `SERVANAGO_HOST_IP6` | no | Optional IPv6 address of `SERVANAGO_HOST`; ServanaGo also creates and syncs an AAAA record for it. A global unicast or unique-local address; the IPv4 address above is still required. |
 | `SERVANAGO_HOST_ZONE` | no | Cloudflare zone name for that record (with a token). Unset walks up the host's labels. |
 | `ACME_EMAIL` | yes | Let's Encrypt contact; a bare address. |
 | `ADMIN_PASSWORD` | no | Enables login. **Unset means the UI is open** (warning in the log and a red banner). |

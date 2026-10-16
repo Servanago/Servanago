@@ -6,7 +6,7 @@ Target platform: native host, Debian 12+ / Ubuntu 22.04+ with systemd. There is 
 
 ## Run from source
 
-Prerequisites: Go and a domain. Cloudflare is optional: with a Cloudflare API token (`Zone:Zone:Read` and `Zone:DNS:Edit`) ServanaGo uses DNS-01 certificates (wildcards available) and manages A records; without one it uses per-host HTTP-01/TLS-ALPN certificates (ports 80 and 443 reachable from the internet), manages no DNS, and each domain is added by hand on the Domains page. Addresses published or stored as record targets must be private or CGNAT IPv4 until roadmap milestone M1.
+Prerequisites: Go and a domain. Cloudflare is optional: with a Cloudflare API token (`Zone:Zone:Read` and `Zone:DNS:Edit`) ServanaGo uses DNS-01 certificates (wildcards available) and manages A records; without one it uses per-host HTTP-01/TLS-ALPN certificates (ports 80 and 443 reachable from the internet), manages no DNS, and each domain is added by hand on the Domains page. A record targets can be any usable IPv4 (public, private or CGNAT); loopback, link-local, multicast and reserved addresses are refused. IPv6 is dual-stack: an optional IPv6 address beside each IPv4 one adds an AAAA record (IPv4 stays required; no IPv6-only sites).
 
 1. `make build` produces `bin/servanago`.
 2. `cp .env.example .env` and fill it in. Required: `SERVANAGO_HOST` (hostname for the UI), `ACME_EMAIL` (bare address). Optional Cloudflare: `CLOUDFLARE_API_TOKEN`, which then also requires `SERVANAGO_HOST_IP` (private IPv4 the host resolves to). Set `ADMIN_PASSWORD`: unset means the UI is open.
@@ -20,7 +20,7 @@ Startup fails fast naming the missing or invalid variable. Set `ACME_STAGING=tru
 Environment variables (secrets are read from the environment only, never stored in SQLite or logs):
 
 - `SERVANAGO_HOST`, `ACME_EMAIL`: required.
-- `CLOUDFLARE_API_TOKEN` (optional), `SERVANAGO_HOST_IP` (required with a token).
+- `CLOUDFLARE_API_TOKEN` (optional), `SERVANAGO_HOST_IP` (required with a token), `SERVANAGO_HOST_IP6` (optional AAAA target for the host).
 - `SERVANAGO_HOST_ZONE`: Cloudflare zone of the host; set it if zone auto-detection fails.
 - `ADMIN_PASSWORD`: enables login. `SERVANAGO_SECRET_KEY` (32+ chars) enables the authenticator app; `REQUIRE_2FA` enforces it; `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` add Turnstile to the password form.
 - `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`: email for the optional magic-link site gate.
@@ -55,7 +55,7 @@ All management is through the web UI (htmx, server-rendered); there is no public
 
 - [README](https://github.com/Servanago/Servanago/blob/main/README.md): what works today, run from source, config table, warnings
 - [Roadmap](https://github.com/Servanago/Servanago/blob/main/docs/ROADMAP.md): decisions, target layout and apply path, milestones
-- [Design](https://github.com/Servanago/Servanago/blob/main/docs/DESIGN.md): inherited baseline architecture, apply path, DNS sync, LAN-only IP rules (section 16)
+- [Design](https://github.com/Servanago/Servanago/blob/main/docs/DESIGN.md): inherited baseline architecture, apply path, DNS sync, UI host record (section 16; its LAN-only rule was lifted in M1)
 - [Requirements](https://github.com/Servanago/Servanago/blob/main/docs/REQUIREMENTS.md): inherited baseline spec
 - [.env.example](https://github.com/Servanago/Servanago/blob/main/.env.example): annotated environment template
 

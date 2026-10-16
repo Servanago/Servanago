@@ -24,18 +24,25 @@ Status of this plan: stages and criteria are a first cut; Stage 2 has an open de
 **Success Criteria**:
 - `caddycfg` renders the DNS-01 issuer only where selected (see open question) and HTTP-01 elsewhere, per domain rather than from the token alone
 - Golden files for: DNS-01 wildcard, DNS-01 per host, HTTP-01 beside DNS-01 in one config
-**Open question (needs a decision before this stage)**: how is DNS-01 chosen when a token exists? Options: (a) per domain, a `challenge` field next to `cert_mode`; (b) global, DNS-01 whenever a token is set; (c) per domain, but only wildcard mode implies DNS-01 and per-host implies HTTP-01. Recommendation: (a) with default HTTP-01, since a token existing says nothing about whether a host is reachable from the internet.
-**Tests**: golden renders; integration test applying the default issuer against the in-process Caddy with the internal CA; migration test from a v5 DB with data.
-**Status**: Not Started
+**Decision (user, M1)**: the choice is global: DNS-01 whenever a token is set, HTTP-01/TLS-ALPN otherwise. That is exactly what Stage 1 shipped, so there is nothing left to build here. A per-domain `challenge` field was offered and declined; revisit if a host behind a firewall and a public host must share one install.
+**Tests**: covered in Stage 1 (HTTP-01 goldens, real-Caddy load test) and by the existing DNS-01 goldens.
+**Status**: Complete (delivered by Stage 1; no further work)
 
 ## Stage 3: Public addresses and names
 **Goal**: Stop rejecting what a hosting manager must accept.
 **Success Criteria**:
-- `ValidateLANIP` becomes `ValidateIP`: any valid IPv4 accepted (LAN, CGNAT, public); IPv6 stays rejected until a stage adds AAAA support; loopback, unspecified, multicast and link-local stay rejected
-- Hostname rules unchanged (`.local`, `.internal`, `.home.arpa`, IP literals still rejected); upstream hosts may be public
-- Help text, README, DESIGN §16 and the "LAN only" warning updated
-**Tests**: table tests for every address class; web tests for domain, route and UI-host IP fields; the e2e "public IPs are rejected" spec is replaced, not deleted: it asserts the new rule (public accepted, loopback rejected).
-**Status**: Not Started
+- `ValidateLANIP` becomes `ValidateIP`: any usable IPv4 accepted (LAN, CGNAT, public); loopback, unspecified, "this network", multicast, broadcast, link-local and reserved are refused
+- IPv6 (user decision: dual-stack): `ValidateIP6` accepts global unicast and unique-local addresses. `SERVANAGO_HOST_IP6`, `domains.default_ip6` and `routes.record_ip6` are optional AAAA targets beside the IPv4 ones; the IPv4 address stays required, so there is no IPv6-only site
+- Migration `006`: the two columns, and `dns_records` / `ui_dns_record` rebuilt keyed by (route, family) with existing rows kept as A
+- `cfdns` and `dnssync` handle both families with independent owned / adopt / conflict state; clearing an IPv6 address deletes an owned AAAA and only drops the row of an adopted one; take-over covers both; deleting a route offers to remove both
+- Dashboard: one badge per record; UI-host card, checklist and delete dialog are family-aware; IPv6 fields show only with Cloudflare configured
+- Hostname rules unchanged (`.local`, `.internal`, `.home.arpa`, IP literals still rejected); upstream hosts may be public or IPv6 literals (rendered bracketed); IPv6 allowlist CIDRs accepted
+- Help text, README, llms.txt, `.env.example`, DESIGN §16 and the "LAN only" warning updated
+**Tests**: table tests for every address class in both families; store tests incl. a real v5 -> v6 upgrade with data; `cfdns` and `dnssync` tests (create, adopt, conflict, take-over, clear, host) for AAAA; web tests for the forms, handlers, dashboard badges, delete and host card; renderer golden for an IPv6 upstream and allowlist; probe address test; e2e dual-stack spec; the mock Cloudflare server now understands record types.
+**Status**: Complete. Notes:
+- Changed existing tests for the new spec: public IPv4 accepted (the old "public IP rejected" cases), the migration version is 6, and DNS store calls take a family
+- Known gap: a domain added without Cloudflare has an empty default IP; if a token is added later its A record is not created and the dashboard cannot edit the domain. Domains have no edit page yet (M2)
+- Known gap: no dual-stack for `servanago import` beyond copying `SERVANAGO_HOST_IP6` onto new domains
 
 ## Stage 4: Docs and gate
 **Goal**: Docs describe optional Cloudflare; the whole suite passes.

@@ -13,8 +13,17 @@ import (
 
 type Record struct {
 	ID, Name, Content string
+	Type              string // "A" or "AAAA"
 	Proxied           bool
 	Comment           string
+}
+
+// typeOf is the record type implied by an address: IPv6 text has colons.
+func typeOf(content string) string {
+	if strings.Contains(content, ":") {
+		return "AAAA"
+	}
+	return "A"
 }
 
 type Fake struct {
@@ -37,13 +46,13 @@ func New(t testing.TB) *Fake {
 	return f
 }
 
-// Seed adds a pre-existing record and returns its id.
+// Seed adds a pre-existing record and returns its id. An IPv6 address makes it an AAAA record.
 func (f *Fake) Seed(name, content string) string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.next++
 	id := fmt.Sprintf("rec%d", f.next)
-	f.records[id] = Record{ID: id, Name: name, Content: content}
+	f.records[id] = Record{ID: id, Name: name, Content: content, Type: typeOf(content)}
 	return id
 }
 
@@ -83,7 +92,11 @@ func reply(w http.ResponseWriter, status int, ok bool, result any, errMsg string
 }
 
 func (r Record) json() map[string]any {
-	return map[string]any{"id": r.ID, "name": r.Name, "content": r.Content, "type": "A", "proxied": r.Proxied, "comment": r.Comment, "ttl": 1}
+	t := r.Type
+	if t == "" {
+		t = "A"
+	}
+	return map[string]any{"id": r.ID, "name": r.Name, "content": r.Content, "type": t, "proxied": r.Proxied, "comment": r.Comment, "ttl": 1}
 }
 
 func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
@@ -116,22 +129,23 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		if name == "" {
 			name = r.URL.Query().Get("name")
 		}
+		want := r.URL.Query().Get("type") // "" = every type, like the real API
 		res := []any{}
 		for _, rec := range f.records {
-			if strings.EqualFold(rec.Name, name) {
+			if strings.EqualFold(rec.Name, name) && (want == "" || strings.EqualFold(want, rec.json()["type"].(string))) {
 				res = append(res, rec.json())
 			}
 		}
 		reply(w, 200, true, res, "")
 	case r.Method == http.MethodPost && id == "":
 		var b struct {
-			Name, Content, Comment string
-			Proxied                bool
+			Name, Content, Comment, Type string
+			Proxied                      bool
 		}
 		_ = json.NewDecoder(r.Body).Decode(&b)
 		f.writes++
 		f.next++
-		rec := Record{ID: fmt.Sprintf("rec%d", f.next), Name: b.Name, Content: b.Content, Proxied: b.Proxied, Comment: b.Comment}
+		rec := Record{ID: fmt.Sprintf("rec%d", f.next), Name: b.Name, Content: b.Content, Type: b.Type, Proxied: b.Proxied, Comment: b.Comment}
 		f.records[rec.ID] = rec
 		reply(w, 200, true, rec.json(), "")
 	case (r.Method == http.MethodPut || r.Method == http.MethodPatch) && id != "":
@@ -141,12 +155,15 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		var b struct {
-			Name, Content string
-			Proxied       bool
+			Name, Content, Type string
+			Proxied             bool
 		}
 		_ = json.NewDecoder(r.Body).Decode(&b)
 		f.writes++
 		rec.Name, rec.Content, rec.Proxied = b.Name, b.Content, b.Proxied
+		if b.Type != "" {
+			rec.Type = b.Type
+		}
 		f.records[id] = rec
 		reply(w, 200, true, rec.json(), "")
 	case r.Method == http.MethodDelete && id != "":

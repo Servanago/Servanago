@@ -26,7 +26,7 @@ func TestLoadErrors(t *testing.T) {
 	}{
 		{"all missing", nil, []string{"SERVANAGO_HOST", "ACME_EMAIL"}},
 		{"token without host ip", map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "SERVANAGO_HOST": "h.example.com", "ACME_EMAIL": "me@example.com"}, []string{"SERVANAGO_HOST_IP", "CLOUDFLARE_API_TOKEN"}},
-		{"host ip public", with("SERVANAGO_HOST_IP", "203.0.113.10"), []string{"SERVANAGO_HOST_IP", "private"}},
+		{"host ip loopback", with("SERVANAGO_HOST_IP", "127.0.0.1"), []string{"SERVANAGO_HOST_IP", "loopback"}},
 		{"host ip ipv6", with("SERVANAGO_HOST_IP", "fd00::1"), []string{"SERVANAGO_HOST_IP"}},
 		{"zone not a suffix of host", with("SERVANAGO_HOST_ZONE", "other.org"), []string{"SERVANAGO_HOST_ZONE"}},
 		{"zone is a public suffix-ish single label", with("SERVANAGO_HOST_ZONE", "com"), []string{"SERVANAGO_HOST_ZONE"}},
@@ -189,5 +189,32 @@ func TestLoadErrorsDoNotAskForCloudflareWhenAbsent(t *testing.T) {
 	_, err := Load(env(nil))
 	if err == nil || strings.Contains(err.Error(), "CLOUDFLARE_API_TOKEN") || strings.Contains(err.Error(), "SERVANAGO_HOST_IP") {
 		t.Fatalf("error must not demand Cloudflare settings: %v", err)
+	}
+}
+
+func TestLoadAcceptsPublicHostIP(t *testing.T) {
+	c, err := Load(env(with("SERVANAGO_HOST_IP", "203.0.113.10")))
+	if err != nil || c.HostIP != "203.0.113.10" {
+		t.Fatalf("a public host IP must be accepted: %+v, %v", c, err)
+	}
+}
+
+func TestLoadHostIP6(t *testing.T) {
+	c, err := Load(env(with("SERVANAGO_HOST_IP6", "2001:db8::10")))
+	if err != nil || c.HostIP6 != "2001:db8::10" {
+		t.Fatalf("an IPv6 host address must be accepted: %+v, %v", c, err)
+	}
+	for _, bad := range []string{"::1", "192.168.1.1", "fe80::1", "nope"} {
+		if _, err := Load(env(with("SERVANAGO_HOST_IP6", bad))); err == nil || !strings.Contains(err.Error(), "SERVANAGO_HOST_IP6") {
+			t.Errorf("%q must be rejected naming SERVANAGO_HOST_IP6: %v", bad, err)
+		}
+	}
+	// IPv6 is an addition, never a replacement: the IPv4 address is still required with a token
+	if _, err := Load(env(map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "SERVANAGO_HOST": "h.example.com", "ACME_EMAIL": "me@example.com", "SERVANAGO_HOST_IP6": "2001:db8::10"})); err == nil || !strings.Contains(err.Error(), "SERVANAGO_HOST_IP") {
+		t.Errorf("IPv4 stays required with a token: %v", err)
+	}
+	// an IPv4 address in the IPv6 setting, and the reverse, are mistakes worth catching
+	if _, err := Load(env(with("SERVANAGO_HOST_IP", "2001:db8::10"))); err == nil {
+		t.Error("an IPv6 address in SERVANAGO_HOST_IP must be rejected")
 	}
 }

@@ -20,6 +20,7 @@ func TestApplyControlsAllowlist(t *testing.T) {
 		{"bare ip becomes host prefix", "192.168.1.5\nfd00::1", "192.168.1.5/32\nfd00::1/128", ""},
 		{"blank lines and crlf dropped", "10.0.0.0/8\r\n\r\n172.16.0.0/12\r\n", "10.0.0.0/8\n172.16.0.0/12", ""},
 		{"masked host bits normalised", "192.168.1.5/24", "192.168.1.0/24", ""},
+		{"ipv6 cidr normalised", "2001:db8:1::5/32\nfd00::/8", "2001:db8::/32\nfd00::/8", ""},
 		{"garbage rejected", "10.0.0.0/8\nnot-a-cidr", "", "not-a-cidr"},
 		{"bad mask rejected", "10.0.0.0/33", "", "10.0.0.0/33"},
 	}

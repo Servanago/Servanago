@@ -43,7 +43,8 @@ func TestParseRoute(t *testing.T) {
 		{"port text", form("upstream_port", "http"), "port"},
 		{"bad domain id", form("domain_id", "x"), "domain"},
 		{"record ip private", form("record_ip", "100.64.1.2"), ""},
-		{"record ip public", form("record_ip", "8.8.8.8"), "record IP"},
+		{"record ip public", form("record_ip", "8.8.8.8"), ""},
+		{"record ip loopback", form("record_ip", "127.0.0.1"), "record IP"},
 		{"record ip garbage", form("record_ip", "nope"), "record IP"},
 	}
 	for _, tt := range tests {

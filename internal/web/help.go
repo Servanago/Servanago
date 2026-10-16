@@ -16,7 +16,8 @@ import (
 // hints are one-line, plain-text field explanations (rendered by the hint template func).
 var hints = map[string]string{
 	"domain":         "The Cloudflare zone your sites live in, such as example.com. Add it once; sites like oc.example.com go under it.",
-	"default_ip":     "The address your sites' DNS records point to: this server, the machine running ServanaGo. It must be a private address (192.168.x.x, 10.x.x.x, 172.16-31.x.x or 100.64-127.x.x).",
+	"default_ip":     "The address your sites' DNS records point to: this server, the machine running ServanaGo. Use its IPv4 address: public, or private (192.168.x.x, 10.x.x.x, 172.16-31.x.x, 100.64-127.x.x for Tailscale).",
+	"default_ip6":    "Optional. The server's IPv6 address, so sites also get AAAA records and are reachable over IPv6. Leave blank to publish IPv4 only.",
 	"cert_mode":      "Wildcard gets one *.example.com certificate for every site, so adding sites is instant and site names stay private. Per host gets a separate certificate for each site.",
 	"hostname":       "The address people type, such as oc.example.com. ServanaGo finds its Cloudflare zone and adds it if it is new.",
 	"hostname_nodns": "The address people type, such as oc.example.com. Its domain (example.com) must be added on the Domains page first.",
@@ -29,6 +30,7 @@ var hints = map[string]string{
 	"max_body":       "The biggest upload this site accepts, such as 2GB or 512MB (up to 100GB). Larger uploads get error 413. Leave empty for no limit.",
 	"subdomain":      "The first part of the address, such as oc in oc.example.com. Letters, numbers and hyphens only.",
 	"record_ip":      "Leave blank to use the domain's default IP. Set it only if this one site's DNS record must point at a different server.",
+	"record_ip6":     "Leave blank to use the domain's default IPv6 address (or none). Set it only if this one site's AAAA record must point at a different server.",
 	"allowlist":      "Only these networks can open the site; everyone else gets an error 403. One per line. Leave empty to allow anyone who can reach this server. Example: 192.168.0.0/16 is a typical whole home network.",
 	"basic_auth":     "Puts a username and password prompt in front of the app. Leave the user empty for no prompt.",
 	"enabled":        "Turn off to stop serving the site without deleting it. Caddy ignores it completely, so no certificate work happens for it. Its DNS record is kept.",
@@ -81,8 +83,10 @@ var errTable = []struct {
 		"Create a new token with Zone:Read and DNS:Edit, put it in the environment file as CLOUDFLARE_API_TOKEN, and restart ServanaGo."}},
 	{"verify cloudflare token", explained{"Cloudflare rejected the API token",
 		"Create a new token with Zone:Read and DNS:Edit, put it in the environment file as CLOUDFLARE_API_TOKEN, and restart ServanaGo."}},
-	{"must be a private ipv4", explained{"Only private addresses are allowed",
-		"Use an address from your own network: 192.168.x.x, 10.x.x.x, 172.16-31.x.x, or 100.64-127.x.x (Tailscale)."}},
+	{"must be a usable ipv4", explained{"That address cannot be used",
+		"Use the IPv4 address of the server, for example 203.0.113.10 or 192.168.1.10. Not 127.x.x.x, 169.254.x.x, 0.0.0.0, a multicast or reserved address, or an IPv6 address."}},
+	{"must be a usable ipv6", explained{"That address cannot be used",
+		"Use the IPv6 address of the server, for example 2001:db8::10. Not ::1, an fe80:: address, a multicast address, an IPv4-mapped address or an IPv4 address."}},
 	{"is the servanago ui host", explained{"That name is ServanaGo's own address",
 		"Choose a different subdomain for this site."}},
 	{"is a zone itself", explained{"Use a subdomain, not the domain itself",
@@ -158,8 +162,9 @@ var helpSections = []helpSection{
 	{"statuses", "What the status words mean", ``}, // table is generated from statusHelp
 	{"token", "The Cloudflare token", `
 <p>ServanaGo needs one Cloudflare API token with two permissions on your zones: <strong>Zone &rarr; Zone &rarr; Read</strong> and <strong>Zone &rarr; DNS &rarr; Edit</strong>. Create it under My Profile, API Tokens. It is set as <code>CLOUDFLARE_API_TOKEN</code> in the environment file and is never stored in the database or shown here. After changing the file, restart ServanaGo.</p>`},
-	{"lan-only", "Private addresses only", `
-<p>ServanaGo only publishes <strong>private</strong> addresses: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, and 100.64-127.x.x (Tailscale). Your apps are reachable from your home network or tailnet, not from the open internet. Public addresses and IPv6 are not supported.</p>`},
+	{"addresses", "Which addresses can be used", `
+<p>The <strong>A record</strong> target is the IPv4 address of the server: a <strong>public</strong> address, or a private one (10.x.x.x, 172.16-31.x.x, 192.168.x.x, or 100.64-127.x.x for Tailscale). A public address makes the site reachable from the internet; a private one only from your home network or tailnet. Loopback (127.x.x.x), link-local (169.254.x.x), multicast and reserved addresses cannot be used.</p>
+<p>Optionally add the server's <strong>IPv6</strong> address (public, or unique-local fd00::/8) and ServanaGo also manages an <strong>AAAA record</strong>, so the site works over both IPv4 and IPv6. The IPv4 address is still required. Loopback (::1), link-local (fe80::), multicast and IPv4-mapped addresses cannot be used. Records are always DNS-only (never proxied).</p>`},
 	{"access", "Limiting who can open a site", `
 <p>On a site's edit page you can limit it to certain networks (<strong>Allowed sources</strong>, for example <code>192.168.0.0/16</code> for your whole home network) and add a <strong>username and password</strong>. Everyone else gets an error. The password is stored only as a hash.</p>
 <p><strong>Magic-link access</strong> goes one step further: after the allowlist (if you use one), the site asks for an email address and sends a single-use link. Sessions last 30 days with an allowlist, 7 days with any email, sliding: activity extends them. Revoke one identity under <strong>Security</strong> and its access dies on every gated site at once.</p>`},

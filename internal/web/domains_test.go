@@ -102,8 +102,8 @@ func TestAddDomainValidation(t *testing.T) {
 		{"ip literal", "10.0.0.1", "10.0.0.1", "wildcard", "IP literals"},
 		{"bad ip", "example.com", "999.1.1.1", "wildcard", "IPv4"},
 		{"ipv6", "example.com", "::1", "wildcard", "IPv4"},
-		{"public ip", "example.com", "8.8.8.8", "wildcard", "private"},
-		{"loopback", "example.com", "127.0.0.1", "wildcard", "private"},
+		{"loopback", "example.com", "127.0.0.1", "wildcard", "loopback"},
+		{"link-local", "example.com", "169.254.1.1", "wildcard", "IPv4"},
 		{"bad mode", "example.com", "10.0.0.1", "banana", "cert_mode"},
 		{"uppercase normalised then ok-but-local", "FOO.LOCAL", "10.0.0.1", "wildcard", ".local"},
 	}
@@ -170,3 +170,14 @@ func TestTokenVerifyBanner(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+func TestAddDomainAcceptsPublicIP(t *testing.T) {
+	s := domainServer(t, &cfFake{zones: zonesOK})
+	if w := postDomain(s, "example.com", "203.0.113.20", "wildcard"); w.Code != 204 {
+		t.Fatalf("a public default IP must be accepted: %d %q", w.Code, w.Body.String())
+	}
+	ds, _ := s.deps.Store.ListDomains(context.Background())
+	if len(ds) != 1 || ds[0].DefaultIP != "203.0.113.20" {
+		t.Fatalf("%+v", ds)
+	}
+}

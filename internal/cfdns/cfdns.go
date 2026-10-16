@@ -71,20 +71,40 @@ func (c *Client) VerifyToken(ctx context.Context) error {
 	return nil
 }
 
-// Record is the subset of a Cloudflare A record ServanaGo cares about.
+// Record is the subset of a Cloudflare address record ServanaGo cares about.
 type Record struct{ ID, Name, Content string }
 
 const managedComment = "managed by servanago"
 
-// FindA returns the A record named name, or nil if there is none.
-func (c *Client) FindA(ctx context.Context, zoneID, name string) (*Record, error) {
+// Record families ServanaGo manages: A (IPv4) and AAAA (IPv6).
+const (
+	FamilyA    = "A"
+	FamilyAAAA = "AAAA"
+)
+
+func checkFamily(family string) error {
+	if family != FamilyA && family != FamilyAAAA {
+		return fmt.Errorf("unsupported record family %q (want A or AAAA)", family)
+	}
+	return nil
+}
+
+// FindRecord returns the record of the given family (A or AAAA) named name, or nil if there is none.
+func (c *Client) FindRecord(ctx context.Context, zoneID, name, family string) (*Record, error) {
+	if err := checkFamily(family); err != nil {
+		return nil, err
+	}
+	listType := dns.RecordListParamsTypeA
+	if family == FamilyAAAA {
+		listType = dns.RecordListParamsTypeAAAA
+	}
 	page, err := c.api.DNS.Records.List(ctx, dns.RecordListParams{
 		ZoneID: cloudflare.F(zoneID),
-		Type:   cloudflare.F(dns.RecordListParamsTypeA),
+		Type:   cloudflare.F(listType),
 		Name:   cloudflare.F(dns.RecordListParamsName{Exact: cloudflare.F(name)}),
 	})
 	if err != nil {
-		return nil, fmt.Errorf("list A records for %s: %w", name, err)
+		return nil, fmt.Errorf("list %s records for %s: %w", family, name, err)
 	}
 	var found *Record
 	for _, r := range page.Result {
@@ -92,33 +112,52 @@ func (c *Client) FindA(ctx context.Context, zoneID, name string) (*Record, error
 			continue
 		}
 		if found != nil {
-			return nil, fmt.Errorf("multiple A records named %s; resolve in Cloudflare first", name)
+			return nil, fmt.Errorf("multiple %s records named %s; resolve in Cloudflare first", family, name)
 		}
 		found = &Record{ID: r.ID, Name: r.Name, Content: r.Content}
 	}
 	return found, nil
 }
 
-func aRecord(name, ip string) dns.ARecordParam {
+// recordParam is satisfied by the SDK's A and AAAA record params, for both create and update calls.
+type recordParam interface {
+	dns.RecordNewParamsBodyUnion
+	dns.RecordUpdateParamsBodyUnion
+}
+
+// recordBody is the DNS-only record body for the family.
+func recordBody(name, family, ip string) recordParam {
+	if family == FamilyAAAA {
+		return dns.AAAARecordParam{
+			Name: cloudflare.F(name), Content: cloudflare.F(ip), Type: cloudflare.F(dns.AAAARecordTypeAAAA),
+			TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(managedComment),
+		}
+	}
 	return dns.ARecordParam{
 		Name: cloudflare.F(name), Content: cloudflare.F(ip), Type: cloudflare.F(dns.ARecordTypeA),
 		TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(managedComment),
 	}
 }
 
-// CreateA creates a DNS-only A record and returns its id.
-func (c *Client) CreateA(ctx context.Context, zoneID, name, ip string) (string, error) {
-	r, err := c.api.DNS.Records.New(ctx, dns.RecordNewParams{ZoneID: cloudflare.F(zoneID), Body: aRecord(name, ip)})
+// CreateRecord creates a DNS-only A or AAAA record and returns its id.
+func (c *Client) CreateRecord(ctx context.Context, zoneID, name, family, ip string) (string, error) {
+	if err := checkFamily(family); err != nil {
+		return "", err
+	}
+	r, err := c.api.DNS.Records.New(ctx, dns.RecordNewParams{ZoneID: cloudflare.F(zoneID), Body: recordBody(name, family, ip)})
 	if err != nil {
-		return "", fmt.Errorf("create A record %s: %w", name, err)
+		return "", fmt.Errorf("create %s record %s: %w", family, name, err)
 	}
 	return r.ID, nil
 }
 
-// UpdateA points an existing record at ip (and makes it DNS-only).
-func (c *Client) UpdateA(ctx context.Context, zoneID, id, name, ip string) error {
-	if _, err := c.api.DNS.Records.Update(ctx, id, dns.RecordUpdateParams{ZoneID: cloudflare.F(zoneID), Body: aRecord(name, ip)}); err != nil {
-		return fmt.Errorf("update A record %s: %w", name, err)
+// UpdateRecord points an existing record of the family at ip (and makes it DNS-only).
+func (c *Client) UpdateRecord(ctx context.Context, zoneID, id, name, family, ip string) error {
+	if err := checkFamily(family); err != nil {
+		return err
+	}
+	if _, err := c.api.DNS.Records.Update(ctx, id, dns.RecordUpdateParams{ZoneID: cloudflare.F(zoneID), Body: recordBody(name, family, ip)}); err != nil {
+		return fmt.Errorf("update %s record %s: %w", family, name, err)
 	}
 	return nil
 }

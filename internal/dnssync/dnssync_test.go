@@ -43,7 +43,7 @@ func newFx(t *testing.T) *fx {
 
 func (f *fx) row(t *testing.T) store.DNSRecord {
 	t.Helper()
-	d, err := f.st.GetDNS(context.Background(), f.route.ID)
+	d, err := f.st.GetDNS(context.Background(), f.route.ID, store.FamilyA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +192,7 @@ func newHostFx(t *testing.T) *fx {
 
 func (f *fx) hostRow(t *testing.T) store.DNSRecord {
 	t.Helper()
-	d, err := f.st.GetUIDNS(context.Background())
+	d, err := f.st.GetUIDNS(context.Background(), store.FamilyA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -305,7 +305,220 @@ func TestHostDisabledWhenUnconfigured(t *testing.T) {
 	if err := f.sync.ReconcileHost(context.Background(), false); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.st.GetUIDNS(context.Background()); err == nil {
-		t.Error("a row was written without a configured host")
+	if rows, err := f.st.ListUIDNS(context.Background()); err != nil || len(rows) != 0 {
+		t.Errorf("a row was written without a configured host: %+v %v", rows, err)
+	}
+}
+
+// --- IPv6 (dual-stack) -----------------------------------------------------
+
+func (f *fx) row6(t *testing.T) (store.DNSRecord, bool) {
+	t.Helper()
+	d, err := f.st.GetDNS(context.Background(), f.route.ID, store.FamilyAAAA)
+	return d, err == nil
+}
+
+func (f *fx) setDomain6(t *testing.T, ip6 string) {
+	t.Helper()
+	f.dom.DefaultIP6 = ip6
+	if err := f.st.UpdateDomain(context.Background(), f.dom); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f *fx) recordsByType() map[string]string {
+	out := map[string]string{}
+	for _, r := range f.cf.Records() {
+		out[r.Type] = r.Content
+	}
+	return out
+}
+
+func TestNoIPv6NoAAAA(t *testing.T) {
+	f := newFx(t)
+	f.reconcile(t)
+	if _, ok := f.row6(t); ok {
+		t.Error("a domain without an IPv6 address must not get an AAAA row")
+	}
+	if got := f.recordsByType(); len(got) != 1 || got["A"] != "10.0.0.1" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestDualStackCreatesBothRecords(t *testing.T) {
+	f := newFx(t)
+	f.setDomain6(t, "2001:db8::1")
+	f.reconcile(t)
+	if got := f.recordsByType(); len(got) != 2 || got["A"] != "10.0.0.1" || got["AAAA"] != "2001:db8::1" {
+		t.Fatalf("records: %+v", got)
+	}
+	a, q := f.row(t), mustRow6(t, f)
+	if a.State != "synced" || q.State != "synced" || !a.Owned || !q.Owned || q.Family != store.FamilyAAAA || q.Content != "2001:db8::1" || q.CFRecordID == a.CFRecordID {
+		t.Fatalf("A=%+v AAAA=%+v", a, q)
+	}
+	for _, r := range f.cf.Records() {
+		if r.Proxied || r.Comment != "managed by servanago" {
+			t.Errorf("record must be DNS-only and marked managed: %+v", r)
+		}
+	}
+	w := f.cf.Writes()
+	f.reconcile(t)
+	f.reconcile(t)
+	if f.cf.Writes() != w {
+		t.Errorf("resync wrote: %d -> %d", w, f.cf.Writes())
+	}
+}
+
+func mustRow6(t *testing.T, f *fx) store.DNSRecord {
+	t.Helper()
+	q, ok := f.row6(t)
+	if !ok {
+		t.Fatal("no AAAA row")
+	}
+	return q
+}
+
+func TestRouteIPv6OverridesDomainDefault(t *testing.T) {
+	f := newFx(t)
+	f.setDomain6(t, "2001:db8::1")
+	f.route.RecordIP6 = "2001:db8::77"
+	if err := f.st.UpdateRoute(context.Background(), f.route); err != nil {
+		t.Fatal(err)
+	}
+	f.reconcile(t)
+	if got := f.recordsByType(); got["AAAA"] != "2001:db8::77" || got["A"] != "10.0.0.1" {
+		t.Fatalf("%+v", got)
+	}
+}
+
+func TestIPv6ChangeLeavesIPv4Alone(t *testing.T) {
+	f := newFx(t)
+	f.setDomain6(t, "2001:db8::1")
+	f.reconcile(t)
+	idA := f.row(t).CFRecordID
+	f.setDomain6(t, "2001:db8::2")
+	f.reconcile(t)
+	if got := f.recordsByType(); got["AAAA"] != "2001:db8::2" || got["A"] != "10.0.0.1" {
+		t.Fatalf("%+v", got)
+	}
+	if f.row(t).CFRecordID != idA {
+		t.Error("the A record must not be recreated by an IPv6 change")
+	}
+}
+
+func TestAAAAConflictIsIndependentOfA(t *testing.T) {
+	f := newFx(t)
+	f.setDomain6(t, "2001:db8::1")
+	id := f.cf.Seed("sonarr.example.com", "2001:db8::dead")
+	f.reconcile(t)
+	if a := f.row(t); a.State != "synced" {
+		t.Fatalf("A must sync despite the AAAA conflict: %+v", a)
+	}
+	q := mustRow6(t, f)
+	if q.State != "conflict" || q.Owned || !strings.Contains(q.Error, "2001:db8::dead") || !strings.Contains(q.Error, "2001:db8::1") {
+		t.Fatalf("AAAA conflict: %+v", q)
+	}
+	if err := f.sync.TakeOver(context.Background(), f.route.ID); err != nil {
+		t.Fatal(err)
+	}
+	q = mustRow6(t, f)
+	if q.State != "synced" || !q.Owned || q.CFRecordID != id || q.Content != "2001:db8::1" {
+		t.Fatalf("take over: %+v", q)
+	}
+}
+
+func TestAdoptIdenticalAAAA(t *testing.T) {
+	f := newFx(t)
+	f.setDomain6(t, "2001:db8::1")
+	id := f.cf.Seed("sonarr.example.com", "2001:db8::1")
+	f.reconcile(t)
+	if q := mustRow6(t, f); q.State != "synced" || q.Owned || q.CFRecordID != id {
+		t.Fatalf("%+v", q)
+	}
+}
+
+func TestClearingIPv6RemovesOwnedAAAAOnly(t *testing.T) {
+	f := newFx(t)
+	f.setDomain6(t, "2001:db8::1")
+	f.reconcile(t)
+	f.setDomain6(t, "")
+	f.reconcile(t)
+	if got := f.recordsByType(); len(got) != 1 || got["A"] != "10.0.0.1" {
+		t.Fatalf("an owned AAAA must be deleted when no IPv6 is wanted: %+v", got)
+	}
+	if _, ok := f.row6(t); ok {
+		t.Error("the AAAA row must be dropped")
+	}
+
+	// an adopted AAAA is not ours to delete: the row goes, the record stays
+	g := newFx(t)
+	g.setDomain6(t, "2001:db8::1")
+	g.cf.Seed("sonarr.example.com", "2001:db8::1")
+	g.reconcile(t)
+	g.setDomain6(t, "")
+	g.reconcile(t)
+	if got := g.recordsByType(); got["AAAA"] != "2001:db8::1" {
+		t.Fatalf("adopted AAAA was deleted: %+v", got)
+	}
+	if _, ok := g.row6(t); ok {
+		t.Error("the AAAA row must be dropped even when the record is kept")
+	}
+}
+
+func TestRemoveDeletesOwnedRecordsOfBothFamilies(t *testing.T) {
+	f := newFx(t)
+	f.setDomain6(t, "2001:db8::1")
+	f.reconcile(t)
+	for _, rec := range []store.DNSRecord{f.row(t), mustRow6(t, f)} {
+		if deleted, err := f.sync.Remove(context.Background(), f.dom.ZoneID, rec); err != nil || !deleted {
+			t.Fatalf("%s: deleted=%v err=%v", rec.Family, deleted, err)
+		}
+	}
+	if n := len(f.cf.Records()); n != 0 {
+		t.Errorf("%d records left", n)
+	}
+}
+
+func TestHostDualStack(t *testing.T) {
+	f := newHostFx(t)
+	f.sync.Host.IP6 = "2001:db8::a"
+	f.reconcileHost(t, false)
+	if got := f.recordsByType(); len(got) != 2 || got["A"] != "192.168.25.165" || got["AAAA"] != "2001:db8::a" {
+		t.Fatalf("%+v", got)
+	}
+	q, err := f.st.GetUIDNS(context.Background(), store.FamilyAAAA)
+	if err != nil || q.State != "synced" || !q.Owned {
+		t.Fatalf("%+v %v", q, err)
+	}
+	w := f.cf.Writes()
+	f.reconcileHost(t, false)
+	if f.cf.Writes() != w {
+		t.Errorf("host resync wrote: %d -> %d", w, f.cf.Writes())
+	}
+	f.sync.Host.IP6 = ""
+	f.reconcileHost(t, false)
+	if got := f.recordsByType(); len(got) != 1 || got["A"] != "192.168.25.165" {
+		t.Fatalf("clearing the host IPv6 must delete the owned AAAA: %+v", got)
+	}
+	if _, err := f.st.GetUIDNS(context.Background(), store.FamilyAAAA); err == nil {
+		t.Error("the host AAAA row must be dropped")
+	}
+}
+
+func TestHostAAAAConflict(t *testing.T) {
+	f := newHostFx(t)
+	f.sync.Host.IP6 = "2001:db8::a"
+	f.cf.Seed("servanago.example.com", "2001:db8::bad")
+	f.reconcileHost(t, false)
+	q, _ := f.st.GetUIDNS(context.Background(), store.FamilyAAAA)
+	if q.State != "conflict" || !strings.Contains(q.Error, "2001:db8::bad") {
+		t.Fatalf("%+v", q)
+	}
+	if a := f.hostRow(t); a.State != "synced" {
+		t.Errorf("A must sync despite the AAAA conflict: %+v", a)
+	}
+	f.reconcileHost(t, true)
+	if q, _ = f.st.GetUIDNS(context.Background(), store.FamilyAAAA); q.State != "synced" || !q.Owned {
+		t.Fatalf("take over: %+v", q)
 	}
 }

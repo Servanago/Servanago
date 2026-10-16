@@ -13,18 +13,19 @@
 {{if eq .Cert.State "pending"}}<small class="next">{{.CertWait}}</small>{{else if and $c.Next (or (ne .Cert.State "error") (not .Cert.Err))}}<small class="next">{{$c.Next}}</small>{{end}}
 {{if .Cert.Err}}<div class="explain">{{errhtml .Cert.Err}}</div>{{end}}{{end}}</td>
 {{if .DNSOn}}<td>
-{{if .HasDNS}}{{$d := status "dns" .DNS.State}}<span class="dns-{{.DNS.State}}" title="{{$d.Meaning}}">{{.DNS.State}}</span>
-{{if and $d.Next (or (ne .DNS.State "error") (not .DNS.Error))}}<small class="next">{{$d.Next}}</small>{{end}}
-{{if .DNS.Error}}<div class="explain">{{errhtml .DNS.Error}}</div>{{end}}
-{{if eq .DNS.State "conflict"}}<button class="outline warn icon-btn" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing A record for {{.Host}}? The current record will be replaced." aria-label="Take over" data-tooltip="Replace the existing DNS record">{{icon "takeover"}}</button>
-{{else if eq .DNS.State "error"}}<button class="outline icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Retry" data-tooltip="Try the DNS update again">{{icon "refresh"}}</button>
+{{$row := .}}{{if .HasDNS}}{{range .DNS}}{{$d := status "dns" .State}}<span class="dns-{{.State}}" title="{{$d.Meaning}}">{{if gt (len $row.DNS) 1}}{{.Family}} {{end}}{{.State}}</span>
+{{if and $d.Next (or (ne .State "error") (not .Error))}}<small class="next">{{$d.Next}}</small>{{end}}
+{{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}
+{{end}}
+{{if eq .DNSState "conflict"}}<button class="outline warn icon-btn" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Host}}? The current record(s) will be replaced." aria-label="Take over" data-tooltip="Replace the existing DNS record">{{icon "takeover"}}</button>
+{{else if eq .DNSState "error"}}<button class="outline icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Retry" data-tooltip="Try the DNS update again">{{icon "refresh"}}</button>
 {{else}}<button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Resync" data-tooltip="Check the record in Cloudflare again">{{icon "refresh"}}</button>{{end}}
 {{else}}{{$d := status "dns" "pending"}}<span class="dns-pending" title="{{$d.Meaning}}">pending</span><small class="next">{{$d.Next}}</small>{{end}}
 </td>{{end}}
 <td class="actions">
 <a class="icon-btn" href="/routes/{{.ID}}" aria-label="Edit" data-tooltip="Edit this site">{{icon "edit"}}</a>
 <button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg" aria-label="{{if .Enabled}}Disable{{else}}Enable{{end}}" data-tooltip="{{if .Enabled}}Disable: stop serving this site{{if .DNSOn}}, keep its DNS record{{end}}{{else}}Enable: start serving this site again{{end}}">{{if .Enabled}}{{icon "pause"}}{{else}}{{icon "play"}}{{end}}</button>
-<button class="outline danger icon-btn delete-route" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{if .OwnsRecord}}{{.DNS.Content}}{{end}}" aria-label="Delete" data-tooltip="Delete this site">{{icon "trash"}}</button>
+<button class="outline danger icon-btn delete-route" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{.OwnedSummary}}" aria-label="Delete" data-tooltip="Delete this site">{{icon "trash"}}</button>
 </td>
 </tr>
 {{end}}
@@ -47,12 +48,12 @@
 {{with .Host}}
 <article id="ui-host">
 <header>UI host</header>
-{{$d := status "dns" .DNS.State}}
-<p><strong>{{.Spec.Name}}</strong> → {{.Spec.IP}}
-<span class="dns-{{.DNS.State}}" title="{{$d.Meaning}}">{{.DNS.State}}</span>{{if and $d.Next (or (ne .DNS.State "error") (not .DNS.Error))}}<br><small class="next">{{$d.Next}}</small>{{end}}</p>
-{{if .DNS.Error}}<div class="explain">{{errhtml .DNS.Error}}</div>{{end}}
-{{if eq .DNS.State "conflict"}}<button class="outline warn" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing A record for {{.Spec.Name}}? The current record will be replaced.">Take over</button>
-{{else if eq .DNS.State "error"}}<button class="outline" hx-post="/host/dns/resync" hx-target="#host-msg">Retry</button>
+<p><strong>{{.Spec.Name}}</strong>{{$card := .}}
+{{range .DNS}}{{$d := status "dns" .State}}<br>{{if gt (len $card.DNS) 1}}<small>{{.Family}}</small> {{end}}→ {{.Content}}
+<span class="dns-{{.State}}" title="{{$d.Meaning}}">{{.State}}</span>{{if and $d.Next (or (ne .State "error") (not .Error))}}<br><small class="next">{{$d.Next}}</small>{{end}}{{end}}</p>
+{{range .DNS}}{{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}{{end}}
+{{if eq .State "conflict"}}<button class="outline warn" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Spec.Name}}? The current record(s) will be replaced.">Take over</button>
+{{else if eq .State "error"}}<button class="outline" hx-post="/host/dns/resync" hx-target="#host-msg">Retry</button>
 {{else}}<button class="outline secondary" hx-post="/host/dns/resync" hx-target="#host-msg" title="Check the record in Cloudflare again">Resync</button>{{end}}
 <p id="host-msg" role="alert"></p>
 </article>

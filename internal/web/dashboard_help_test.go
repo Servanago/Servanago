@@ -114,9 +114,9 @@ func TestChecklist(t *testing.T) {
 		t.Error("the UI address certificate item must show without DNS management")
 	}
 	for want, card := range map[string]*hostCard{
-		"ok":   {DNS: statusRecord("synced")},
-		"todo": {DNS: statusRecord("pending")},
-		"bad":  {DNS: statusRecord("conflict")},
+		"ok":   {DNS: []store.DNSRecord{statusRecord("synced")}},
+		"todo": {DNS: []store.DNSRecord{statusRecord("pending")}},
+		"bad":  {DNS: []store.DNSRecord{statusRecord("conflict")}},
 	} {
 		if got := state(s.checklist(ctx, nil, card), "UI address"); got != want {
 			t.Errorf("host %s: got %s", want, got)

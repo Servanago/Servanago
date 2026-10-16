@@ -17,7 +17,8 @@ var cfToken = regexp.MustCompile(`^([A-Za-z0-9_-]{35,50}|cf(ut|at)_[A-Za-z0-9_-]
 type Config struct {
 	CloudflareToken    string
 	Host               string
-	HostIP             string // A record target for Host; private/CGNAT IPv4
+	HostIP             string // A record target for Host; IPv4
+	HostIP6            string // optional AAAA record target for Host; IPv6 (dual-stack, never instead of HostIP)
 	HostZone           string // optional Cloudflare zone name for Host; empty = walk up labels
 	ACMEEmail          string
 	AdminPassword      string
@@ -99,6 +100,7 @@ func Load(getenv func(string) string) (Config, error) {
 		CloudflareToken:    strings.TrimSpace(getenv("CLOUDFLARE_API_TOKEN")), // optional: unset = no DNS management, default ACME challenges
 		Host:               req("SERVANAGO_HOST"),
 		HostIP:             strings.TrimSpace(getenv("SERVANAGO_HOST_IP")),
+		HostIP6:            strings.TrimSpace(getenv("SERVANAGO_HOST_IP6")),
 		HostZone:           strings.ToLower(strings.TrimSpace(getenv("SERVANAGO_HOST_ZONE"))),
 		ACMEEmail:          req("ACME_EMAIL"),
 		AdminPassword:      getenv("ADMIN_PASSWORD"),
@@ -164,8 +166,13 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 	}
 	if c.HostIP != "" {
-		if _, err := ValidateLANIP(c.HostIP); err != nil {
+		if _, err := ValidateIP(c.HostIP); err != nil {
 			errs = append(errs, fmt.Errorf("SERVANAGO_HOST_IP: %w", err))
+		}
+	}
+	if c.HostIP6 != "" {
+		if _, err := ValidateIP6(c.HostIP6); err != nil {
+			errs = append(errs, fmt.Errorf("SERVANAGO_HOST_IP6: %w", err))
 		}
 	}
 	if c.HostZone != "" && c.Host != "" && c.Host != c.HostZone && !strings.HasSuffix(c.Host, "."+c.HostZone) || c.HostZone != "" && !strings.Contains(c.HostZone, ".") {

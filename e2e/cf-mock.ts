@@ -1,5 +1,5 @@
 // Minimal stateful Cloudflare API mock for e2e. Zones named "missing.*" are not found.
-type Rec = { id: string; name: string; content: string; type: 'A'; proxied: boolean; comment: string; ttl: number };
+type Rec = { id: string; name: string; content: string; type: 'A' | 'AAAA'; proxied: boolean; comment: string; ttl: number };
 
 const records = new Map<string, Rec>();
 let seq = 0;
@@ -26,12 +26,13 @@ Bun.serve({
       const id = parts[3];
       if (req.method === 'GET' && !id) {
         const name = (url.searchParams.get('name.exact') ?? url.searchParams.get('name') ?? '').toLowerCase();
-        const hits = [...records.values()].filter((r) => r.name.toLowerCase() === name);
+        const type = url.searchParams.get('type'); // like the real API: absent = every type
+        const hits = [...records.values()].filter((r) => r.name.toLowerCase() === name && (!type || r.type === type));
         return ok(hits, info(hits.length));
       }
       if (req.method === 'POST' && !id) {
         const b = await req.json();
-        const rec: Rec = { id: `rec${++seq}`, type: 'A', ttl: 1, name: b.name, content: b.content, proxied: !!b.proxied, comment: b.comment ?? '' };
+        const rec: Rec = { id: `rec${++seq}`, type: b.type === 'AAAA' ? 'AAAA' : 'A', ttl: 1, name: b.name, content: b.content, proxied: !!b.proxied, comment: b.comment ?? '' };
         records.set(rec.id, rec);
         return ok(rec);
       }

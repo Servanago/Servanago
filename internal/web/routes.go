@@ -42,8 +42,13 @@ func parseRoute(v url.Values) (store.Route, error) {
 		return r, fmt.Errorf("port %q must be 1-65535", v.Get("upstream_port"))
 	}
 	if r.RecordIP = strings.TrimSpace(v.Get("record_ip")); r.RecordIP != "" {
-		if _, err := config.ValidateLANIP(r.RecordIP); err != nil {
+		if _, err := config.ValidateIP(r.RecordIP); err != nil {
 			return r, fmt.Errorf("record IP: %w", err)
+		}
+	}
+	if r.RecordIP6 = strings.TrimSpace(v.Get("record_ip6")); r.RecordIP6 != "" {
+		if _, err := config.ValidateIP6(r.RecordIP6); err != nil {
+			return r, fmt.Errorf("record IPv6: %w", err)
 		}
 	}
 	r.TLSSkipVerify = v.Get("tls_skip_verify") != ""
@@ -53,10 +58,9 @@ func parseRoute(v url.Values) (store.Route, error) {
 
 type routeRow struct {
 	store.Route
-	Host   string
-	DNS    store.DNSRecord
-	HasDNS bool
-	DNSOn  bool // Cloudflare is configured; otherwise the DNS column and actions are hidden
+	Host  string
+	DNS   []store.DNSRecord // the route's A and AAAA rows that exist, A first
+	DNSOn bool              // Cloudflare is configured; otherwise the DNS column and actions are hidden
 	// Probed is false for disabled routes: nothing is served, so nothing is checked.
 	Probed   bool
 	Upstream string // up | down
@@ -65,8 +69,17 @@ type routeRow struct {
 	CertWait string // how long a pending certificate may take, from the propagation settings
 }
 
-// OwnsRecord is true when ServanaGo created this route's A record, the only kind it may delete.
-func (r routeRow) OwnsRecord() bool { return r.HasDNS && r.DNS.Owned && r.DNS.CFRecordID != "" }
+// HasDNS is true once at least one of the route's records has been synced or attempted.
+func (r routeRow) HasDNS() bool { return len(r.DNS) > 0 }
+
+// DNSState is the worst state across the route's records (error, conflict, pending, synced); "" when none exist.
+func (r routeRow) DNSState() string { return worstState(r.DNS) }
+
+// OwnsRecord is true when ServanaGo created at least one of this route's records, the only kind it may delete.
+func (r routeRow) OwnsRecord() bool { return len(ownedRecords(r.DNS)) > 0 }
+
+// OwnedSummary lists the records the delete dialog offers to remove, such as "A 10.0.0.1, AAAA 2001:db8::1".
+func (r routeRow) OwnedSummary() string { return recordSummary(ownedRecords(r.DNS)) }
 
 func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	ds, err := s.deps.Store.ListDomains(r.Context())
@@ -85,14 +98,13 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	byRoute := map[int64]store.DNSRecord{}
+	byRoute := map[int64][]store.DNSRecord{} // ListDNS orders A before AAAA
 	for _, d := range dns {
-		byRoute[d.RouteID] = d
+		byRoute[d.RouteID] = append(byRoute[d.RouteID], d)
 	}
 	rows := make([]routeRow, len(rs))
 	for i, x := range rs {
-		d, ok := byRoute[x.ID]
-		rows[i] = routeRow{Route: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: d, HasDNS: ok, DNSOn: s.dnsOn()}
+		rows[i] = routeRow{Route: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: byRoute[x.ID], DNSOn: s.dnsOn()}
 		rows[i].Probed = x.Enabled && s.deps.Probe != nil
 	}
 	// Probes wait on the network, so run them side by side; each goroutine writes only its own row.
@@ -125,16 +137,38 @@ type routeForm struct {
 	MailOK        bool   // email delivery configured; the gate section is shown only then
 }
 
-// deleteConfirm tells the user exactly what deleting the route does to its A record.
-func deleteConfirm(t dnsTarget) string {
-	switch {
-	case !t.hasRow || t.row.CFRecordID == "":
-		return "Delete this route?"
-	case t.row.Owned:
-		return "Delete this route? This also deletes the A record " + t.name + " in Cloudflare."
-	default:
-		return "Delete this route? The existing A record " + t.name + " was adopted and is left in place."
+// recordWord names records by family: "A record", "AAAA record" or "A and AAAA records".
+func recordWord(families []string) string {
+	if len(families) > 1 {
+		return strings.Join(families, " and ") + " records"
 	}
+	return families[0] + " record"
+}
+
+// deleteConfirm tells the user exactly what deleting the route does to its DNS records.
+func deleteConfirm(t dnsTarget) string {
+	var owned, adopted []string
+	for _, row := range t.rows {
+		switch {
+		case row.CFRecordID == "":
+		case row.Owned:
+			owned = append(owned, row.Family)
+		default:
+			adopted = append(adopted, row.Family)
+		}
+	}
+	msg := "Delete this route?"
+	if len(owned) > 0 {
+		msg += " This also deletes the " + recordWord(owned) + " " + t.name + " in Cloudflare."
+	}
+	if len(adopted) > 0 {
+		verbs := "was adopted and is"
+		if len(adopted) > 1 {
+			verbs = "were adopted and are"
+		}
+		msg += " The existing " + recordWord(adopted) + " " + t.name + " " + verbs + " left in place."
+	}
+	return msg
 }
 
 func (s *Server) routeFormPage(w http.ResponseWriter, r *http.Request, rt store.Route, edit bool) {
@@ -274,7 +308,7 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 		// Overlay only the fields this form owns.
 		cur.DomainID, cur.Subdomain, cur.Scheme = in.DomainID, in.Subdomain, in.Scheme
 		cur.UpstreamHost, cur.UpstreamPort = in.UpstreamHost, in.UpstreamPort
-		cur.TLSSkipVerify, cur.Enabled, cur.RecordIP = in.TLSSkipVerify, in.Enabled, in.RecordIP
+		cur.TLSSkipVerify, cur.Enabled, cur.RecordIP, cur.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
 		cur.GateMode = in.GateMode
 		if err := applyControls(&cur, r.PostForm); err != nil {
 			return err
@@ -334,11 +368,10 @@ func detached(r *http.Request) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 }
 
-// dnsTarget is what a route's A record looked like before the route changed or went away.
+// dnsTarget is what a route's A and AAAA records looked like before the route changed or went away.
 type dnsTarget struct {
 	name, zone string
-	row        store.DNSRecord
-	hasRow     bool
+	rows       []store.DNSRecord // the rows that exist, A before AAAA
 }
 
 func dnsTargetOf(r *http.Request, q *store.Store, rt store.Route) (dnsTarget, error) {
@@ -347,8 +380,10 @@ func dnsTargetOf(r *http.Request, q *store.Store, rt store.Route) (dnsTarget, er
 		return dnsTarget{}, err
 	}
 	t := dnsTarget{name: rt.Subdomain + "." + d.Name, zone: d.ZoneID}
-	if row, err := q.GetDNS(r.Context(), rt.ID); err == nil {
-		t.row, t.hasRow = row, true
+	for _, fam := range []string{store.FamilyA, store.FamilyAAAA} {
+		if row, err := q.GetDNS(r.Context(), rt.ID, fam); err == nil {
+			t.rows = append(t.rows, row)
+		}
 	}
 	return t, nil
 }
@@ -364,16 +399,18 @@ func (s *Server) reconcile(r *http.Request, routeID int64) {
 	}
 }
 
-// removeRecord deletes the route's A record when ServanaGo owns it; failures become a one-time notice.
+// removeRecord deletes the route's A and AAAA records when ServanaGo owns them; failures become one-time notices.
 func (s *Server) removeRecord(r *http.Request, t dnsTarget) {
-	if !s.dnsOn() || !t.hasRow {
+	if !s.dnsOn() {
 		return
 	}
 	ctx, cancel := detached(r)
 	defer cancel()
-	if _, err := s.deps.DNS.Remove(ctx, t.zone, t.row); err != nil {
-		slog.Error("dns remove", "record", t.name, "error", err)
-		s.flash(fmt.Sprintf("The A record %s could not be removed: %v", t.name, err))
+	for _, row := range t.rows {
+		if _, err := s.deps.DNS.Remove(ctx, t.zone, row); err != nil {
+			slog.Error("dns remove", "record", t.name, "family", row.Family, "error", err)
+			s.flash(fmt.Sprintf("The %s record %s could not be removed: %v", row.Family, t.name, err))
+		}
 	}
 }
 

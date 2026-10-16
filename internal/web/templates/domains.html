@@ -6,11 +6,11 @@
 <article>
 {{if .Rows}}
 <table>
-<thead><tr><th>Domain</th>{{if .DNSOn}}<th>Default IP</th>{{end}}<th>Certificates</th><th>Routes</th><th></th></tr></thead>
+<thead><tr><th>Domain</th>{{if .DNSOn}}<th>Default IPs</th>{{end}}<th>Certificates</th><th>Routes</th><th></th></tr></thead>
 <tbody>
 {{range .Rows}}
 <tr>
-<td>{{.Name}}</td>{{if $.Data.DNSOn}}<td>{{.DefaultIP}}</td>{{end}}<td>{{.CertMode}}</td><td>{{.Routes}}</td>
+<td>{{.Name}}</td>{{if $.Data.DNSOn}}<td>{{.DefaultIP}}{{if .DefaultIP6}}<br>{{.DefaultIP6}}{{end}}</td>{{end}}<td>{{.CertMode}}</td><td>{{.Routes}}</td>
 <td><button class="outline danger" hx-delete="/domains/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}? {{if $.Data.DNSOn}}Its DNS records and certificates are not touched.{{else}}Its certificates are not touched.{{end}}">Remove</button></td>
 </tr>
 {{end}}
@@ -25,7 +25,9 @@
 <label>Domain <input name="name" placeholder="example.com" required></label>
 {{if .DNSOn}}{{hint "domain"}}{{else}}{{hint "domain_nodns"}}{{end}}
 {{if .DNSOn}}<label>Default IP for A records <input name="default_ip" placeholder="192.168.1.10" required></label>
-{{hint "default_ip"}} {{helplink "lan-only"}}
+{{hint "default_ip"}} {{helplink "addresses"}}
+<label>IPv6 for AAAA records (optional) <input name="default_ip6" placeholder="2001:db8::10"></label>
+{{hint "default_ip6"}}
 <label>Certificates
 <select name="cert_mode">
 <option value="wildcard">Wildcard (one *.domain certificate)</option>

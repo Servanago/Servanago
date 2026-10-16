@@ -1,5 +1,7 @@
-// Package dnssync keeps Cloudflare A records in line with routes (DESIGN.md §7).
+// Package dnssync keeps Cloudflare A and AAAA records in line with routes (DESIGN.md §7).
 // A record ServanaGo created is "owned" and may be updated or deleted; one it merely adopted is never touched.
+// Each name is dual-stack: an A record from the IPv4 target and, when an IPv6 target is set, an AAAA record
+// from it. The two families are synced, adopted and reported independently.
 package dnssync
 
 import (
@@ -22,13 +24,23 @@ type Syncer struct {
 
 func New(cf *cfdns.Client, st *store.Store) *Syncer { return &Syncer{cf: cf, st: st, now: time.Now} }
 
-// Reconcile brings the route's A record in line. Cloudflare failures are recorded on the
-// dns_records row (state "error") and are not returned: a DNS failure never reverts a route.
+// families is the order records are synced and listed in: A first.
+var families = [...]string{store.FamilyA, store.FamilyAAAA}
+
+func first(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
+}
+
+// Reconcile brings the route's A and AAAA records in line. Cloudflare failures are recorded on the
+// dns_records rows (state "error") and are not returned: a DNS failure never reverts a route.
 func (s *Syncer) Reconcile(ctx context.Context, routeID int64) error {
 	return s.run(ctx, routeID, false)
 }
 
-// TakeOver overwrites a conflicting record and marks it owned.
+// TakeOver overwrites conflicting records (of either family) and marks them owned.
 func (s *Syncer) TakeOver(ctx context.Context, routeID int64) error { return s.run(ctx, routeID, true) }
 
 func (s *Syncer) run(ctx context.Context, routeID int64, takeOver bool) error {
@@ -40,42 +52,76 @@ func (s *Syncer) run(ctx context.Context, routeID int64, takeOver bool) error {
 	if err != nil {
 		return err
 	}
-	row, err := s.st.GetDNS(ctx, routeID)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+	name := rt.Subdomain + "." + dom.Name
+	want := map[string]string{
+		store.FamilyA:    first(rt.RecordIP, dom.DefaultIP),
+		store.FamilyAAAA: first(rt.RecordIP6, dom.DefaultIP6),
 	}
-	row.RouteID = routeID
-	want := rt.RecordIP
+	for _, fam := range families {
+		row, err := s.st.GetDNS(ctx, routeID, fam)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		has := err == nil
+		row.RouteID, row.Family = routeID, fam
+		next, drop := s.syncFamily(ctx, dom.ZoneID, name, fam, want[fam], row, has, takeOver)
+		if drop {
+			err = s.st.DeleteDNSRecord(ctx, routeID, fam)
+		} else {
+			err = s.st.UpsertDNS(ctx, next)
+		}
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// syncFamily reconciles one name's record of one family. want == "" means no record of that family is
+// wanted: an owned one is deleted, an adopted one is left alone, and either way the row is dropped (drop).
+// A Cloudflare failure keeps the row and records state "error".
+func (s *Syncer) syncFamily(ctx context.Context, zone, name, family, want string, row store.DNSRecord, has, takeOver bool) (next store.DNSRecord, drop bool) {
+	row.Family = family
 	if want == "" {
-		want = dom.DefaultIP
+		if !has {
+			return row, true
+		}
+		if row.Owned && row.CFRecordID != "" {
+			if err := s.cf.DeleteRecord(ctx, zone, row.CFRecordID); err != nil {
+				row.State, row.Error = "error", err.Error()
+				return row, false
+			}
+		}
+		return row, true
 	}
-	next, err := s.step(ctx, dom.ZoneID, rt.Subdomain+"."+dom.Name, want, row, takeOver)
+	next, err := s.step(ctx, zone, name, family, want, row, takeOver)
 	if err != nil {
 		next = row
 		next.State, next.Error = "error", err.Error()
 	}
-	return s.st.UpsertDNS(ctx, next)
+	next.Family = family
+	return next, false
 }
 
-func (s *Syncer) step(ctx context.Context, zone, name, want string, row store.DNSRecord, takeOver bool) (store.DNSRecord, error) {
-	found, err := s.cf.FindA(ctx, zone, name)
+func (s *Syncer) step(ctx context.Context, zone, name, family, want string, row store.DNSRecord, takeOver bool) (store.DNSRecord, error) {
+	found, err := s.cf.FindRecord(ctx, zone, name, family)
 	if err != nil {
 		return row, err
 	}
 	synced := func(id string, owned bool) store.DNSRecord {
-		return store.DNSRecord{RouteID: row.RouteID, CFRecordID: id, Content: want, Owned: owned, State: "synced",
+		return store.DNSRecord{RouteID: row.RouteID, Family: family, CFRecordID: id, Content: want, Owned: owned, State: "synced",
 			SyncedAt: s.now().UTC().Format(time.RFC3339)}
 	}
 	switch {
 	case found == nil:
-		id, err := s.cf.CreateA(ctx, zone, name, want)
+		id, err := s.cf.CreateRecord(ctx, zone, name, family, want)
 		if err != nil {
 			return row, err
 		}
 		return synced(id, true), nil
 	case row.Owned && row.CFRecordID == found.ID, takeOver:
 		if found.Content != want {
-			if err := s.cf.UpdateA(ctx, zone, found.ID, name, want); err != nil {
+			if err := s.cf.UpdateRecord(ctx, zone, found.ID, name, family, want); err != nil {
 				return row, err
 			}
 		}
@@ -83,7 +129,7 @@ func (s *Syncer) step(ctx context.Context, zone, name, want string, row store.DN
 	case found.Content == want:
 		return synced(found.ID, false), nil // adopt
 	default:
-		return store.DNSRecord{RouteID: row.RouteID, CFRecordID: found.ID, Content: found.Content, State: "conflict",
+		return store.DNSRecord{RouteID: row.RouteID, Family: family, CFRecordID: found.ID, Content: found.Content, State: "conflict",
 			Error: fmt.Sprintf("%s already points to %s, not %s", name, found.Content, want)}, nil
 	}
 }
@@ -99,30 +145,47 @@ func (s *Syncer) Remove(ctx context.Context, zoneID string, rec store.DNSRecord)
 	return true, nil
 }
 
-// HostSpec describes the record for SERVANAGO_HOST itself. A zero Name disables it.
-type HostSpec struct{ Name, IP, Zone string }
+// HostSpec describes the records for SERVANAGO_HOST itself. A zero Name disables them; an empty IP6
+// means no AAAA record.
+type HostSpec struct{ Name, IP, IP6, Zone string }
 
-// ReconcileHost syncs the UI host's A record with the same owned/adopt/conflict rules as routes.
-// Failures (including an unresolvable zone) are recorded as state "error", never returned.
+// ReconcileHost syncs the UI host's A (and optional AAAA) record with the same owned/adopt/conflict rules
+// as routes. Failures (including an unresolvable zone) are recorded as state "error", never returned.
 func (s *Syncer) ReconcileHost(ctx context.Context, takeOver bool) error {
 	if s.Host.Name == "" {
 		return nil
 	}
-	row, err := s.st.GetUIDNS(ctx)
-	if err != nil && !errors.Is(err, sql.ErrNoRows) {
-		return err
+	zone, _, zerr := s.cf.ZoneFor(ctx, s.Host.Name, s.Host.Zone)
+	if zerr != nil && s.Host.Zone == "" {
+		zerr = fmt.Errorf("%w; set SERVANAGO_HOST_ZONE to the zone name", zerr)
 	}
-	zone, _, err := s.cf.ZoneFor(ctx, s.Host.Name, s.Host.Zone)
-	if err != nil && s.Host.Zone == "" {
-		err = fmt.Errorf("%w; set SERVANAGO_HOST_ZONE to the zone name", err)
+	want := map[string]string{store.FamilyA: s.Host.IP, store.FamilyAAAA: s.Host.IP6}
+	for _, fam := range families {
+		row, err := s.st.GetUIDNS(ctx, fam)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		has := err == nil
+		row.Family = fam
+		var next store.DNSRecord
+		drop := false
+		switch {
+		case zerr != nil && want[fam] == "":
+			continue // nothing wanted and nothing can be deleted without the zone
+		case zerr != nil:
+			next = row
+			next.State, next.Error = "error", zerr.Error()
+		default:
+			next, drop = s.syncFamily(ctx, zone, s.Host.Name, fam, want[fam], row, has, takeOver)
+		}
+		if drop {
+			err = s.st.DeleteUIDNS(ctx, fam)
+		} else {
+			err = s.st.UpsertUIDNS(ctx, next)
+		}
+		if err != nil {
+			return err
+		}
 	}
-	var next store.DNSRecord
-	if err == nil {
-		next, err = s.step(ctx, zone, s.Host.Name, s.Host.IP, row, takeOver)
-	}
-	if err != nil {
-		next = row
-		next.State, next.Error = "error", err.Error()
-	}
-	return s.st.UpsertUIDNS(ctx, next)
+	return nil
 }

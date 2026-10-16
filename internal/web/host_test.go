@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func hostServer(t *testing.T) (*Server, *cfFake) {
@@ -50,7 +51,7 @@ func TestHostConflictTakeOver(t *testing.T) {
 	if w := s.do(req{method: "POST", path: "/host/dns/takeover", hdr: htmxPost}); w.Code != 204 {
 		t.Fatalf("takeover: %d", w.Code)
 	}
-	row, err := s.deps.Store.GetUIDNS(context.Background())
+	row, err := s.deps.Store.GetUIDNS(context.Background(), store.FamilyA)
 	if err != nil || row.State != "synced" || !row.Owned || cf.dns.Records()[0].Content != "192.168.25.165" {
 		t.Fatalf("%+v %v", row, err)
 	}

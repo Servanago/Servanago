@@ -21,7 +21,7 @@ func addRoute(t *testing.T, s *Server, d store.Domain, extra ...string) store.Ro
 
 func dnsRow(t *testing.T, s *Server, routeID int64) store.DNSRecord {
 	t.Helper()
-	d, err := s.deps.Store.GetDNS(context.Background(), routeID)
+	d, err := s.deps.Store.GetDNS(context.Background(), routeID, store.FamilyA)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -164,14 +164,14 @@ func (im importer) domainFor(ctx context.Context, domains *[]store.Domain, host 
 	if best != nil {
 		return *best, nil
 	}
-	if _, err := config.ValidateLANIP(im.cfg.HostIP); err != nil {
+	if _, err := config.ValidateIP(im.cfg.HostIP); err != nil {
 		return store.Domain{}, fmt.Errorf("SERVANAGO_HOST_IP: %w", err)
 	}
 	zoneID, zone, err := im.cf.ZoneFor(ctx, host, "")
 	if err != nil {
 		return store.Domain{}, err
 	}
-	d := store.Domain{Name: zone, ZoneID: zoneID, DefaultIP: im.cfg.HostIP, CertMode: "wildcard"}
+	d := store.Domain{Name: zone, ZoneID: zoneID, DefaultIP: im.cfg.HostIP, DefaultIP6: im.cfg.HostIP6, CertMode: "wildcard"}
 	if !dry {
 		if d, err = im.st.CreateDomain(ctx, d); err != nil {
 			return store.Domain{}, err

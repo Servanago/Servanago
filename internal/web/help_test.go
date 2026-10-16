@@ -59,7 +59,7 @@ func TestExplain(t *testing.T) {
 		{"multiple A records named oc.x.com; resolve in Cloudflare first", "More than one"},
 		{`GET "https://api.cloudflare.com/client/v4/zones": 403 Forbidden {"errors":[{"code":9109,"message":"Invalid access token"}]}`, "token"},
 		{"verify Cloudflare token: GET ...: 401 Unauthorized", "token"},
-		{`default IP: "8.8.8.8" must be a private IPv4 address (10.0.0.0/8, ...)`, "private"},
+		{`default IP: "127.0.0.1" must be a usable IPv4 address (loopback, link-local, multicast and reserved are not)`, "cannot be used"},
 		{"oc.x.com is the ServanaGo UI host; choose another subdomain", "own address"},
 		{"x.com is a zone itself; use a subdomain such as app.x.com", "subdomain"},
 		{"a.b.x.com is more than one label below x.com; a wildcard certificate would not cover it", "one level"},

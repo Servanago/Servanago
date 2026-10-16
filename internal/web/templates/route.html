@@ -22,7 +22,9 @@
 <label>Upstream port <input name="upstream_port" id="upstream_port" type="number" min="1" max="65535" value="{{if .Route.UpstreamPort}}{{.Route.UpstreamPort}}{{end}}" required></label>
 {{hint "upstream_port"}}
 {{if .DNSOn}}<label>DNS record IP (blank = the domain's default IP) <input name="record_ip" value="{{.Route.RecordIP}}" placeholder="192.168.1.20"></label>
-{{hint "record_ip"}} {{helplink "lan-only"}}{{end}}
+{{hint "record_ip"}} {{helplink "addresses"}}
+<label>AAAA record IPv6 (blank = the domain's IPv6) <input name="record_ip6" value="{{.Route.RecordIP6}}" placeholder="2001:db8::20"></label>
+{{hint "record_ip6"}}{{end}}
 <label><input type="checkbox" name="tls_skip_verify"{{if .Route.TLSSkipVerify}} checked{{end}}> Skip TLS verification (self-signed https upstream)</label>
 {{hint "skip_verify"}}
 <label><input type="checkbox" name="stream"{{if .Route.Stream}} checked{{end}}> Send responses as they arrive (streaming)</label>

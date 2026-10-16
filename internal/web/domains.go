@@ -91,11 +91,18 @@ func (s *Server) addDomain(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("cert_mode %q must be wildcard or per_host", mode))
 		return
 	}
-	zone := "" // without Cloudflare a domain has no zone, no default record IP, and certificates are per host
+	ip6 := strings.TrimSpace(r.PostFormValue("default_ip6"))
+	zone := "" // without Cloudflare a domain has no zone, no default record IPs, and certificates are per host
 	if s.dnsOn() {
-		if _, err := config.ValidateLANIP(ip); err != nil {
+		if _, err := config.ValidateIP(ip); err != nil {
 			fail(w, http.StatusUnprocessableEntity, "default IP: "+err.Error())
 			return
+		}
+		if ip6 != "" {
+			if _, err := config.ValidateIP6(ip6); err != nil {
+				fail(w, http.StatusUnprocessableEntity, "default IPv6: "+err.Error())
+				return
+			}
 		}
 		var err error
 		if zone, err = s.deps.CF.ZoneID(r.Context(), name); err != nil {
@@ -103,14 +110,14 @@ func (s *Server) addDomain(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		ip = ""
+		ip, ip6 = "", ""
 		if mode == "wildcard" {
 			fail(w, http.StatusUnprocessableEntity, "Wildcard certificates need Cloudflare DNS (set CLOUDFLARE_API_TOKEN). Use per_host, or leave the choice empty.")
 			return
 		}
 	}
 	err := s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		_, err := tx.CreateDomain(r.Context(), store.Domain{Name: name, ZoneID: zone, DefaultIP: ip, CertMode: mode})
+		_, err := tx.CreateDomain(r.Context(), store.Domain{Name: name, ZoneID: zone, DefaultIP: ip, DefaultIP6: ip6, CertMode: mode})
 		return err
 	})
 	if err != nil {

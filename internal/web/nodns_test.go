@@ -67,8 +67,8 @@ func TestNoDNSAddSiteUnderManagedDomain(t *testing.T) {
 	if len(rs) != 1 || rs[0].Subdomain != "app" {
 		t.Fatalf("%+v", rs)
 	}
-	if _, err := s.deps.Store.GetDNS(context.Background(), rs[0].ID); err == nil {
-		t.Error("no DNS record row must be created without Cloudflare")
+	if all, err := s.deps.Store.ListDNS(context.Background()); err != nil || len(all) != 0 {
+		t.Errorf("no DNS record row must be created without Cloudflare: %+v %v", all, err)
 	}
 }
 

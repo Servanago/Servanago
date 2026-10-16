@@ -103,7 +103,7 @@ func run() error {
 		}
 		cf = cfdns.New(cfg.CloudflareToken, cfOpts...)
 		dns = dnssync.New(cf, st)
-		dns.Host = dnssync.HostSpec{Name: cfg.Host, IP: cfg.HostIP, Zone: cfg.HostZone}
+		dns.Host = dnssync.HostSpec{Name: cfg.Host, IP: cfg.HostIP, IP6: cfg.HostIP6, Zone: cfg.HostZone}
 		go func() { // never blocks startup; failures show on the dashboard card
 			ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 			defer cancel()

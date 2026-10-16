@@ -216,3 +216,17 @@ func TestParallelBoundsConcurrency(t *testing.T) {
 		t.Fatalf("peak %d, want 2..%d", peak, maxParallel)
 	}
 }
+
+func TestUpstreamAddrBracketsIPv6(t *testing.T) {
+	cases := map[string]string{
+		"192.168.1.20": "192.168.1.20:8989",
+		"app.lan":      "app.lan:8989",
+		"2001:db8::5":  "[2001:db8::5]:8989",
+		"fd00::1":      "[fd00::1]:8989",
+	}
+	for host, want := range cases {
+		if got := upstreamAddr(store.Route{UpstreamHost: host, UpstreamPort: 8989}); got != want {
+			t.Errorf("%q: got %q, want %q", host, got, want)
+		}
+	}
+}

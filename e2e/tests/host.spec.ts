@@ -26,11 +26,16 @@ test('a route named like the UI host is rejected', async ({ page }) => {
   await expect(page.getByRole('alert').filter({ hasText: 'ServanaGo UI host' })).toBeVisible();
 });
 
-test('public IPs are rejected for domains', async ({ page }) => {
+test('public IPs are accepted for domains, loopback is not', async ({ page }) => {
   await login(page);
   await page.goto('/domains');
   await page.getByLabel('Domain', { exact: true }).fill('public.example.net');
+  await page.getByLabel('Default IP').fill('127.0.0.1');
+  await page.getByRole('button', { name: 'Add domain' }).click();
+  await expect(page.getByRole('alert').filter({ hasText: 'usable IPv4' })).toBeVisible();
+
   await page.getByLabel('Default IP').fill('8.8.8.8');
   await page.getByRole('button', { name: 'Add domain' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'private IPv4' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'public.example.net' })).toBeVisible();
+  await expect(page.getByRole('cell', { name: '8.8.8.8' })).toBeVisible();
 });

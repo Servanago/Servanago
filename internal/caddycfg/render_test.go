@@ -66,6 +66,9 @@ func TestRenderGolden(t *testing.T) {
 		{"per_host_all_disabled", opts(), State{[]store.Domain{perHost}, []store.Route{with(route, func(r *store.Route) { r.Enabled = false })}}},
 		{"per_host_empty", opts(), State{[]store.Domain{perHost}, nil}},
 		{"internal_issuer", internal, State{[]store.Domain{dom}, []store.Route{route}}},
+		{"ipv6_upstream_and_allowlist", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) {
+			r.UpstreamHost, r.UpstreamPort, r.Allowlist = "2001:db8::5", 8443, "2001:db8::/32\nfd00::/8\n192.168.0.0/16"
+		})}}},
 		// No Cloudflare: default ACME challenges. A wildcard domain cannot be validated over HTTP-01, so it renders per host.
 		{"http01_bootstrap", http01, State{}},
 		{"http01_wildcard_domain", http01, State{[]store.Domain{dom}, []store.Route{route, with(route, func(r *store.Route) { r.ID, r.Subdomain = 2, "radarr" }), with(route, func(r *store.Route) { r.ID, r.Subdomain, r.Enabled = 3, "off", false })}}},

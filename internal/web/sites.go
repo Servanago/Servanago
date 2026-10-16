@@ -75,7 +75,7 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("No domain matches %s. Add its domain (for example %s) on the Domains page first; without a Cloudflare token ServanaGo cannot look it up.", hostname, suggestDomain(hostname)))
 		return
 	} else {
-		if _, err := config.ValidateLANIP(s.deps.Cfg.HostIP); err != nil {
+		if _, err := config.ValidateIP(s.deps.Cfg.HostIP); err != nil {
 			fail(w, http.StatusUnprocessableEntity, "SERVANAGO_HOST_IP: "+err.Error())
 			return
 		}
@@ -85,7 +85,7 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		zoneName = zone
-		newDomain = store.Domain{Name: zone, ZoneID: zoneID, DefaultIP: s.deps.Cfg.HostIP, CertMode: "wildcard"}
+		newDomain = store.Domain{Name: zone, ZoneID: zoneID, DefaultIP: s.deps.Cfg.HostIP, DefaultIP6: s.deps.Cfg.HostIP6, CertMode: "wildcard"}
 	}
 	if hostname == zoneName {
 		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is a zone itself; use a subdomain such as app.%s", hostname, zoneName))
