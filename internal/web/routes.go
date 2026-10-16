@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/servanago/servanago/internal/config"
-	"github.com/servanago/servanago/internal/presets"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/store"
 )
@@ -49,7 +48,6 @@ func parseRoute(v url.Values) (store.Route, error) {
 	}
 	r.TLSSkipVerify = v.Get("tls_skip_verify") != ""
 	r.Enabled = v.Get("enabled") != ""
-	r.Preset = v.Get("preset")
 	return r, nil
 }
 
@@ -120,9 +118,7 @@ type routeForm struct {
 	Route         store.Route
 	Edit          bool
 	Domains       []store.Domain
-	Presets       []presets.Preset
 	DeleteConfirm string
-	Docker        dockerPanel
 	GateACL       string // textarea content for an existing ACL
 	MailOK        bool   // email delivery configured; the gate section is shown only then
 }
@@ -154,20 +150,17 @@ func (s *Server) routeFormPage(w http.ResponseWriter, r *http.Request, rt store.
 		t, _ := dnsTargetOf(r, s.deps.Store, rt)
 		confirm = deleteConfirm(t)
 	}
-	form := routeForm{Route: rt, Edit: edit, Domains: ds, Presets: presets.All, DeleteConfirm: confirm,
+	form := routeForm{Route: rt, Edit: edit, Domains: ds, DeleteConfirm: confirm,
 		MailOK: s.deps.Cfg.SMTPHost != "" && s.deps.Cfg.MailFrom != "" && s.deps.Cfg.SecretKey != ""}
 	if edit {
 		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {
 			form.GateACL = gateACLText(gs)
 		}
 	}
-	if !edit {
-		form.Docker = s.dockerPanel(r)
-	}
 	s.render(w, "route", http.StatusOK, page{Title: title, Data: form})
 }
 
-// newRoutePage supports prefill from the Docker panel via ?sub=&host=&port=.
+// newRoutePage supports prefill via ?sub=&host=&port=.
 func (s *Server) newRoutePage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	port, _ := strconv.Atoi(q.Get("port"))
@@ -279,7 +272,7 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 		// Overlay only the fields this form owns.
 		cur.DomainID, cur.Subdomain, cur.Scheme = in.DomainID, in.Subdomain, in.Scheme
 		cur.UpstreamHost, cur.UpstreamPort = in.UpstreamHost, in.UpstreamPort
-		cur.TLSSkipVerify, cur.Enabled, cur.Preset, cur.RecordIP = in.TLSSkipVerify, in.Enabled, in.Preset, in.RecordIP
+		cur.TLSSkipVerify, cur.Enabled, cur.RecordIP = in.TLSSkipVerify, in.Enabled, in.RecordIP
 		cur.GateMode = in.GateMode
 		if err := applyControls(&cur, r.PostForm); err != nil {
 			return err

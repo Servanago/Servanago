@@ -14,7 +14,6 @@ import (
 	"github.com/servanago/servanago/internal/caddylog"
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
-	"github.com/servanago/servanago/internal/discovery"
 	"github.com/servanago/servanago/internal/dnssync"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/store"
@@ -36,9 +35,7 @@ type Deps struct {
 	CF    *cfdns.Client
 	DNS   *dnssync.Syncer
 	Probe *probe.Monitor
-	// Docker is optional; the discovery panel shows only when its socket is mounted.
-	Docker *discovery.Client
-	Logs   *caddylog.Ring
+	Logs  *caddylog.Ring
 }
 
 type Server struct {
@@ -69,7 +66,7 @@ func (s *Server) takeFlashes() []string {
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
 	for _, p := range []string{"dashboard", "login", "login_totp", "security", "domains", "route", "site", "logs", "help"} {
-		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/docker.html", "templates/"+p+".html"))
+		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
 		s.startupErr = d.Apply.StartupError

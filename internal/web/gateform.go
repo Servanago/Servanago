@@ -52,7 +52,7 @@ func (s *Server) gateNeedsHelp(rt store.Route) error {
 		return nil
 	}
 	if s.deps.Cfg.SMTPHost == "" || s.deps.Cfg.MailFrom == "" {
-		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs email delivery: set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and MAIL_FROM in .env and recreate the container."}
+		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs email delivery: set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and MAIL_FROM in the environment file and restart ServanaGo."}
 	}
 	if s.deps.Cfg.SecretKey == "" {
 		return userError{http.StatusUnprocessableEntity, fmt.Sprintf("Magic-link sessions need SERVANAGO_SECRET_KEY (at least 32 characters) in .env to mint session keys for %s.", rt.Subdomain)}

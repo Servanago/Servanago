@@ -7,44 +7,21 @@ import (
 	"strings"
 
 	"github.com/servanago/servanago/internal/config"
-	"github.com/servanago/servanago/internal/discovery"
-	"github.com/servanago/servanago/internal/presets"
 	"github.com/servanago/servanago/internal/store"
 )
-
-// dockerPanel is the opt-in container list shown on both route-creation pages.
-type dockerPanel struct {
-	Show       bool // the Docker socket is mounted
-	Err        string
-	Containers []discovery.Container
-}
-
-func (s *Server) dockerPanel(r *http.Request) dockerPanel {
-	if s.deps.Docker == nil || !s.deps.Docker.Available() {
-		return dockerPanel{}
-	}
-	p := dockerPanel{Show: true}
-	var err error
-	if p.Containers, err = s.deps.Docker.List(r.Context()); err != nil {
-		p.Err = err.Error()
-	}
-	return p
-}
 
 type addSiteData struct {
 	Hostname, Host string
 	Port           int
 	ServerIP       string // where the A record will point; shown in the live preview
-	Docker         dockerPanel
-	Presets        []presets.Preset
 }
 
-// newSitePage supports prefill from the Docker panel via ?host=&port=.
+// newSitePage supports prefill via ?hostname=&host=&port=.
 func (s *Server) newSitePage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	port, _ := strconv.Atoi(q.Get("port"))
 	s.render(w, "site", http.StatusOK, page{Title: "Add site", Data: addSiteData{
-		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, ServerIP: s.deps.Cfg.HostIP, Docker: s.dockerPanel(r), Presets: presets.All}})
+		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, ServerIP: s.deps.Cfg.HostIP}})
 }
 
 // addSite turns "oc.example.com -> 192.168.25.165:9200" into the managed domain (if new), the route and its A record.

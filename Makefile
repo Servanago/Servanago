@@ -1,6 +1,6 @@
-.PHONY: test lint e2e check build docker
+.PHONY: test lint e2e check build
 
-# Scoped to cmd/ and internal/ (not ./...): a local ./data volume owned by the container user is unreadable to Go tooling.
+# Scoped to cmd/ and internal/ (not ./...): a local ./data directory owned by another user is unreadable to Go tooling.
 PKGS = ./cmd/... ./internal/...
 
 test:
@@ -17,6 +17,3 @@ check: lint test e2e
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/servanago ./cmd/servanago
-
-docker:
-	docker build -t ghcr.io/servanago/servanago .

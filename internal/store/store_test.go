@@ -85,7 +85,7 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 	d := mustDomain(t, s, "example.com")
 
 	r := route(d.ID, "sonarr")
-	r.RecordIP, r.Allowlist, r.BasicUser, r.BasicHash, r.Preset = "10.9.9.9", "192.168.0.0/16", "u", "h", "Sonarr"
+	r.RecordIP, r.Allowlist, r.BasicUser, r.BasicHash = "10.9.9.9", "192.168.0.0/16", "u", "h"
 	r.Stream, r.MaxBody = true, 2<<30
 	r, err := s.CreateRoute(ctx, r)
 	if err != nil {
@@ -314,5 +314,30 @@ func TestPasskeysAndResetAuth(t *testing.T) {
 	}
 	if ok, _ := s.DeletePasskey(ctx, "a"); ok {
 		t.Error("deleted a ghost")
+	}
+}
+
+// Databases created before the preset field was dropped keep a routes.preset column: reads and edits must ignore it.
+func TestLegacyPresetColumnIsIgnored(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	d := mustDomain(t, s, "example.com")
+	r, err := s.CreateRoute(ctx, route(d.ID, "sonarr"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.q.ExecContext(ctx, "UPDATE routes SET preset='Sonarr' WHERE id=?", r.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetRoute(ctx, r.ID)
+	if err != nil || got != r {
+		t.Fatalf("read with legacy preset value: %+v vs %+v (%v)", got, r, err)
+	}
+	r.UpstreamPort = 9000
+	if err := s.UpdateRoute(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	var preset string
+	if err := s.q.QueryRowContext(ctx, "SELECT COALESCE(preset,'') FROM routes WHERE id=?", r.ID).Scan(&preset); err != nil || preset != "Sonarr" {
+		t.Errorf("update must leave the legacy column alone: %q, %v", preset, err)
 	}
 }

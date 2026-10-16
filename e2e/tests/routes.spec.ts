@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { login } from './helpers';
 
-test('add a route from a preset, edit it, delete it', async ({ page }) => {
+test('add a route, edit it, delete it', async ({ page }) => {
   await login(page);
   await page.goto('/domains');
   await page.getByLabel('Domain', { exact: true }).fill('routes.example.net');
@@ -11,9 +11,9 @@ test('add a route from a preset, edit it, delete it', async ({ page }) => {
 
   await page.goto('/routes/new');
   await page.locator('select[name=domain_id]').selectOption('routes.example.net');
-  await page.getByLabel('Preset').selectOption('Sonarr');
-  await expect(page.getByLabel('Subdomain')).toHaveValue('sonarr');
-  await expect(page.getByLabel('Upstream port')).toHaveValue('8989');
+  await expect(page.getByLabel('Preset')).toHaveCount(0);
+  await page.getByLabel('Subdomain').fill('sonarr');
+  await page.getByLabel('Upstream port').fill('8989');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.20');
   await page.getByRole('button', { name: 'Add route' }).click();
   await expect(page).toHaveURL(/\/$/);

@@ -11,7 +11,8 @@ test('route shows DNS synced; delete asks with the record named', async ({ page 
 
   await page.goto('/routes/new');
   await page.locator('select[name=domain_id]').selectOption('dns.example.net');
-  await page.getByLabel('Preset').selectOption('Radarr');
+  await page.getByLabel('Subdomain').fill('radarr');
+  await page.getByLabel('Upstream port').fill('7878');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.21');
   await page.getByRole('button', { name: 'Add route' }).click();
   const row = page.getByRole('row', { name: /radarr\.dns\.example\.net/ });

@@ -11,7 +11,8 @@ test('list row delete panel: cancel keeps the route, delete asks about the DNS r
 
   await page.goto('/routes/new');
   await page.locator('select[name=domain_id]').selectOption('delrow.example.net');
-  await page.getByLabel('Preset').selectOption('Lidarr');
+  await page.getByLabel('Subdomain').fill('lidarr');
+  await page.getByLabel('Upstream port').fill('8686');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.24');
   await page.getByRole('button', { name: 'Add route' }).click();
   const row = page.getByRole('row', { name: /lidarr\.delrow\.example\.net/ });
@@ -43,7 +44,8 @@ test('row actions share one line and show a tooltip', async ({ page }) => {
   await expect(page.getByRole('cell', { name: 'icons.example.net' })).toBeVisible();
   await page.goto('/routes/new');
   await page.locator('select[name=domain_id]').selectOption('icons.example.net');
-  await page.getByLabel('Preset').selectOption('Readarr');
+  await page.getByLabel('Subdomain').fill('readarr');
+  await page.getByLabel('Upstream port').fill('8787');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.25');
   await page.getByRole('button', { name: 'Add route' }).click();
   const row = page.getByRole('row', { name: /readarr\.icons\.example\.net/ });

@@ -2,19 +2,12 @@
 {{with .Data}}
 <h1>Add site {{helplink "how-it-works"}}</h1>
 <article>
-{{template "docker" .Docker}}
 <form hx-post="/sites" hx-target="#msg">
 <label>Hostname
 <input name="hostname" id="hostname" value="{{.Hostname}}" placeholder="oc.example.com" autocomplete="off" required></label>
 {{hint "hostname"}}
 <fieldset>
 <legend>Backend: where Caddy forwards requests {{helplink "sites"}}</legend>
-<label>Preset
-<select id="preset" name="preset">
-<option value="">Custom</option>
-{{range .Presets}}<option value="{{.Name}}" data-sub="{{.Subdomain}}" data-port="{{.Port}}">{{.Name}} ({{.Port}})</option>{{end}}
-</select></label>
-{{hint "preset"}}
 <div class="grid">
 <label>Scheme
 <select name="scheme">
@@ -52,13 +45,6 @@ function preview() {
     '. ServanaGo creates (or keeps) a DNS record ' + h + ' pointing to ' + (out.dataset.serverIp || 'this server') +
     ', and gets a certificate for it.';
 }
-document.getElementById('preset').addEventListener('change', function (e) {
-  var o = e.target.selectedOptions[0];
-  if (!o.value) return;
-  $('upstream_port').value = o.dataset.port;
-  if (!$('hostname').value) $('hostname').value = o.dataset.sub + '.';
-  preview();
-});
 ['hostname', 'upstream_port'].forEach(function (id) { $(id).addEventListener('input', preview); });
 ['upstream_host', 'scheme'].forEach(function (n) { field(n).addEventListener('input', preview); });
 preview();

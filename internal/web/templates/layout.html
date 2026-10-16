@@ -21,7 +21,7 @@
 </nav>
 </header>
 <main class="container">
-{{if .Open}}<div class="banner danger" role="alert"><strong>UI is open.</strong> Anyone who can reach this page can change your sites. Set <code>ADMIN_PASSWORD</code> in <code>.env</code> and recreate the container to require a login.</div>{{end}}
+{{if .Open}}<div class="banner danger" role="alert"><strong>UI is open.</strong> Anyone who can reach this page can change your sites. Set <code>ADMIN_PASSWORD</code> in the environment file and restart ServanaGo to require a login.</div>{{end}}
 {{if .StartupErr}}<div class="banner danger" role="alert"><strong>Your saved settings were rejected, so only this page is being served.</strong> Fix or delete the item named below, then restart. {{helplink "troubleshooting"}}<br>{{errhtml .StartupErr}}</div>{{end}}
 {{range .Flash}}<div class="banner warn" role="alert">{{.}}</div>{{end}}
 {{if .CFErr}}<div class="banner danger" role="alert"><strong>Cloudflare token problem.</strong> Certificates and DNS will fail until it is fixed. {{helplink "token"}}<br>{{errhtml .CFErr}}</div>{{end}}

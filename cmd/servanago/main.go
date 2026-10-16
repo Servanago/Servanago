@@ -27,7 +27,6 @@ import (
 	"github.com/servanago/servanago/internal/caddylog"
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
-	"github.com/servanago/servanago/internal/discovery"
 	"github.com/servanago/servanago/internal/dnssync"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/smtpx"
@@ -108,8 +107,7 @@ func run() error {
 			slog.Error("ui host dns", "error", err)
 		}
 	}()
-	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dns, Probe: mon,
-		Docker: discovery.New(cfg.DockerSocket), Logs: caddylog.Sink})
+	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dns, Probe: mon, Logs: caddylog.Sink})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

@@ -140,7 +140,7 @@ func (Writer) CaddyModule() caddy.ModuleInfo {
 func (Writer) String() string    { return "servanago" }
 func (Writer) WriterKey() string { return "servanago:ring" }
 
-// OpenWriter tees to the ring and stderr (so `docker logs` keeps working) with a no-op Close:
+// OpenWriter tees to the ring and stderr (so the process log, journald under systemd, keeps working) with a no-op Close:
 // Caddy closes dropped writers on reload and must not close either.
 func (Writer) OpenWriter() (io.WriteCloser, error) {
 	return nopCloser{io.MultiWriter(Sink, os.Stderr)}, nil

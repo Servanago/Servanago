@@ -3,20 +3,13 @@
 <h1>{{if .Edit}}Edit route{{else}}New route{{end}} {{helplink "sites"}}</h1>
 {{if not .Domains}}<p>No domains yet. <a href="/sites/new">Add a site</a>: its domain is added for you.</p>{{else}}
 <article>
-{{template "docker" .Docker}}
 <form {{if .Edit}}hx-put="/routes/{{.Route.ID}}"{{else}}hx-post="/routes"{{end}} hx-target="#msg">
-<label>Preset
-<select name="preset" id="preset">
-<option value="">Custom</option>
-{{range .Presets}}<option value="{{.Name}}" data-sub="{{.Subdomain}}" data-port="{{.Port}}"{{if eq .Name $.Data.Route.Preset}} selected{{end}}>{{.Name}} ({{.Port}})</option>{{end}}
-</select></label>
-{{hint "preset"}}
 <label>Domain
 <select name="domain_id" required>
 {{range .Domains}}<option value="{{.ID}}"{{if eq .ID $.Data.Route.DomainID}} selected{{end}}>{{.Name}}</option>{{end}}
 </select></label>
 {{hint "domain"}}
-<label>Subdomain <input name="subdomain" id="subdomain" value="{{.Route.Subdomain}}" placeholder="sonarr" required></label>
+<label>Subdomain <input name="subdomain" id="subdomain" value="{{.Route.Subdomain}}" placeholder="app" required></label>
 {{hint "subdomain"}}
 <label>Upstream scheme
 <select name="scheme">
@@ -65,14 +58,6 @@
 <p id="msg" role="alert"></p>
 </form>
 {{if .Edit}}<button class="outline danger" hx-delete="/routes/{{.Route.ID}}?delete_dns=on" hx-target="#msg" hx-confirm="{{.DeleteConfirm}}">Delete route</button>{{end}}
-<script>
-document.getElementById('preset').addEventListener('change', function (e) {
-  var o = e.target.selectedOptions[0];
-  if (!o.value) return;
-  document.getElementById('subdomain').value = o.dataset.sub;
-  document.getElementById('upstream_port').value = o.dataset.port;
-});
-</script>
 </article>
 {{end}}
 {{end}}

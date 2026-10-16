@@ -34,11 +34,15 @@ Baseline on `c1133b3` (Caretakarr head), measured before any change:
 **Goal**: Remove code that has no place in a hosting manager; nothing else changes.
 **Success Criteria**:
 - `internal/discovery`, `internal/presets`, `docker.html`, `DOCKER_SOCKET`, docker e2e spec and UI hooks removed; preset field removed from forms and help text
-- Migration `006` drops `routes.preset` only if safe on SQLite (otherwise leave the column unused and document it)
-- Dockerfile/compose: decision recorded (native-only v1 means they go; keep nothing that implies container mode)
+- `routes.preset` column left in place and unused (no migration: dropping a SQLite column means a table rebuild for no gain); reads and edits ignore it
+- Dockerfile, compose files, `.dockerignore`, `make docker` and CI image job removed (native-only v1)
 - `make check` green; dependency list does not grow
-**Tests**: existing suites minus deleted ones; `help_test.go` still passes (no dangling hints); migration test from a v5 DB with data.
-**Status**: Not Started
+**Tests**: existing suites minus deleted ones; `help_test.go` still passes (no dangling hints); `TestLegacyPresetColumnIsIgnored` (a row with a legacy preset value reads and edits cleanly).
+**Status**: Complete. Notes:
+- UI help text no longer names Docker or the arr apps; "recreate the container" became "restart ServanaGo" and "the environment file". The real commands and file path wait for M3 packaging
+- Kept the `?host=&port=` / `?sub=` prefill on the add pages: not Docker-specific code
+- `config` still defaults `DATA_DIR` to `/data` (a container default); change it with the native layout in M3
+- e2e specs that picked a preset now fill subdomain and port explicitly; the Docker spec was deleted with the feature (it was the one skipped test)
 
 ## Stage 4: Docs and release plumbing
 **Goal**: Repo describes Servanago as a lightweight runtime manager.

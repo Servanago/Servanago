@@ -73,8 +73,8 @@ func TestParseRouteRecordIP(t *testing.T) {
 }
 
 func TestParseRouteFlags(t *testing.T) {
-	r, err := parseRoute(form("tls_skip_verify", "on", "enabled", "on", "preset", "Sonarr"))
-	if err != nil || !r.TLSSkipVerify || !r.Enabled || r.Preset != "Sonarr" {
+	r, err := parseRoute(form("tls_skip_verify", "on", "enabled", "on"))
+	if err != nil || !r.TLSSkipVerify || !r.Enabled {
 		t.Fatalf("%+v %v", r, err)
 	}
 	r, _ = parseRoute(form())
@@ -96,7 +96,7 @@ func routeServer(t *testing.T) (*Server, store.Domain) {
 func TestRouteLifecycle(t *testing.T) {
 	s, d := routeServer(t)
 	ctx := context.Background()
-	v := form("domain_id", itoa(d.ID), "enabled", "on", "preset", "Sonarr")
+	v := form("domain_id", itoa(d.ID), "enabled", "on")
 
 	w := s.do(req{method: "POST", path: "/routes", body: v.Encode(), hdr: htmxPost})
 	if w.Code != 204 || w.Header().Get("HX-Redirect") != "/" {
@@ -121,8 +121,8 @@ func TestRouteLifecycle(t *testing.T) {
 	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "sonarr.example.com") || !strings.Contains(body, "192.168.1.20:8989") {
 		t.Errorf("dashboard missing route: %s", body)
 	}
-	if body := s.do(req{path: "/routes/new"}).Body.String(); !strings.Contains(body, "Sonarr") || !strings.Contains(body, "example.com") {
-		t.Errorf("new page missing presets/domains")
+	if body := s.do(req{path: "/routes/new"}).Body.String(); !strings.Contains(body, "example.com") {
+		t.Errorf("new page missing domains")
 	}
 	id := itoa(rs[0].ID)
 	if body := s.do(req{path: "/routes/" + id}).Body.String(); !strings.Contains(body, "192.168.1.20") {
