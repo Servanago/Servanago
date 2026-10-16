@@ -2,7 +2,7 @@
 
 ServanaGo is becoming a lightweight, self-hosted web runtime manager: a Go control plane with a web UI, one embedded Caddy ingress, SQLite state and systemd supervision for application processes. It is not a hosting control panel: no billing, resellers, database admin, container orchestration or CI/CD platform.
 
-Today (after M0) the code is the inherited baseline: a single-process Caddy front end that publishes reverse-proxy routes under Cloudflare-managed domains. Everything below the "Done" line is planned, not shipped.
+Today (after M1) the code is still the inherited baseline in shape: a single-process Caddy front end that publishes reverse-proxy routes under domains you add, with optional Cloudflare integration (DNS-01 certificates and A/AAAA records). Everything marked Next or Planned in the table is not shipped.
 
 ## Decisions
 
@@ -37,8 +37,8 @@ validate spec (runtime provider) -> write SQLite in a transaction -> helper writ
 | # | Milestone | Status |
 |---|---|---|
 | M0 | Fork and rebrand: rename, brand and dark theme, remove Docker discovery, presets and container packaging, docs | Done |
-| M1 | Decouple Cloudflare: optional token, HTTP-01 / TLS-ALPN default, public hostnames and IPs, DNS sync behind a flag | Next |
-| M2 | Site model (static, proxy) and renderer rewrite, golden tests | Planned |
+| M1 | Decouple Cloudflare: optional token, HTTP-01 / TLS-ALPN default, public IPv4 and IPv6 (dual-stack) record targets, one initial schema | Done |
+| M2 | Site model (static, proxy) and renderer rewrite, golden tests | Next |
 | M2.5 | Multi-admin: users table, per-user TOTP, backup codes and passkeys, `reset` per user, audit actor | Planned |
 | M3 | Native packaging: systemd unit for the control plane, `.deb`, install script, directory layout above, `DATA_DIR` default | Planned |
 | M4 | Privileged helper: socket, peer credentials, typed actions, input fuzzing | Planned |

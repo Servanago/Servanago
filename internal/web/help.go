@@ -51,7 +51,7 @@ var statusOrder = []string{"cert:issued", "cert:pending", "cert:expiring", "cert
 
 var statusHelp = map[string]statusInfo{
 	"cert:issued":   {"Certificate issued", "A valid HTTPS certificate is being served for this site.", ""},
-	"cert:pending":  {"Certificate pending", "ServanaGo is still getting the certificate from Let's Encrypt. It proves it owns the domain by writing a temporary DNS record and waiting for Cloudflare to publish it.", "Wait; the first one can take several minutes. Watch the Logs page if it takes longer."},
+	"cert:pending":  {"Certificate pending", "ServanaGo is still getting the certificate from Let's Encrypt. It proves it owns the domain either with a check over the internet (ports 80 and 443 must be reachable) or, with Cloudflare, by writing a temporary DNS record and waiting for Cloudflare to publish it.", "Wait; the first one can take several minutes. Watch the Logs page if it takes longer."},
 	"cert:expiring": {"Certificate expiring soon", "The certificate expires in less than three weeks. Caddy normally renews it a month early, so renewal is overdue or failing.", "Open the Logs page and look for certificate errors."},
 	"cert:error":    {"Certificate error", "Getting or serving the certificate failed.", "Read the explanation shown with it, then check the Logs page."},
 	"dns:synced":    {"DNS in sync", "The A record in Cloudflare exists and points where this site expects.", ""},
@@ -144,13 +144,13 @@ var helpSections = []helpSection{
 	{"how-it-works", "How ServanaGo works", `
 <p>ServanaGo puts your web apps behind real web addresses with valid HTTPS. For each <strong>site</strong>, such as <code>oc.example.com</code>, it does three things:</p>
 <ol>
-<li>Creates a <strong>DNS record</strong> in Cloudflare so the name points to this server.</li>
-<li>Gets an <strong>HTTPS certificate</strong> from Let's Encrypt. It proves it owns the domain by writing a temporary record in Cloudflare, so this server never needs to be reachable from the internet.</li>
+<li>Points the name at this server. With a Cloudflare token ServanaGo creates the <strong>DNS records</strong> (A, and AAAA if you gave an IPv6 address) itself; without one, you point the name at this server in your own DNS.</li>
+<li>Gets an <strong>HTTPS certificate</strong> from Let's Encrypt. Without Cloudflare it proves it owns the name with a check over the internet, so ports 80 and 443 must be reachable. With Cloudflare it writes a temporary record there instead, so this server never needs to be reachable from the internet, and a domain can share one wildcard certificate.</li>
 <li>Tells <strong>Caddy</strong> (the web server inside ServanaGo) to forward requests for that name to your app's <strong>backend</strong>: its IP address and port, such as <code>192.168.25.165:9200</code>.</li>
 </ol>
 <p>Every change is checked by Caddy before it goes live. If Caddy rejects it, nothing changes and you see the reason.</p>`},
 	{"sites", "Sites, domains and ports", `
-<p>A <strong>domain</strong> is the Cloudflare zone, such as <code>example.com</code>. A <strong>site</strong> is one address under it, such as <code>oc.example.com</code>. Use <strong>Add site</strong>: it finds the zone and adds the domain for you the first time.</p>
+<p>A <strong>domain</strong> is the name your sites live under, such as <code>example.com</code> (with Cloudflare, its zone). A <strong>site</strong> is one address under it, such as <code>oc.example.com</code>. With Cloudflare, <strong>Add site</strong> finds the zone and adds the domain for you the first time; without it, add the domain on the Domains page first.</p>
 <p>The <strong>backend port</strong> is the port your app listens on and differs for every app. It is not 443; Caddy provides HTTPS in front of it. The DNS record points at this server, not at the backend, so the backend can be on another machine.</p>`},
 	{"sign-in", "Sign-in security", `
 <p>Under <strong>Security</strong> you can add an <strong>authenticator app</strong> (a 6-digit code after the password) and <strong>passkeys</strong> (sign in with your fingerprint, face or device PIN instead of the password). A passkey sign-in counts as full two-factor, so it asks for no code. Passkeys work only on the HTTPS address, or on <code>localhost</code>.</p>
@@ -160,8 +160,8 @@ var helpSections = []helpSection{
 <p><strong>Wildcard</strong> (the default) gets one certificate for <code>*.example.com</code> that covers every site under the domain. New sites are instant, and the names of your sites stay out of public certificate logs.</p>
 <p><strong>Per host</strong> gets a separate certificate for each site, which is slower for each new site. A wildcard covers one level only: <code>oc.example.com</code> yes, <code>a.oc.example.com</code> no.</p>`},
 	{"statuses", "What the status words mean", ``}, // table is generated from statusHelp
-	{"token", "The Cloudflare token", `
-<p>ServanaGo needs one Cloudflare API token with two permissions on your zones: <strong>Zone &rarr; Zone &rarr; Read</strong> and <strong>Zone &rarr; DNS &rarr; Edit</strong>. Create it under My Profile, API Tokens. It is set as <code>CLOUDFLARE_API_TOKEN</code> in the environment file and is never stored in the database or shown here. After changing the file, restart ServanaGo.</p>`},
+	{"token", "The Cloudflare token (optional)", `
+<p>Cloudflare is optional: without a token ServanaGo uses HTTP-01 certificates and manages no DNS. With a token it also creates the DNS records and can use wildcard certificates. The token needs two permissions on your zones: <strong>Zone &rarr; Zone &rarr; Read</strong> and <strong>Zone &rarr; DNS &rarr; Edit</strong>. Create it under My Profile, API Tokens. It is set as <code>CLOUDFLARE_API_TOKEN</code> in the environment file and is never stored in the database or shown here. After changing the file, restart ServanaGo.</p>`},
 	{"addresses", "Which addresses can be used", `
 <p>The <strong>A record</strong> target is the IPv4 address of the server: a <strong>public</strong> address, or a private one (10.x.x.x, 172.16-31.x.x, 192.168.x.x, or 100.64-127.x.x for Tailscale). A public address makes the site reachable from the internet; a private one only from your home network or tailnet. Loopback (127.x.x.x), link-local (169.254.x.x), multicast and reserved addresses cannot be used.</p>
 <p>Optionally add the server's <strong>IPv6</strong> address (public, or unique-local fd00::/8) and ServanaGo also manages an <strong>AAAA record</strong>, so the site works over both IPv4 and IPv6. The IPv4 address is still required. Loopback (::1), link-local (fe80::), multicast and IPv4-mapped addresses cannot be used. Records are always DNS-only (never proxied).</p>`},

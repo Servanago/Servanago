@@ -63,13 +63,11 @@ scoped to the zones you want to manage. The same token is used for certificate i
 
 ## Configuration
 
+**Core**
+
 | Variable | Required | Meaning |
 |---|---|---|
-| `CLOUDFLARE_API_TOKEN` | no | Token above. Unset: no DNS management, per-host HTTP-01 certificates. Set: DNS-01 certificates (wildcards available) and A-record sync. A malformed token is rejected at startup. |
 | `SERVANAGO_HOST` | yes | Hostname the UI is served on. It gets its own certificate. |
-| `SERVANAGO_HOST_IP` | with a token | Address `SERVANAGO_HOST` resolves to; ServanaGo creates and syncs that A record. Any usable IPv4 address (public, private or Tailscale); the same rule applies to every domain and route IP. |
-| `SERVANAGO_HOST_IP6` | no | Optional IPv6 address of `SERVANAGO_HOST`; ServanaGo also creates and syncs an AAAA record for it. A global unicast or unique-local address; the IPv4 address above is still required. |
-| `SERVANAGO_HOST_ZONE` | no | Cloudflare zone name for that record (with a token). Unset walks up the host's labels. |
 | `ACME_EMAIL` | yes | Let's Encrypt contact; a bare address. |
 | `ADMIN_PASSWORD` | no | Enables login. **Unset means the UI is open** (warning in the log and a red banner). |
 | `SERVANAGO_SECRET_KEY` | no | At least 32 characters (`openssl rand -hex 32`). Encrypts the authenticator-app seed in SQLite; without it that option is off. Back it up with the data directory: if it is lost, run `2fa-reset`. |
@@ -78,11 +76,20 @@ scoped to the zones you want to manage. The same token is used for certificate i
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | no | Email delivery for magic-link site access (`SMTP_PORT` defaults to 587, `SMTP_USER`/`SMTP_PASS` optional). Both `SMTP_HOST` and `MAIL_FROM` are needed for the gate; credentials come from the environment only. |
 | `ACME_ISSUER` | no | `internal` serves self-signed certificates from Caddy's local CA (offline setups and tests). Default is Let's Encrypt. |
 | `ACME_STAGING` | no | `true` uses the Let's Encrypt staging CA. |
-| `ACME_PROPAGATION_DELAY`, `ACME_PROPAGATION_TIMEOUT` | no | DNS-01 tuning, e.g. `2m` / `10m`. Unset uses Caddy's defaults. |
-| `ACME_RESOLVERS` | no | Default `1.1.1.1,8.8.8.8`. |
 | `UI_LISTEN` | no | Default `127.0.0.1:8080`. |
 | `DATA_DIR` | no | Default `/data`, a container-era default that changes with native packaging (M3). Set it explicitly. |
 | `HTTP_PORT`, `HTTPS_PORT` | no | Caddy listen ports, default 80 and 443. |
+
+**Cloudflare (optional).** Leave `CLOUDFLARE_API_TOKEN` unset to run without it. Set it to get DNS-01 certificates (wildcards available) and automatic A and AAAA records.
+
+| Variable | Required | Meaning |
+|---|---|---|
+| `CLOUDFLARE_API_TOKEN` | no | Token above. Unset: no DNS management, per-host HTTP-01 certificates. Set: DNS-01 certificates and record sync. A malformed token is rejected at startup. |
+| `SERVANAGO_HOST_IP` | with a token | Address `SERVANAGO_HOST` resolves to; ServanaGo creates and syncs that A record. Any usable IPv4 address (public, private or Tailscale); the same rule applies to every domain and route IP. |
+| `SERVANAGO_HOST_IP6` | no | Optional IPv6 address of `SERVANAGO_HOST`; ServanaGo also creates and syncs an AAAA record for it. A global unicast or unique-local address; the IPv4 address above is still required. |
+| `SERVANAGO_HOST_ZONE` | no | Cloudflare zone name for that record. Unset walks up the host's labels. |
+| `ACME_RESOLVERS` | no | Resolvers for the DNS-01 check. Default `1.1.1.1,8.8.8.8`. |
+| `ACME_PROPAGATION_DELAY`, `ACME_PROPAGATION_TIMEOUT` | no | DNS-01 tuning, e.g. `2m` / `10m`. Unset uses Caddy's defaults. |
 
 ## Warnings
 
