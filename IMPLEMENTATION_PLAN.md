@@ -24,7 +24,11 @@ Baseline on `c1133b3` (Caretakarr head), measured before any change:
 - Favicon/touch icons wired in `layout.html`; page titles say ServanaGo
 - No side-stripe borders or glow shadows
 **Tests**: e2e login/dashboard/sites specs pass; a Go test that every asset the layout references exists in the embed FS; screenshot of login and dashboard reviewed by eye.
-**Status**: Not Started
+**Status**: Complete. Notes:
+- Stage 1 missed the topbar/login wordmark (`Care<b>takarr</b>`, split by a tag); fixed here and now pinned by `TestTemplatesUseBrandAndExistingStatics`
+- The pack's original-concept icon PNGs are opaque (baked light surround) and the 512px one is cropped; the icon panel is the only complete tile. Icons are derived from it by `docs/brand/keyout.py` (see `docs/brand/README.md`). The wordmark PNG ships unmodified for the README only
+- Dark-surface contrast: pack slate-500 muted text and the success/danger/info semantics fail AA on the dark UI; the theme uses lifted variants, pinned by `TestThemeMeetsContrast`
+- Not done (out of scope): form field borders (`--sg-border` on `--sg-bg`) are ~1.7:1, as in the inherited theme; WCAG 1.4.11 wants 3:1 for input boundaries
 
 ## Stage 3: Prune arr-stack features
 **Goal**: Remove code that has no place in a hosting manager; nothing else changes.

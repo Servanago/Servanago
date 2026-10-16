@@ -5,9 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="htmx-config" content='{"responseHandling":[{"code":"204","swap":false},{"code":"[23]..","swap":true},{"code":"[45]..","swap":true,"error":true}]}'>
 <title>{{.Title}} · ServanaGo</title>
-<meta name="theme-color" content="#07111F">
-<link rel="icon" type="image/svg+xml" href="/static/servanago-mark.svg">
+<meta name="theme-color" content="#10191B">
+<link rel="icon" type="image/png" sizes="16x16" href="/static/favicon-16.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/static/favicon-32.png">
+<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 <link rel="stylesheet" href="/static/pico.min.css">
 <link rel="stylesheet" href="/static/servanago.css">
 <script src="/static/htmx.min.js" defer></script>
@@ -15,7 +16,7 @@
 <body>
 <header class="topbar">
 <nav>
-<ul><li><a class="brand" href="/" aria-label="ServanaGo dashboard"><img src="/static/servanago-mark.svg" alt="" width="28" height="32"><span class="wordmark">Care<b>takarr</b></span></a></li></ul>
+<ul><li><a class="brand" href="/" aria-label="ServanaGo dashboard"><img src="/static/mark-64.png" alt="" width="32" height="32"><span class="wordmark">Servana<b>Go</b></span></a></li></ul>
 <ul><li><a href="/">Dashboard</a></li><li><a href="/sites/new">Add site</a></li><li><a href="/domains">Domains</a></li><li><a href="/logs">Logs</a></li><li><a href="/help">Help</a></li>{{if .LoggedIn}}<li><a href="/security">Security</a></li><li><button class="outline secondary" hx-post="/logout">Sign out</button></li>{{end}}</ul>
 </nav>
 </header>

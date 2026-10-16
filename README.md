@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="servanago-assets/logo/servanago-hero.png" alt="ServanaGo: real domains, real HTTPS, for your arr stack" width="820">
+  <img src="docs/brand/servanago-wordmark.png" alt="ServanaGo" width="520">
 </p>
 
 # ServanaGo
