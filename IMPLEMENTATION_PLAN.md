@@ -20,7 +20,7 @@ Status of this plan: stages and criteria are a first cut; Stage 2 has an open de
 - Verified: `go test -race`, lint, e2e 29/29 (27 + 2 new)
 
 ## Stage 2: HTTP-01 / TLS-ALPN default issuer
-**Goal**: Certificates for public hostnames with no DNS provider. Partly delivered in Stage 1: with no token the renderer already uses default challenges (`Options.HTTP01`), and domains already store an empty `zone_id` (no migration needed; the column is NOT NULL and an empty string is allowed). What remains is choosing DNS-01 versus HTTP-01 when a token exists.
+**Goal**: Certificates for public hostnames with no DNS provider. Partly delivered in Stage 1: with no token the renderer already uses default challenges (`Options.HTTP01`), and domains already store an empty `zone_id` (the column is NOT NULL and an empty string is allowed). What remains is choosing DNS-01 versus HTTP-01 when a token exists.
 **Success Criteria**:
 - `caddycfg` renders the DNS-01 issuer only where selected (see open question) and HTTP-01 elsewhere, per domain rather than from the token alone
 - Golden files for: DNS-01 wildcard, DNS-01 per host, HTTP-01 beside DNS-01 in one config
@@ -33,14 +33,14 @@ Status of this plan: stages and criteria are a first cut; Stage 2 has an open de
 **Success Criteria**:
 - `ValidateLANIP` becomes `ValidateIP`: any usable IPv4 accepted (LAN, CGNAT, public); loopback, unspecified, "this network", multicast, broadcast, link-local and reserved are refused
 - IPv6 (user decision: dual-stack): `ValidateIP6` accepts global unicast and unique-local addresses. `SERVANAGO_HOST_IP6`, `domains.default_ip6` and `routes.record_ip6` are optional AAAA targets beside the IPv4 ones; the IPv4 address stays required, so there is no IPv6-only site
-- Migration `006`: the two columns, and `dns_records` / `ui_dns_record` rebuilt keyed by (route, family) with existing rows kept as A
+- Schema: the two columns, and `dns_records` / `ui_dns_record` keyed by (route, family). The app has no deployed data, so there is no data migration: the old `001`-`005` chain was collapsed into a single `001_init.sql` with the final schema (and the unused `routes.preset` column dropped). Real migrations start at `002` once a release has data to keep
 - `cfdns` and `dnssync` handle both families with independent owned / adopt / conflict state; clearing an IPv6 address deletes an owned AAAA and only drops the row of an adopted one; take-over covers both; deleting a route offers to remove both
 - Dashboard: one badge per record; UI-host card, checklist and delete dialog are family-aware; IPv6 fields show only with Cloudflare configured
 - Hostname rules unchanged (`.local`, `.internal`, `.home.arpa`, IP literals still rejected); upstream hosts may be public or IPv6 literals (rendered bracketed); IPv6 allowlist CIDRs accepted
 - Help text, README, llms.txt, `.env.example`, DESIGN §16 and the "LAN only" warning updated
-**Tests**: table tests for every address class in both families; store tests incl. a real v5 -> v6 upgrade with data; `cfdns` and `dnssync` tests (create, adopt, conflict, take-over, clear, host) for AAAA; web tests for the forms, handlers, dashboard badges, delete and host card; renderer golden for an IPv6 upstream and allowlist; probe address test; e2e dual-stack spec; the mock Cloudflare server now understands record types.
+**Tests**: table tests for every address class in both families; store tests for per-family rows and the IPv6 columns; `cfdns` and `dnssync` tests (create, adopt, conflict, take-over, clear, host) for AAAA; web tests for the forms, handlers, dashboard badges, delete and host card; renderer golden for an IPv6 upstream and allowlist; probe address test; e2e dual-stack spec; the mock Cloudflare server now understands record types.
 **Status**: Complete. Notes:
-- Changed existing tests for the new spec: public IPv4 accepted (the old "public IP rejected" cases), the migration version is 6, and DNS store calls take a family
+- Changed existing tests for the new spec: public IPv4 accepted (the old "public IP rejected" cases), the schema version is 1, and DNS store calls take a family
 - Known gap: a domain added without Cloudflare has an empty default IP; if a token is added later its A record is not created and the dashboard cannot edit the domain. Domains have no edit page yet (M2)
 - Known gap: no dual-stack for `servanago import` beyond copying `SERVANAGO_HOST_IP6` onto new domains
 

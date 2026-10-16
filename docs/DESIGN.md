@@ -85,7 +85,6 @@ CREATE TABLE routes (
   allowlist       TEXT NOT NULL DEFAULT '',-- newline-separated CIDRs, '' = open
   basic_user      TEXT,
   basic_hash      TEXT,                    -- bcrypt; both NULL = no auth
-  preset          TEXT,                    -- legacy: unused since M0, column kept (no table rebuild)
   UNIQUE (domain_id, subdomain)
 );
 
@@ -100,7 +99,7 @@ CREATE TABLE dns_records (
 );
 ```
 
-Migrations: `internal/store/migrations/NNN_name.sql` embedded, applied in order, tracked with `PRAGMA user_version`. No migration library. Open DB with WAL, `foreign_keys=ON`, `busy_timeout`.
+Migrations: `internal/store/migrations/NNN_name.sql` embedded, applied in order, tracked with `PRAGMA user_version`. No migration library. Open DB with WAL, `foreign_keys=ON`, `busy_timeout`. **The app has no deployed data, so the schema is one clean `001_init.sql` holding the current tables; the numbered migrations mentioned in the sections below are design history, not files.** Real migrations start at `002` once a release has data to keep.
 
 Secrets never stored: no CF token, no admin password. Basic-auth stores only a bcrypt hash.
 
@@ -315,7 +314,7 @@ Orange-cloud records, DDNS/public-IP detection, multi-user accounts, path-based 
 
 ## 16. UI host record and LAN-only IPs
 
-> **Changed in M1:** the LAN-only rule below no longer applies. `config.ValidateIP` accepts any usable IPv4 (public, private, CGNAT) and refuses loopback, link-local, multicast and reserved addresses; `config.ValidateIP6` accepts a global unicast or unique-local IPv6 address. `SERVANAGO_HOST_IP` is required only when a Cloudflare token is set. IPv6 is dual-stack: `SERVANAGO_HOST_IP6`, `domains.default_ip6` and `routes.record_ip6` are optional AAAA targets beside the IPv4 ones. `dns_records` and `ui_dns_record` carry a `family` (A or AAAA) in their key (migration `006`), and `dnssync` reconciles each family independently: the same owned / adopt / conflict rules, a cleared IPv6 address deletes an owned AAAA and only drops the row of an adopted one. The rest of this section (record lifecycle, collisions) still holds.
+> **Changed in M1:** the LAN-only rule below no longer applies. `config.ValidateIP` accepts any usable IPv4 (public, private, CGNAT) and refuses loopback, link-local, multicast and reserved addresses; `config.ValidateIP6` accepts a global unicast or unique-local IPv6 address. `SERVANAGO_HOST_IP` is required only when a Cloudflare token is set. IPv6 is dual-stack: `SERVANAGO_HOST_IP6`, `domains.default_ip6` and `routes.record_ip6` are optional AAAA targets beside the IPv4 ones. `dns_records` and `ui_dns_record` carry a `family` (A or AAAA) in their key (in the initial schema), and `dnssync` reconciles each family independently: the same owned / adopt / conflict rules, a cleared IPv6 address deletes an owned AAAA and only drops the row of an adopted one. The rest of this section (record lifecycle, collisions) still holds.
 
 Source: brainstorm of 2026-10-14. Servers with several addresses need `SERVANAGO_HOST` to resolve to a chosen one, so ServanaGo manages that A record itself. Issuance is unaffected (DNS-01 needs no IP) and Caddy keeps listening on all interfaces.
 

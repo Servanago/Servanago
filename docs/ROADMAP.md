@@ -6,6 +6,7 @@ Today (after M0) the code is the inherited baseline: a single-process Caddy fron
 
 ## Decisions
 
+- **No data migrations yet.** The app has no deployed data, so the schema lives in a single `001_init.sql` that is edited in place, with no upgrade paths or compatibility shims. Numbered migrations (`002`+) start with the first release that has data worth keeping.
 - **Native host only.** Debian 12+ and Ubuntu 22.04+ with systemd >= 252. No container image in v1.
 - **TLS.** HTTP-01 / TLS-ALPN by default; Cloudflare DNS-01 stays as an optional issuer (wildcards, firewalled hosts).
 - **Admins.** Multiple, all equal. TOTP, backup codes and passkeys become per user.

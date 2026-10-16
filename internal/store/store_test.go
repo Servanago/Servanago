@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"path/filepath"
 	"testing"
 )
@@ -38,7 +37,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 	mustDomain(t, s, "example.com")
 	var v int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 6 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != 1 {
 		t.Fatalf("user_version %d %v", v, err)
 	}
 	s.Close()
@@ -318,31 +317,6 @@ func TestPasskeysAndResetAuth(t *testing.T) {
 	}
 }
 
-// Databases created before the preset field was dropped keep a routes.preset column: reads and edits must ignore it.
-func TestLegacyPresetColumnIsIgnored(t *testing.T) {
-	s, ctx := open(t), context.Background()
-	d := mustDomain(t, s, "example.com")
-	r, err := s.CreateRoute(ctx, route(d.ID, "sonarr"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := s.q.ExecContext(ctx, "UPDATE routes SET preset='Sonarr' WHERE id=?", r.ID); err != nil {
-		t.Fatal(err)
-	}
-	got, err := s.GetRoute(ctx, r.ID)
-	if err != nil || got != r {
-		t.Fatalf("read with legacy preset value: %+v vs %+v (%v)", got, r, err)
-	}
-	r.UpstreamPort = 9000
-	if err := s.UpdateRoute(ctx, r); err != nil {
-		t.Fatal(err)
-	}
-	var preset string
-	if err := s.q.QueryRowContext(ctx, "SELECT COALESCE(preset,'') FROM routes WHERE id=?", r.ID).Scan(&preset); err != nil || preset != "Sonarr" {
-		t.Errorf("update must leave the legacy column alone: %q, %v", preset, err)
-	}
-}
-
 func TestDNSRecordsPerFamily(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	d := mustDomain(t, s, "example.com")
@@ -440,57 +414,5 @@ func TestIPv6FieldsRoundTrip(t *testing.T) {
 	}
 	if got, _ := s.GetRoute(ctx, r.ID); got.RecordIP6 != "" {
 		t.Errorf("record_ip6 not cleared: %+v", got)
-	}
-}
-
-// A database created before dual-stack (user_version 5, with DNS rows) must upgrade without losing them.
-func TestMigration006KeepsExistingDNSRows(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "old.db")
-	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, name := range []string{"001_init.sql", "002_ui_dns.sql", "003_proxy_tuning.sql", "004_2fa.sql", "005_site_access.sql"} {
-		body, err := migrationFS.ReadFile("migrations/" + name)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := db.Exec(string(body)); err != nil {
-			t.Fatalf("%s: %v", name, err)
-		}
-	}
-	for _, q := range []string{
-		"INSERT INTO domains (id, name, zone_id, default_ip) VALUES (1, 'example.com', 'z1', '192.168.1.1')",
-		"INSERT INTO routes (id, domain_id, subdomain, upstream_host, upstream_port) VALUES (7, 1, 'app', '10.0.0.2', 80)",
-		"INSERT INTO dns_records (route_id, cf_record_id, content, owned, state, error, synced_at) VALUES (7, 'cf9', '192.168.1.1', 1, 'synced', NULL, 't0')",
-		"INSERT INTO ui_dns_record (id, cf_record_id, content, owned, state) VALUES (1, 'cfui', '192.168.1.1', 0, 'conflict')",
-		"PRAGMA user_version = 5",
-	} {
-		if _, err := db.Exec(q); err != nil {
-			t.Fatalf("%s: %v", q, err)
-		}
-	}
-	db.Close()
-
-	s, err := Open(path)
-	if err != nil {
-		t.Fatalf("upgrade: %v", err)
-	}
-	defer s.Close()
-	ctx := context.Background()
-	rec, err := s.GetDNS(ctx, 7, FamilyA)
-	if err != nil || rec.CFRecordID != "cf9" || rec.Content != "192.168.1.1" || !rec.Owned || rec.State != "synced" || rec.SyncedAt != "t0" || rec.Family != FamilyA {
-		t.Fatalf("route record lost or changed: %+v %v", rec, err)
-	}
-	ui, err := s.GetUIDNS(ctx, FamilyA)
-	if err != nil || ui.CFRecordID != "cfui" || ui.Owned || ui.State != "conflict" {
-		t.Fatalf("UI record lost or changed: %+v %v", ui, err)
-	}
-	d, _ := s.GetDomain(ctx, 1)
-	if d.DefaultIP6 != "" || d.DefaultIP != "192.168.1.1" {
-		t.Errorf("domain after upgrade: %+v", d)
-	}
-	if err := s.UpsertDNS(ctx, DNSRecord{RouteID: 7, Family: FamilyAAAA, Content: "2001:db8::1", State: "synced", Owned: true}); err != nil {
-		t.Errorf("AAAA rows must work after the upgrade: %v", err)
 	}
 }

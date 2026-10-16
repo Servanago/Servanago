@@ -40,7 +40,7 @@ All management is through the web UI (htmx, server-rendered); there is no public
 ## Behavior and constraints
 
 - Every change writes SQLite, renders the full Caddy JSON, then calls `caddy.Load`. If Caddy rejects it, the DB change is reverted and the exact error is shown. If stored config fails to load at startup, a bootstrap config (UI only) is served with a banner.
-- Only Cloudflare records marked `managed by servanago` are changed or deleted. Records are DNS-only (never proxied); public IPs and IPv6 are rejected for now.
+- Only Cloudflare records marked `managed by servanago` are changed or deleted. Records are DNS-only (never proxied); A targets are IPv4, with an optional IPv6 AAAA target beside each.
 - Rejected domains: `.local`, `.internal`, `.home.arpa`, IP literals (Caddy would use its internal CA instead of ACME). A route cannot use the `SERVANAGO_HOST` hostname.
 - Backups: copy `DATA_DIR` (SQLite DB and Caddy certificate storage). Lost authenticator and passkeys: stop the service and run `servanago 2fa-reset`.
 - `UI_LISTEN=0.0.0.0:8080` is a recovery hatch only: the UI is then served without TLS.
