@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/store"
 )
 
 // gateCfg is config with everything the gate needs.

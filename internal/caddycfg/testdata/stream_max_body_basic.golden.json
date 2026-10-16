@@ -29,7 +29,7 @@
               "match": [
                 {
                   "host": [
-                    "caretakarr.example.com"
+                    "servanago.example.com"
                   ]
                 }
               ],
@@ -116,7 +116,7 @@
               }
             ],
             "subjects": [
-              "caretakarr.example.com"
+              "servanago.example.com"
             ]
           },
           {
@@ -154,7 +154,7 @@
         },
         "level": "INFO",
         "writer": {
-          "output": "caretakarr"
+          "output": "servanago"
         }
       }
     }

@@ -1,4 +1,4 @@
-# Caretakarr — Architecture
+# ServanaGo — Architecture
 
 Status: draft from `/sc:design`. Inputs: `docs/REQUIREMENTS.md`. Next: `/sc:workflow` to produce `IMPLEMENTATION_PLAN.md`.
 
@@ -8,10 +8,10 @@ Status: draft from `/sc:design`. Inputs: `docs/REQUIREMENTS.md`. Next: `/sc:work
 |---|---|
 | A-record IP | Per-domain default IP, user-entered, overridable per route. No auto-detect. |
 | Orange cloud | Not supported. Records are always DNS-only (`proxied=false`). |
-| DNS on route delete | Delete only records Caretakarr created (`owned=1`). Adopted records are never modified or deleted. |
+| DNS on route delete | Delete only records ServanaGo created (`owned=1`). Adopted records are never modified or deleted. |
 | ACME CA | `ACME_STAGING` env. Default production. Dev compose file sets it `true`. Read-only in UI. |
-| Import/export | Out of v1. `/data/caretakarr.db` copy is the backup. |
-| UI hostname cert | `CARETAKARR_HOST` always gets its own exact-name cert policy, independent of the DB. It does not need to be a managed domain. |
+| Import/export | Out of v1. `/data/servanago.db` copy is the backup. |
+| UI hostname cert | `SERVANAGO_HOST` always gets its own exact-name cert policy, independent of the DB. It does not need to be a managed domain. |
 
 ## 2. Verified facts the design relies on
 
@@ -27,16 +27,16 @@ Status: draft from `/sc:design`. Inputs: `docs/REQUIREMENTS.md`. Next: `/sc:work
 ```mermaid
 flowchart LR
   Browser -->|443 / 80| Caddy
-  subgraph Container [one process: caretakarr]
+  subgraph Container [one process: servanago]
     Caddy[Embedded Caddy<br/>routes, wildcard certs]
     UI[Web UI + handlers<br/>127.0.0.1:8080]
     Apply[Apply service<br/>mutex, tx, render, Load]
-    Store[(SQLite<br/>/data/caretakarr.db)]
+    Store[(SQLite<br/>/data/servanago.db)]
     DNS[cloudflare-go<br/>DNS sync]
     Health[Health + cert probes]
     Docker[Docker discovery<br/>optional]
   end
-  Caddy -->|CARETAKARR_HOST| UI
+  Caddy -->|SERVANAGO_HOST| UI
   Caddy -->|per route| Arr[(arr upstreams)]
   UI --> Apply --> Store
   Apply -->|caddy.Load| Caddy
@@ -47,12 +47,12 @@ flowchart LR
   Docker -.-> Sock[/var/run/docker.sock/]
 ```
 
-The UI listens only on loopback. Caddy proxies `CARETAKARR_HOST` to it, so the UI gets the same TLS as everything else. Optional `UI_LISTEN` (default `127.0.0.1:8080`) can be set to `0.0.0.0:8080` and published for recovery when Caddy is broken. Document this as an auth bypass if `ADMIN_PASSWORD` is unset.
+The UI listens only on loopback. Caddy proxies `SERVANAGO_HOST` to it, so the UI gets the same TLS as everything else. Optional `UI_LISTEN` (default `127.0.0.1:8080`) can be set to `0.0.0.0:8080` and published for recovery when Caddy is broken. Document this as an auth bypass if `ADMIN_PASSWORD` is unset.
 
 ### Package layout
 
 ```
-cmd/caretakarr/main.go        wiring, signals, graceful shutdown
+cmd/servanago/main.go        wiring, signals, graceful shutdown
 internal/config/              env parsing + validation (fail fast)
 internal/store/               modernc.org/sqlite, embedded SQL migrations, queries
 internal/caddycfg/            pure func: (State, Options) -> []byte JSON
@@ -125,7 +125,7 @@ Secrets never stored: no CF token, no admin password. Basic-auth stores only a b
         "listen": [":443"],
         "routes": [
           // 1. UI route (always present, first)
-          { "match": [{"host": ["caretakarr.example.com"]}],
+          { "match": [{"host": ["servanago.example.com"]}],
             "handle": [{"handler":"reverse_proxy","upstreams":[{"dial":"127.0.0.1:8080"}]}],
             "terminal": true },
           // 2. one per route
@@ -144,7 +144,7 @@ Secrets never stored: no CF token, no admin password. Basic-auth stores only a b
     },
     "tls": { "automation": { "policies": [
       { "subjects": ["*.example.com"], "issuers": [ACME_ISSUER] },
-      { "subjects": ["caretakarr.example.com"], "issuers": [ACME_ISSUER] }
+      { "subjects": ["servanago.example.com"], "issuers": [ACME_ISSUER] }
     ]}}
   }
 }
@@ -214,7 +214,7 @@ sequenceDiagram
 - Startup: verify token (`User.Tokens.Verify`). Bad token → UI banner, no crash.
 - Reconcile one route: name = `sub.domain`, content = `record_ip ?? default_ip`.
   - No stored record id: `DNS.Records.List(type=A,name=…)`.
-    - none → create (`proxied=false`, `comment="managed by caretakarr"`), `owned=1`.
+    - none → create (`proxied=false`, `comment="managed by servanago"`), `owned=1`.
     - exists, same content → adopt, `owned=0`, `state=synced`.
     - exists, different content → `state=conflict`, no write, UI offers "Take over" (updates and sets `owned=1`).
   - Stored id, content changed → update (only if `owned=1`).
@@ -235,7 +235,7 @@ sequenceDiagram
 
 - **Upstream health:** TCP dial every 30s per enabled route, kept in memory, shown as up/down.
 - **Cert state:** loopback TLS dial to `127.0.0.1:443` with SNI = route host, `InsecureSkipVerify`, read leaf `NotAfter` and issuer. Handshake failure → "pending/error". Tests the real serving path with no Caddy internals.
-- **Logs (v1):** ACME failure reasons live in Caddy logs, so a registered Caddy log writer module (`caddy.logging.writers.caretakarr`) feeds an in-memory ring buffer (e.g. 1000 lines) shown on a Logs page, filterable by level, polled by htmx. Config adds a `logging.logs.default` with that writer. This prevents the "pending forever" dead end. Not persisted. 
+- **Logs (v1):** ACME failure reasons live in Caddy logs, so a registered Caddy log writer module (`caddy.logging.writers.servanago`) feeds an in-memory ring buffer (e.g. 1000 lines) shown on a Logs page, filterable by level, polled by htmx. Config adds a `logging.logs.default` with that writer. This prevents the "pending forever" dead end. Not persisted. 
 
 Writer module shape (modeled on Caddy's built-in `caddy.logging.writers.file`/`stdout`):
 ```go
@@ -248,15 +248,15 @@ func init() { caddy.RegisterModule(Writer{}) }
 type Writer struct{}
 
 func (Writer) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{ID: "caddy.logging.writers.caretakarr", New: func() caddy.Module { return new(Writer) }}
+	return caddy.ModuleInfo{ID: "caddy.logging.writers.servanago", New: func() caddy.Module { return new(Writer) }}
 }
-func (Writer) String() string                      { return "caretakarr" }
-func (Writer) WriterKey() string                   { return "caretakarr:ring" }  // constant: pooled, survives reloads
+func (Writer) String() string                      { return "servanago" }
+func (Writer) WriterKey() string                   { return "servanago:ring" }  // constant: pooled, survives reloads
 func (Writer) OpenWriter() (io.WriteCloser, error) { return nopCloser{Sink}, nil } // Close is a no-op, never closes the ring
 
 var _ caddy.WriterOpener = (*Writer)(nil)
 ```
-Rendered config: `"logging":{"logs":{"default":{"writer":{"output":"caretakarr"},"encoder":{"format":"json"},"level":"INFO"}}}`. The ring parses each JSON line, keeps `ts`, `level`, `logger`, `msg`, and the error field. `Write` must not block (mutex-guarded slice, drop oldest). Import the package for side effects in `main`. Spike acceptance: render config with this writer, `Load`, trigger an ACME failure (bad token against staging), see the line in `Sink`; reload twice and confirm the ring still receives lines.
+Rendered config: `"logging":{"logs":{"default":{"writer":{"output":"servanago"},"encoder":{"format":"json"},"level":"INFO"}}}`. The ring parses each JSON line, keeps `ts`, `level`, `logger`, `msg`, and the error field. `Write` must not block (mutex-guarded slice, drop oldest). Import the package for side effects in `main`. Spike acceptance: render config with this writer, `Load`, trigger an ACME failure (bad token against staging), see the line in `Sink`; reload twice and confirm the ring still receives lines.
 
 Because `Sink` is a package global, tests that assert on log lines run serially along with the other Caddy integration tests.
 
@@ -273,8 +273,8 @@ final:   gcr.io/distroless/static:nonroot  (has CA certs; UID 65532)
 ```
 
 - Non-root can bind 80/443 because Docker ≥20.10 sets `ip_unprivileged_port_start=0`. Document that `/data` must be writable by UID 65532.
-- `docker-compose.yml`: caretakarr service, `./data:/data`, `.env`. Optional commented socket mount. `docker-compose.dev.yml` sets `ACME_STAGING=true`.
-- Module path `github.com/caretakarr/caretakarr`. GitHub Actions: `make check`, then multi-arch (amd64, arm64) image build to `ghcr.io/caretakarr/caretakarr` on tag.
+- `docker-compose.yml`: servanago service, `./data:/data`, `.env`. Optional commented socket mount. `docker-compose.dev.yml` sets `ACME_STAGING=true`.
+- Module path `github.com/servanago/servanago`. GitHub Actions: `make check`, then multi-arch (amd64, arm64) image build to `ghcr.io/servanago/servanago` on tag.
 - Dependencies (`caddyserver/caddy/v2`, `caddy-dns/cloudflare`, `cloudflare-go/v7`) pinned in `go.mod` at the latest stable tags when slice 0 starts. Renovate or Dependabot bumps afterward.
 - Ship `LICENSE` (MIT) and `NOTICE` (Caddy, caddy-dns/cloudflare: Apache-2.0).
 
@@ -327,21 +327,21 @@ Orange-cloud records, DDNS/public-IP detection, multi-user accounts, path-based 
 
 ## 16. UI host record and LAN-only IPs
 
-Source: brainstorm of 2026-10-14. Servers with several addresses need `CARETAKARR_HOST` to resolve to a chosen one, so Caretakarr manages that A record itself. Issuance is unaffected (DNS-01 needs no IP) and Caddy keeps listening on all interfaces.
+Source: brainstorm of 2026-10-14. Servers with several addresses need `SERVANAGO_HOST` to resolve to a chosen one, so ServanaGo manages that A record itself. Issuance is unaffected (DNS-01 needs no IP) and Caddy keeps listening on all interfaces.
 
 ### 16.1 Decisions
 | Topic | Decision |
 |---|---|
-| `CARETAKARR_HOST_IP` | Required. IPv4 in 10/8, 172.16/12, 192.168/16 or 100.64/10 (CGNAT, Tailscale). Anything else fails startup naming the variable. |
-| `CARETAKARR_HOST_ZONE` | Optional zone name override. Unset: walk labels up from the host, never below two labels, first zone the token can see. |
+| `SERVANAGO_HOST_IP` | Required. IPv4 in 10/8, 172.16/12, 192.168/16 or 100.64/10 (CGNAT, Tailscale). Anything else fails startup naming the variable. |
+| `SERVANAGO_HOST_ZONE` | Optional zone name override. Unset: walk labels up from the host, never below two labels, first zone the token can see. |
 | Same rule everywhere | Domain `default_ip` and route `record_ip` use the same validator. Public IPs are out of scope for the whole product. |
 | Record lifecycle | Same owned / adopt / conflict rules as routes. Reconciled in the background at each start and from dashboard buttons. Never deleted automatically. |
-| Collision | A route whose `subdomain.domain` equals `CARETAKARR_HOST` is rejected (the UI route always wins in Caddy, so it could never be served). |
+| Collision | A route whose `subdomain.domain` equals `SERVANAGO_HOST` is rejected (the UI route always wins in Caddy, so it could never be served). |
 
 ### 16.2 Components
 ```mermaid
 flowchart LR
-  Env[CARETAKARR_HOST_IP / _ZONE] --> Cfg[config.Load<br/>ValidateLANIP]
+  Env[SERVANAGO_HOST_IP / _ZONE] --> Cfg[config.Load<br/>ValidateLANIP]
   Cfg --> Main
   Main -->|goroutine at start| Sync[dnssync.ReconcileHost]
   UI[Dashboard card<br/>Resync / Take over] --> Sync
@@ -354,7 +354,7 @@ flowchart LR
 - `config.ValidateLANIP(s) (netip.Addr, error)`: `Is4()` and (`IsPrivate()` or inside `100.64.0.0/10`). The error names the value and lists the allowed ranges. Test table covers every range boundary (`172.15.255.255` no, `172.16.0.0` yes, `172.31.255.255` yes, `172.32.0.0` no, `100.63.255.255` no, `100.64.0.0` yes, `100.127.255.255` yes, `100.128.0.0` no), loopback, link-local, unspecified, multicast, public, IPv6.
 - Call sites: `config.Load` (host IP), `addDomain` (replaces the current `Is4` check), and `parseRoute` for a new `record_ip` form field. That field has no UI today, and the edit handler comment already says the override is "edited elsewhere"; this adds it to the route form and overlays it in `updateRoute`.
 - `cfdns.ZoneFor(ctx, host, override) (zoneID, zoneName string, err)`. `ZoneID` gains a sentinel `ErrZoneNotFound`, so the walk continues only on not-found and aborts on API errors (bad token). Final error lists the names tried.
-- `dnssync.step` is reused unchanged. `ReconcileHost(ctx, takeOver bool)` resolves the zone, builds `name = CARETAKARR_HOST`, `want = CARETAKARR_HOST_IP`, runs `step` with the stored row, and upserts. Failures become `state=error`, never a returned error and never fatal, matching routes. `Syncer` receives `HostSpec{Name, IP, ZoneOverride}` at construction.
+- `dnssync.step` is reused unchanged. `ReconcileHost(ctx, takeOver bool)` resolves the zone, builds `name = SERVANAGO_HOST`, `want = SERVANAGO_HOST_IP`, runs `step` with the stored row, and upserts. Failures become `state=error`, never a returned error and never fatal, matching routes. `Syncer` receives `HostSpec{Name, IP, ZoneOverride}` at construction.
 - `ReconcileHost` runs in a goroutine in `main` next to `VerifyToken`, so startup and the bootstrap fallback never wait on Cloudflare.
 
 ### 16.3 Data
@@ -387,7 +387,7 @@ Store gets `GetUIDNS` / `UpsertUIDNS` reusing the `DNSRecord` struct (`RouteID` 
 ### 16.6 Test plan
 | Layer | Cases |
 |---|---|
-| `config` | `ValidateLANIP` boundary table; `CARETAKARR_HOST_IP` missing / public / IPv6 fails naming the variable; `CARETAKARR_HOST_ZONE` must be a suffix of the host |
+| `config` | `ValidateLANIP` boundary table; `SERVANAGO_HOST_IP` missing / public / IPv6 fails naming the variable; `SERVANAGO_HOST_ZONE` must be a suffix of the host |
 | `cfdns` | `ZoneFor`: found at each level, none found lists tried names, override used verbatim, API error aborts the walk |
 | `dnssync` | host record: create, adopt, conflict then take over, IP change on owned, adopted untouched, API error, idempotent resync, zone not found |
 | `store` | migration 002 on fresh and v1 DBs; one-row constraint |
@@ -398,7 +398,7 @@ Store gets `GetUIDNS` / `UpsertUIDNS` reusing the `DNSRecord` struct (`RouteID` 
 | Risk | Level | Mitigation |
 |---|---|---|
 | A later need for public-IP records | low, accepted | The validator is one function; a switch would be additive |
-| Zone walk picks a parent zone the user did not intend | low | `CARETAKARR_HOST_ZONE` override; tried names shown on error |
+| Zone walk picks a parent zone the user did not intend | low | `SERVANAGO_HOST_ZONE` override; tried names shown on error |
 | Behavioral change for domains/routes (public IPs now rejected) | low | No installs yet; error message lists allowed ranges |
 
 ## 17. Admin login hardening: TOTP, passkeys, Turnstile
@@ -409,27 +409,27 @@ Source: brainstorm of 2026-10-15; modelled on `../gochatserver` (`service/totp.g
 | Topic | Decision |
 |---|---|
 | Passkey role | Passwordless alternative. A passkey login is a full session, no TOTP prompt. Password (+TOTP) stays as fallback. |
-| Storage | SQLite (migration `004_2fa.sql`). The env-only secrets rule covers operator secrets only (`CLOUDFLARE_API_TOKEN`, `ADMIN_PASSWORD`, `CARETAKARR_SECRET_KEY`, `TURNSTILE_SECRET`). Enrolled credentials live in the DB. |
-| TOTP seed | AES-256-GCM, key = HKDF-SHA256(`CARETAKARR_SECRET_KEY`). Backup codes: SHA-256 hex (high entropy, no bcrypt). Passkey public keys: plain. |
-| Turnstile | Opt-in. Password step only. Enforced only when the request `Host` equals `CARETAKARR_HOST`; the `UI_LISTEN` recovery listener (LAN IP / localhost Host) is exempt. |
-| Passkey RP | RP ID = hostname of the request `Host`, accepted only if it equals `CARETAKARR_HOST` or is `localhost`. Origin = `https://` or `http://` (localhost only) + `Host`, port included. No new env var. Deviation from the brainstorm ("from `CARETAKARR_HOST`" only): `localhost` is a secure context, so on-box recovery and e2e can use passkeys. |
-| Enforcement | `REQUIRE_2FA=true`: a password login without TOTP yields a *limited* session (only `/security`, `/logout`, static) until TOTP is confirmed. Passkey login is always full. Needs `ADMIN_PASSWORD` and `CARETAKARR_SECRET_KEY`, else startup fails. |
-| Recovery | Backup codes; `caretakarr 2fa-reset` wipes TOTP, backup codes, passkeys. It reads only `DATA_DIR`, not the full config. Run it with `docker compose run --rm` (a stopped or restarting container cannot `exec`). Sessions are stateless, so restart to drop live ones. |
+| Storage | SQLite (migration `004_2fa.sql`). The env-only secrets rule covers operator secrets only (`CLOUDFLARE_API_TOKEN`, `ADMIN_PASSWORD`, `SERVANAGO_SECRET_KEY`, `TURNSTILE_SECRET`). Enrolled credentials live in the DB. |
+| TOTP seed | AES-256-GCM, key = HKDF-SHA256(`SERVANAGO_SECRET_KEY`). Backup codes: SHA-256 hex (high entropy, no bcrypt). Passkey public keys: plain. |
+| Turnstile | Opt-in. Password step only. Enforced only when the request `Host` equals `SERVANAGO_HOST`; the `UI_LISTEN` recovery listener (LAN IP / localhost Host) is exempt. |
+| Passkey RP | RP ID = hostname of the request `Host`, accepted only if it equals `SERVANAGO_HOST` or is `localhost`. Origin = `https://` or `http://` (localhost only) + `Host`, port included. No new env var. Deviation from the brainstorm ("from `SERVANAGO_HOST`" only): `localhost` is a secure context, so on-box recovery and e2e can use passkeys. |
+| Enforcement | `REQUIRE_2FA=true`: a password login without TOTP yields a *limited* session (only `/security`, `/logout`, static) until TOTP is confirmed. Passkey login is always full. Needs `ADMIN_PASSWORD` and `SERVANAGO_SECRET_KEY`, else startup fails. |
+| Recovery | Backup codes; `servanago 2fa-reset` wipes TOTP, backup codes, passkeys. It reads only `DATA_DIR`, not the full config. Run it with `docker compose run --rm` (a stopped or restarting container cannot `exec`). Sessions are stateless, so restart to drop live ones. |
 | Audit | `slog` only: event, method, never codes, seeds or tokens. |
 | Skipped | Passkey rename (delete and re-add), mobile handoff, API tokens, audit table, "recently verified" state. |
 
 ### 17.2 Config (`internal/config`)
 | Env | Rule |
 |---|---|
-| `CARETAKARR_SECRET_KEY` | Optional, at least 32 chars. Unset: TOTP enrollment disabled in UI (hint explains); passkeys and Turnstile still work. |
-| `REQUIRE_2FA` | Bool. True needs `ADMIN_PASSWORD` and `CARETAKARR_SECRET_KEY`; error names the missing variable. |
+| `SERVANAGO_SECRET_KEY` | Optional, at least 32 chars. Unset: TOTP enrollment disabled in UI (hint explains); passkeys and Turnstile still work. |
+| `REQUIRE_2FA` | Bool. True needs `ADMIN_PASSWORD` and `SERVANAGO_SECRET_KEY`; error names the missing variable. |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | Both or neither; one alone fails startup naming the other. With no `ADMIN_PASSWORD`: warn, inert. |
 | `TURNSTILE_BASE_URL` | Test hook only (like `CLOUDFLARE_BASE_URL`): siteverify endpoint override. |
 
 ### 17.3 Components
 ```mermaid
 flowchart LR
-  Login[POST /login] --> T{Host == CARETAKARR_HOST<br/>and Turnstile on?}
+  Login[POST /login] --> T{Host == SERVANAGO_HOST<br/>and Turnstile on?}
   T -->|yes| TV[turnstile.Verify]
   T -->|no| PW
   TV --> PW[checkPassword + attempt]
@@ -444,9 +444,9 @@ flowchart LR
 
 New code, all in existing packages unless noted:
 - `internal/secretbox` (new, ~40 lines): `Seal(key, plaintext)` / `Open(key, blob)`, random 12-byte nonce prepended, fixed AAD. Wrong key and tampering return an error.
-- `internal/web/turnstile.go`: port of gochat's `Turnstile.Verify`. Fails closed. Checks `success`, `action == "login"`, and `hostname == CARETAKARR_HOST` (always pinned). Client IP from `clientIP`.
+- `internal/web/turnstile.go`: port of gochat's `Turnstile.Verify`. Fails closed. Checks `success`, `action == "login"`, and `hostname == SERVANAGO_HOST` (always pinned). Client IP from `clientIP`.
 - `internal/web/totp.go`: `pquerna/otp/totp` (SHA1, 6 digits, 30 s, skew 1). Accepts a code only for a step greater than stored `last_step` (replay). Backup codes: 10 random codes shaped `xxxxx-xxxxx`, stored as SHA-256 hex, marked used atomically (`UPDATE ... WHERE used_at IS NULL`, check rows affected).
-- `internal/web/passkeys.go`: `go-webauthn/webauthn` built per request from the RP rule above. A `webauthn.User` adapter for the one admin: fixed handle `"caretakarr-admin"`, name `admin`, credentials loaded from the DB filtered by `rp_id`. Attestation `none`, resident key required, user verification required, existing credentials excluded on registration, cap 10. `CloneWarning` rejects and logs. Sign count, backup state and `last_used_at` persisted after each login.
+- `internal/web/passkeys.go`: `go-webauthn/webauthn` built per request from the RP rule above. A `webauthn.User` adapter for the one admin: fixed handle `"servanago-admin"`, name `admin`, credentials loaded from the DB filtered by `rp_id`. Attestation `none`, resident key required, user verification required, existing credentials excluded on registration, cap 10. `CloneWarning` rejects and logs. Sign count, backup state and `last_used_at` persisted after each login.
 - `authn` (`auth.go`): `newCookie` takes a level (`full` or `enroll`); payload `exp` or `exp:e`, signed. `valid` returns the level. New in-memory maps behind the existing mutex: `pending` (token to expiry, tries) and `ceremonies` (id to `SessionData`, kind, expiry; capped at 64, expired entries swept on insert). Single use: `take` deletes on read. A restart drops both, which just restarts the login.
 - `protected(h)`: unchanged signature. Adds: level `enroll` may only reach `/security*`, `/logout`; anything else redirects to `/security`. `REQUIRE_2FA` is enforced by the cookie level, not by a DB query per request.
 - Throttle: reuse `attempt(ip)` with separate buckets: `ip` (password and TOTP step) and `pk:`+`ip` (passkey begin/finish).
@@ -480,7 +480,7 @@ Store gets small methods on the existing `Store`: `GetTOTP/SaveTOTP/EnableTOTP/B
 | Route | Auth | Behaviour |
 |---|---|---|
 | `GET /login` | none | Password form; passkey button via `static/auth.js` when `PublicKeyCredential` exists and the request is HTTPS or localhost and at least one passkey for this RP exists; Turnstile widget (`data-action="login"`) when enforced. |
-| `POST /login` | none | Order: throttle, Turnstile (if enforced), password. Success: `HX-Redirect` to `/` (full), `/login/totp` (pending cookie `caretakarr_pending`, HttpOnly, SameSite Strict), or `/security` (limited). |
+| `POST /login` | none | Order: throttle, Turnstile (if enforced), password. Success: `HX-Redirect` to `/` (full), `/login/totp` (pending cookie `servanago_pending`, HttpOnly, SameSite Strict), or `/security` (limited). |
 | `GET/POST /login/totp` | pending | 6-digit code or backup code. Wrong: 401 plain text, tries decrement; at 0 the pending token dies. |
 | `POST /login/passkey/begin`, `/finish` | none | JSON via `fetch` (sends `HX-Request`, so CSRF middleware applies unchanged). Finish sets the full cookie. Every failure is one generic 401. |
 | `GET /security` | full or limited | TOTP status and enrollment, backup-code count, passkey list, add/delete. Limited sessions see only the TOTP section. |
@@ -493,10 +493,10 @@ Store gets small methods on the existing `Store`: `GetTOTP/SaveTOTP/EnableTOTP/B
 All errors go through `fail()`; new hints, `statusHelp` and `errTable` entries in `help.go` (wrong password, wrong or used code, too many attempts, Turnstile failed, TOTP unreadable, passkey unsupported over plain HTTP, key not set). `help_test.go` guards them. `internal/web/static/auth.js`: embedded, no build step; native `PublicKeyCredential.parseCreationOptionsFromJSON` / `parseRequestOptionsFromJSON` / `toJSON()`, and `turnstile.reset()` after a failed login swap.
 
 ### 17.6 CLI
-`caretakarr 2fa-reset`: opens `DATA_DIR/caretakarr.db` only (no `config.Load`, so it works without the other required env), calls `ResetAuth`, prints counts. Registered in `main` next to `import`.
+`servanago 2fa-reset`: opens `DATA_DIR/servanago.db` only (no `config.Load`, so it works without the other required env), calls `ResetAuth`, prints counts. Registered in `main` next to `import`.
 
 ### 17.7 Edge cases
-- TOTP enabled but `CARETAKARR_SECRET_KEY` missing or wrong: startup logs an error (no crash loop). The TOTP step refuses codes with a message pointing at backup codes and `2fa-reset`; backup codes still work.
+- TOTP enabled but `SERVANAGO_SECRET_KEY` missing or wrong: startup logs an error (no crash loop). The TOTP step refuses codes with a message pointing at backup codes and `2fa-reset`; backup codes still work.
 - Host change: stored passkeys keep their old `rp_id`, are listed as "other host", and never match; deletable.
 - Passkey registered at `localhost` and one at the public host coexist.
 - Caddy must keep the original `Host` and set `X-Forwarded-For` toward the UI upstream (reverse_proxy defaults); an integration test pins this because both the Turnstile exemption and the throttle rely on it.
@@ -510,7 +510,7 @@ All errors go through `fail()`; new hints, `statusHelp` and `errTable` entries i
 | `config` | key length; `REQUIRE_2FA` without password or key; Turnstile one-of; booleans |
 | `store` | migration 004 on fresh and v3 DBs; one-row `totp`; backup code single use; `ResetAuth` empties all three |
 | `web` TOTP | enroll then login; wrong, replayed, expired and used-backup codes; pending token dies after 5 tries; disable needs password + code; limited session confined to `/security` then upgraded; unreadable seed path |
-| `web` Turnstile | httptest siteverify: missing token, `success:false`, wrong hostname, wrong action, network error all reject; Host `CARETAKARR_HOST` enforced; other Host exempt; unset env = off |
+| `web` Turnstile | httptest siteverify: missing token, `success:false`, wrong hostname, wrong action, network error all reject; Host `SERVANAGO_HOST` enforced; other Host exempt; unset env = off |
 | `web` passkeys | `descope/virtualwebauthn` full ceremonies: register, login without TOTP prompt, wrong origin, replayed or expired ceremony, sign-count regression, re-auth required, cap 10, other-RP credential ignored |
 | CLI | `2fa-reset` clears state and works without the other env vars |
 | e2e | Playwright CDP virtual authenticator: enroll passkey at `localhost`, log out, passkey login; TOTP enroll with a code computed in the spec (`otplib`), login, backup code login; widget not exercised (exempt Host) |
@@ -525,8 +525,8 @@ All errors go through `fail()`; new hints, `statusHelp` and `errTable` entries i
 |---|---|---|
 | Recovery listener exposed beyond the LAN bypasses Turnstile (spoofed or IP `Host`) | moderate, accepted | Password throttle and TOTP still apply; docs say keep `UI_LISTEN` on loopback/LAN |
 | Cloudflare outage blocks password login | moderate | Passkey login unaffected; unsetting the env restores password login |
-| Lost `CARETAKARR_SECRET_KEY` | moderate | `2fa-reset`; docs say back it up with `/data` |
-| `Host` header drives RP ID | low | Whitelisted to `CARETAKARR_HOST` or `localhost` |
+| Lost `SERVANAGO_SECRET_KEY` | moderate | `2fa-reset`; docs say back it up with `/data` |
+| `Host` header drives RP ID | low | Whitelisted to `SERVANAGO_HOST` or `localhost` |
 | New attack surface on unauthenticated endpoints (passkey begin allocates state) | low | Cap of 64 ceremonies, TTL 5 min, per-IP bucket |
 | Stateless sessions cannot be revoked individually | low, accepted | Restart; non-goal |
 
@@ -540,15 +540,15 @@ All errors go through `fail()`; new hints, `statusHelp` and `errTable` entries i
 
 ## 18. Site access gate: magic-link auth for served routes
 
-Source: brainstorm of 2026-10-15, from the specs in `../caddy-access-gateway` (external forward-auth service). That design is superseded where it conflicts: no second binary, no YAML, no systemd unit, no Postmark, no separate DB, and sessions are not indefinite. What carries over: threat model (single-use hashed tokens, enumeration neutrality, open-redirect safety, fail-closed, host normalization) and its test lists. This protects *served sites*, not the Caretakarr UI; magic-link identities are fully decoupled from the admin login and grant no UI access.
+Source: brainstorm of 2026-10-15, from the specs in `../caddy-access-gateway` (external forward-auth service). That design is superseded where it conflicts: no second binary, no YAML, no systemd unit, no Postmark, no separate DB, and sessions are not indefinite. What carries over: threat model (single-use hashed tokens, enumeration neutrality, open-redirect safety, fail-closed, host normalization) and its test lists. This protects *served sites*, not the ServanaGo UI; magic-link identities are fully decoupled from the admin login and grant no UI access.
 
 ### 18.1 Decisions
 | Topic | Decision |
 |---|---|
-| Home | Embedded Caddy handler module in the Caretakarr binary (same pattern as `caddylog`): `internal/caddygate`, registered via `caddy.RegisterModule` in `init`, rendered JSON names it as a middleware. Gate checks read the same SQLite; no HTTP hop. |
+| Home | Embedded Caddy handler module in the ServanaGo binary (same pattern as `caddylog`): `internal/caddygate`, registered via `caddy.RegisterModule` in `init`, rendered JSON names it as a middleware. Gate checks read the same SQLite; no HTTP hop. |
 | Scope | Per route. `routes.gate_mode`: `''` (default, ungated), `'acl'` (allowlist of emails/email domains), `'open'` (any valid email, no allowlist). |
 | Gate location | Portal, form, verify all served by the gate module on the route's own host under `/_gate/*`. No portal subdomain, so no cookie ever needs scope beyond the route's host. |
-| Sessions | One identity row per email. The cookie value is the session secret — HKDF over `CARETAKARR_SECRET_KEY`, the email and the row's random nonce — and only its SHA-256 is stored (`token_hash`), so at rest nothing can mint the cookie but the row can still be revoked by deletion. Because the derivation is stable for a given (email, nonce), the same cookie works on every gated route the identity is allowed on. Requires `CARETAKARR_SECRET_KEY`; a gated route without it is refused at the form and flagged at startup (issuance fails closed, sessions still check). |
+| Sessions | One identity row per email. The cookie value is the session secret — HKDF over `SERVANAGO_SECRET_KEY`, the email and the row's random nonce — and only its SHA-256 is stored (`token_hash`), so at rest nothing can mint the cookie but the row can still be revoked by deletion. Because the derivation is stable for a given (email, nonce), the same cookie works on every gated route the identity is allowed on. Requires `SERVANAGO_SECRET_KEY`; a gated route without it is refused at the form and flagged at startup (issuance fails closed, sessions still check). |
 | Session check | Cookie → SHA-256 → `token_hash` lookup → not expired → identity holds a live grant for this host (ACL grant or `open` route) → bump sliding window and pass. Never key any cache by route id alone (rowid reuse rule). |
 | Sliding TTL | Per mode: ACL grants renew the window to 30 days, open routes to 7 days. `expire` is recomputed on every passing check with the granting route's mode window. Expired rows are deleted at check time. |
 | ACL edit | Inside the same `Mutate` tx: shrinking a route's ACL deletes identities whose last live grant was on this route (auto-revoke). Unchanged sessions never lose access for grant survives. |
@@ -557,7 +557,7 @@ Source: brainstorm of 2026-10-15, from the specs in `../caddy-access-gateway` (e
 | Email | Generic SMTP via stdlib `net/smtp` (TLS): host, port, user, password, `MAIL FROM` all env-only (`SMTP_*`), so the operator-secrets rule holds. One app-wide setting shared by all gated routes. Sending failure = generic response anyway; a token row exists but no session was minted, and the request already counted against rate limits. |
 | Rate limits | In-memory, same shape as `authn`: per-IP request bucket (default 20/h), per-email (5/h), per-IP token attempts (30/h). Time-windowed, no permanent lockout. |
 | Fail closed | Store error in the gate handler → 503, never `next`. No session → portal or 403, never the upstream. |
-| Security | Cookie `caretakarr_gate`: HttpOnly, SameSite Lax (verify arrives via link from email), `Secure` when the request came in over TLS, host-scoped `Path=/`. No JS on gate pages, plain HTML forms; the gate's `POST /_gate/request` changes no state beyond an in-memory-counted token row, so no CSRF token (documented). html/template auto-escaping everywhere; `fail()`/plain-language errors per house rule. |
+| Security | Cookie `servanago_gate`: HttpOnly, SameSite Lax (verify arrives via link from email), `Secure` when the request came in over TLS, host-scoped `Path=/`. No JS on gate pages, plain HTML forms; the gate's `POST /_gate/request` changes no state beyond an in-memory-counted token row, so no CSRF token (documented). html/template auto-escaping everywhere; `fail()`/plain-language errors per house rule. |
 | Non-goals | No logout link (revocation is the operator's, or let it slide), no per-token audit table (slog events only), no UI for editing ACLs outside the route form, no SMTP settings in SQLite. |
 
 ### 18.2 Config (`internal/config`)
@@ -569,12 +569,12 @@ Source: brainstorm of 2026-10-15, from the specs in `../caddy-access-gateway` (e
 | `SMTP_USER`, `SMTP_PASS` | Credentials for the submission server (`SMTP_PASS` is a secret: env-only). |
 | `MAIL_FROM` | Bare address (like `ACME_EMAIL`), validated the same way. |
 
-All optional. Creating or enabling a gated route with `SMTP_HOST`/`MAIL_FROM` or `CARETAKARR_SECRET_KEY` unset fails at the form with a help-text error naming the env vars; if the environment changes after a gated route exists, issuance fails closed (logged, plain refusal page) — config still loads, no crash loop.
+All optional. Creating or enabling a gated route with `SMTP_HOST`/`MAIL_FROM` or `SERVANAGO_SECRET_KEY` unset fails at the form with a help-text error naming the env vars; if the environment changes after a gated route exists, issuance fails closed (logged, plain refusal page) — config still loads, no crash loop.
 
 ### 18.3 Components
 ```mermaid
 flowchart LR
-  Req[GET gated host/path] --> G[caretakarr_gate handler]
+  Req[GET gated host/path] --> G[servanago_gate handler]
   G -->|store error| F503[503 fail closed]
   G -->|valid session,<br/>live grant| N[next: allowlist, basic auth, proxy]
   G -->|no session| Gate[/_gate/request form]
@@ -585,8 +585,8 @@ flowchart LR
 ```
 
 New packages, all following the `caddylog` module pattern:
-- `internal/caddygate` (new): the handler module, ID `caddy.http.handlers.caretakarr_gate`, config `{host: "<route host>", mode: "acl"|"open"}` (rendered from the DB, so the host the config pins is the one the DB says). Package-level `var Service atomic.Value` set by `main` before the first `caddy.Load` (like `caddylog.Sink`); holds the store handle, TTL windows, mailer and limiter. `ServeHTTP` implements everything above. Reserved paths: `GET/POST /_gate/request`, `GET /_gate/verify/{token}`, everything else falls through to `next`.
-- `internal/caddycfg/render.go`: when `r.GateMode` is set, the subroute's first route entry is the gate middleware (`{"handler": "caretakarr_gate", "host": ..., "mode": ...}`), terminal false, ahead of the allowlist/basic-auth/proxy chain so all of them must pass. Existing non-gated goldens do not change; two new golden files (`acl`, `open`).
+- `internal/caddygate` (new): the handler module, ID `caddy.http.handlers.servanago_gate`, config `{host: "<route host>", mode: "acl"|"open"}` (rendered from the DB, so the host the config pins is the one the DB says). Package-level `var Service atomic.Value` set by `main` before the first `caddy.Load` (like `caddylog.Sink`); holds the store handle, TTL windows, mailer and limiter. `ServeHTTP` implements everything above. Reserved paths: `GET/POST /_gate/request`, `GET /_gate/verify/{token}`, everything else falls through to `next`.
+- `internal/caddycfg/render.go`: when `r.GateMode` is set, the subroute's first route entry is the gate middleware (`{"handler": "servanago_gate", "host": ..., "mode": ...}`), terminal false, ahead of the allowlist/basic-auth/proxy chain so all of them must pass. Existing non-gated goldens do not change; two new golden files (`acl`, `open`).
 - `internal/store`: `Route.GateMode`, `routeCols` and `CreateRoute/UpdateRoute/scanRoute` gain the column. New methods: `SetGateMode/GetGateMode` on routes, `GrantList/SetGrants(GetGrantsByRoute, AddGrant, RemoveGrant)`, `IdentityUpsert (from verify)`, `SessionValid(tokenHash) (ok, mode)`, `TouchSession(tokenHash, window)`, `DeleteIdentity(email)`, `IdentitiesForSecurity(email, grants, last_seen views)`, `IssueToken/ConsumeToken` (atomic), `PruneExpired`.
 - Matching helper in `internal/gatelogic` (small, pure): `normalizeHost`, `grantsAllow(grants, email)`, TTL windows; fully unit-tested.
 - `internal/web`: route form gains a protection section (mode select; ACL textarea, one entry per line, unambiguous `alice@example.com` exact / `@example.com` domain, validated on submit: non-@ lines must parse as addresses, @ lines must carry a valid domain); parse/save wired through `applyControls` and the `Mutate` overlay pattern like every other route field. Security page: gate section listing identities (email, grants, last seen, expire) with revoke-all-for-email; route rows show a gate badge. All new hints/statuses through `help.go`.
@@ -628,7 +628,7 @@ The route form's protection section only exists when the route is enabled; disab
 - Route renamed: the rendered `host` config changes via `Mutate`; old magic tokens stay host-pinned and now check against the old host, so they fail (page says expired).
 - Route deleted mid-login: grants cascade away; a token row verifies but no grant exists at check time, so the identity is minted and immediately invalid for that host — harmless dead row for 7/30 days.
 - `open` route + spam: the enumeration-neutral page always shows, but tokens are only generated for parseable emails and rate caps apply per IP.
-- The Caretakarr UI host can never be gated (`checkRoute` already refuses it), and the reserved `/_gate` path belongs to the gate module only, so no interaction with UI routes.
+- The ServanaGo UI host can never be gated (`checkRoute` already refuses it), and the reserved `/_gate` path belongs to the gate module only, so no interaction with UI routes.
 - Caddy reloads (route edits unrelated to the gate) rebuild the gate handler instances; session cookies keep working because state is the DB, not the module instance.
 
 ### 18.7 Test plan

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 const (

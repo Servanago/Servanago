@@ -44,7 +44,7 @@ func NormalizeEmail(s string) (string, error) {
 	return s, nil
 }
 
-// validDomain needs the same shape Caretakarr requires for real domains.
+// validDomain needs the same shape ServanaGo requires for real domains.
 func validDomain(s string) bool { return domainRE.MatchString(s) }
 
 // ParseACL turns textarea lines into rules. A line starting with @ is a domain rule and must

@@ -1,4 +1,4 @@
--- DNS record for CARETAKARR_HOST itself; not tied to a route, so a one-row twin of dns_records.
+-- DNS record for SERVANAGO_HOST itself; not tied to a route, so a one-row twin of dns_records.
 CREATE TABLE ui_dns_record (
   id           INTEGER PRIMARY KEY CHECK (id = 1),
   cf_record_id TEXT,

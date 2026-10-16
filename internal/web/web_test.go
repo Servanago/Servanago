@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func newServer(t *testing.T, password string) *Server {
@@ -26,7 +26,7 @@ func newServer(t *testing.T, password string) *Server {
 type req struct {
 	method, path, body string
 	peer               string
-	host               string // default caretakarr.example.com
+	host               string // default servanago.example.com
 	hdr                map[string]string
 	cookies            []*http.Cookie
 }
@@ -36,7 +36,7 @@ func (s *Server) do(r req) *httptest.ResponseRecorder {
 		r.method = "GET"
 	}
 	hr := httptest.NewRequest(r.method, r.path, strings.NewReader(r.body))
-	hr.Host = "caretakarr.example.com"
+	hr.Host = "servanago.example.com"
 	if r.host != "" {
 		hr.Host = r.host
 	}
@@ -59,7 +59,7 @@ func (s *Server) do(r req) *httptest.ResponseRecorder {
 	return w
 }
 
-var htmxPost = map[string]string{"HX-Request": "true", "Origin": "https://caretakarr.example.com"}
+var htmxPost = map[string]string{"HX-Request": "true", "Origin": "https://servanago.example.com"}
 
 func login(s *Server, password string, extra map[string]string, peer string) *httptest.ResponseRecorder {
 	h := map[string]string{}
@@ -168,7 +168,7 @@ func TestCSRF(t *testing.T) {
 	s := newServer(t, "pw")
 	body := url.Values{"password": {"pw"}}.Encode()
 	cases := map[string]map[string]string{
-		"no HX-Request":    {"Origin": "https://caretakarr.example.com"},
+		"no HX-Request":    {"Origin": "https://servanago.example.com"},
 		"wrong origin":     {"HX-Request": "true", "Origin": "https://evil.example.org"},
 		"malformed origin": {"HX-Request": "true", "Origin": "::::"},
 	}

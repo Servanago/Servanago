@@ -49,7 +49,7 @@ function preview() {
   var out = $('preview');
   if (!h || !host || !port) { out.textContent = 'Fill in the hostname and backend to see what will be created.'; return; }
   out.textContent = 'Visitors open https://' + h + '. Caddy forwards to ' + field('scheme').value + '://' + host + ':' + port +
-    '. Caretakarr creates (or keeps) a DNS record ' + h + ' pointing to ' + (out.dataset.serverIp || 'this server') +
+    '. ServanaGo creates (or keeps) a DNS record ' + h + ' pointing to ' + (out.dataset.serverIp || 'this server') +
     ', and gets a certificate for it.';
 }
 document.getElementById('preset').addEventListener('change', function (e) {

@@ -13,10 +13,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/presets"
-	"github.com/caretakarr/caretakarr/internal/probe"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/presets"
+	"github.com/servanago/servanago/internal/probe"
+	"github.com/servanago/servanago/internal/store"
 )
 
 var hostnameRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`)
@@ -66,7 +66,7 @@ type routeRow struct {
 	CertWait string // how long a pending certificate may take, from the propagation settings
 }
 
-// OwnsRecord is true when Caretakarr created this route's A record, the only kind it may delete.
+// OwnsRecord is true when ServanaGo created this route's A record, the only kind it may delete.
 func (r routeRow) OwnsRecord() bool { return r.HasDNS && r.DNS.Owned && r.DNS.CFRecordID != "" }
 
 func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
@@ -195,7 +195,7 @@ func (s *Server) checkRoute(r *http.Request, tx *store.Store, rt store.Route) er
 		return errors.New("unknown domain")
 	}
 	if host := rt.Subdomain + "." + d.Name; host == s.deps.Cfg.Host {
-		return fmt.Errorf("%s is the Caretakarr UI host; choose another subdomain", host)
+		return fmt.Errorf("%s is the ServanaGo UI host; choose another subdomain", host)
 	}
 	all, err := tx.ListRoutes(r.Context())
 	if err != nil {
@@ -366,7 +366,7 @@ func (s *Server) reconcile(r *http.Request, routeID int64) {
 	}
 }
 
-// removeRecord deletes the route's A record when Caretakarr owns it; failures become a one-time notice.
+// removeRecord deletes the route's A record when ServanaGo owns it; failures become a one-time notice.
 func (s *Server) removeRecord(r *http.Request, t dnsTarget) {
 	if !t.hasRow {
 		return

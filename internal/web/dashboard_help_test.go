@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func rowHTML(t *testing.T, body, host string) string {
@@ -103,7 +103,7 @@ func TestChecklist(t *testing.T) {
 		t.Errorf("token bad: %s", got)
 	}
 
-	// UI host record only appears when CARETAKARR_HOST_IP is set up
+	// UI host record only appears when SERVANAGO_HOST_IP is set up
 	for _, it := range get() {
 		if strings.Contains(it.Label, "UI address") {
 			t.Error("host item shown without a configured host")

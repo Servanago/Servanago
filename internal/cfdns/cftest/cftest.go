@@ -1,4 +1,4 @@
-// Package cftest is a stateful in-memory fake of the Cloudflare DNS endpoints Caretakarr uses.
+// Package cftest is a stateful in-memory fake of the Cloudflare DNS endpoints ServanaGo uses.
 package cftest
 
 import (
@@ -162,7 +162,7 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Clear removes every record (simulates deletion outside Caretakarr).
+// Clear removes every record (simulates deletion outside ServanaGo).
 func (f *Fake) Clear() {
 	f.mu.Lock()
 	defer f.mu.Unlock()

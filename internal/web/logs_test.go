@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/caretakarr/caretakarr/internal/caddylog"
+	"github.com/servanago/servanago/internal/caddylog"
 )
 
 func TestLogsPageAndFilter(t *testing.T) {

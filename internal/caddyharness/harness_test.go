@@ -20,7 +20,7 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 
-	"github.com/caretakarr/caretakarr/internal/caddylog"
+	"github.com/servanago/servanago/internal/caddylog"
 )
 
 const host = "app.example.com"
@@ -42,7 +42,7 @@ func cfg(t *testing.T, httpPort, httpsPort int, storage, upstream string) []byte
 		"admin":   map[string]any{"disabled": true, "config": map[string]any{"persist": false}},
 		"storage": map[string]any{"module": "file_system", "root": storage},
 		"logging": map[string]any{"logs": map[string]any{"default": map[string]any{
-			"writer": map[string]any{"output": "caretakarr"}, "encoder": map[string]any{"format": "json"}, "level": "INFO"}}},
+			"writer": map[string]any{"output": "servanago"}, "encoder": map[string]any{"format": "json"}, "level": "INFO"}}},
 		"apps": map[string]any{
 			"http": map[string]any{
 				"http_port": httpPort, "https_port": httpsPort,

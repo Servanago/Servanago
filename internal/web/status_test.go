@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/probe"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/probe"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func openPort(t *testing.T) int {

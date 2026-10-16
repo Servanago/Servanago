@@ -10,8 +10,8 @@ import (
 
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
-	"github.com/caretakarr/caretakarr/internal/cfdns"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/cfdns"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func siteForm(kv ...string) url.Values {

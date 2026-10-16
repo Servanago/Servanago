@@ -1,4 +1,4 @@
-module github.com/caretakarr/caretakarr
+module github.com/servanago/servanago
 
 go 1.26.0
 

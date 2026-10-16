@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 var nowStr = "2026-10-15T10:00:00Z"

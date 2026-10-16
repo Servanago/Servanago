@@ -4,7 +4,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/caretakarr/caretakarr/internal/caddylog"
+	"github.com/servanago/servanago/internal/caddylog"
 )
 
 type logView struct {

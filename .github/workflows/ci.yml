@@ -43,7 +43,7 @@ jobs:
       - id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/caretakarr/caretakarr
+          images: ghcr.io/servanago/servanago
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}

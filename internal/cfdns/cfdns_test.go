@@ -111,8 +111,8 @@ func TestZoneFor(t *testing.T) {
 		wantQueried          []string
 		errHas               string
 	}{
-		{"parent zone", "caretakarr.lab.example.com", "", map[string]string{"example.com": "z1"}, "z1", "example.com",
-			[]string{"caretakarr.lab.example.com", "lab.example.com", "example.com"}, ""},
+		{"parent zone", "servanago.lab.example.com", "", map[string]string{"example.com": "z1"}, "z1", "example.com",
+			[]string{"servanago.lab.example.com", "lab.example.com", "example.com"}, ""},
 		{"closest zone wins", "a.lab.example.com", "", map[string]string{"lab.example.com": "z2", "example.com": "z1"}, "z2", "lab.example.com",
 			[]string{"a.lab.example.com", "lab.example.com"}, ""},
 		{"host is the zone", "example.com", "", map[string]string{"example.com": "z1"}, "z1", "example.com", []string{"example.com"}, ""},

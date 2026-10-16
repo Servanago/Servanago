@@ -10,14 +10,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 var update = flag.Bool("update", false, "rewrite golden files")
 
 func opts() Options {
 	return Options{
-		UIHost: "caretakarr.example.com", UIUpstream: "127.0.0.1:8080", Email: "me@example.com",
+		UIHost: "servanago.example.com", UIUpstream: "127.0.0.1:8080", Email: "me@example.com",
 		HTTPPort: 80, HTTPSPort: 443, StoragePath: "/data/caddy", Resolvers: []string{"1.1.1.1", "8.8.8.8"},
 	}
 }
@@ -176,5 +176,21 @@ func TestPropagationOnlyWhenSet(t *testing.T) {
 	onlyDelay, _ := Render(State{}, o)
 	if !bytes.Contains(onlyDelay, []byte("propagation_delay")) || bytes.Contains(onlyDelay, []byte("propagation_timeout")) {
 		t.Error("delay-only case wrong")
+	}
+}
+
+func TestRenderUsesServanagoNames(t *testing.T) {
+	got, err := Render(State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode = "acl" })}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := string(got)
+	for _, want := range []string{`"handler":"servanago_gate"`, `"output":"servanago"`} {
+		if !strings.Contains(s, want) {
+			t.Errorf("rendered config lacks %s", want)
+		}
+	}
+	if strings.Contains(strings.ToLower(s), "caretak"+"arr") { // split so a rename sweep does not rewrite it
+		t.Error("rendered config still mentions the old product name")
 	}
 }

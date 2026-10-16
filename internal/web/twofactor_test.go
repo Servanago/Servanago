@@ -13,13 +13,13 @@ import (
 	"github.com/descope/virtualwebauthn"
 	"github.com/pquerna/otp/totp"
 
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/store"
 )
 
 const (
 	testKey  = "0123456789abcdef0123456789abcdef"
-	testHost = "caretakarr.example.com"
+	testHost = "servanago.example.com"
 )
 
 var (
@@ -194,7 +194,7 @@ func TestTOTPNeedsSecretKey(t *testing.T) {
 	cfg.SecretKey = ""
 	s, _ := newServerCfg(t, cfg)
 	w := postForm(s, "/security/totp/begin", url.Values{"password": {"pw"}}, sessionOf(t, s))
-	if w.Code != 422 || !strings.Contains(w.Body.String(), "CARETAKARR_SECRET_KEY") {
+	if w.Code != 422 || !strings.Contains(w.Body.String(), "SERVANAGO_SECRET_KEY") {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 }
@@ -393,7 +393,7 @@ func TestPasskeys(t *testing.T) {
 	ck := sessionOf(t, s)
 	secret, _, _ := enrollTOTP(t, s, now, ck) // TOTP on: passkey login must still skip it
 
-	rp := virtualwebauthn.RelyingParty{Name: "Caretakarr", ID: testHost, Origin: "https://" + testHost}
+	rp := virtualwebauthn.RelyingParty{Name: "ServanaGo", ID: testHost, Origin: "https://" + testHost}
 	authn := virtualwebauthn.NewAuthenticatorWithOptions(virtualwebauthn.AuthenticatorOptions{})
 	cred := virtualwebauthn.NewCredential(virtualwebauthn.KeyTypeEC2)
 	begin := func(path string, f url.Values, cookies []*http.Cookie, host string) (int, string, string) {
@@ -493,7 +493,7 @@ func TestPasskeys(t *testing.T) {
 
 func TestPasskeysUnavailableOnPlainHTTPHost(t *testing.T) {
 	s, _ := newServerCfg(t, cfg2fa())
-	// CARETAKARR_HOST over plain HTTP (no forwarded https) and an unknown host are both refused
+	// SERVANAGO_HOST over plain HTTP (no forwarded https) and an unknown host are both refused
 	for _, host := range []string{testHost, "192.168.1.5:8080"} {
 		w := s.do(req{method: "POST", path: "/login/passkey/begin", host: host, hdr: map[string]string{"HX-Request": "true", "Origin": "http://" + host}})
 		if w.Code != 404 {

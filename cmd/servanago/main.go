@@ -1,4 +1,4 @@
-// Command caretakarr runs the admin UI and an embedded Caddy configured from SQLite.
+// Command servanago runs the admin UI and an embedded Caddy configured from SQLite.
 package main
 
 import (
@@ -21,18 +21,18 @@ import (
 	_ "github.com/caddy-dns/cloudflare"
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
-	"github.com/caretakarr/caretakarr/internal/apply"
-	"github.com/caretakarr/caretakarr/internal/caddycfg"
-	"github.com/caretakarr/caretakarr/internal/caddygate"
-	"github.com/caretakarr/caretakarr/internal/caddylog"
-	"github.com/caretakarr/caretakarr/internal/cfdns"
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/discovery"
-	"github.com/caretakarr/caretakarr/internal/dnssync"
-	"github.com/caretakarr/caretakarr/internal/probe"
-	"github.com/caretakarr/caretakarr/internal/smtpx"
-	"github.com/caretakarr/caretakarr/internal/store"
-	"github.com/caretakarr/caretakarr/internal/web"
+	"github.com/servanago/servanago/internal/apply"
+	"github.com/servanago/servanago/internal/caddycfg"
+	"github.com/servanago/servanago/internal/caddygate"
+	"github.com/servanago/servanago/internal/caddylog"
+	"github.com/servanago/servanago/internal/cfdns"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/discovery"
+	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/probe"
+	"github.com/servanago/servanago/internal/smtpx"
+	"github.com/servanago/servanago/internal/store"
+	"github.com/servanago/servanago/internal/web"
 )
 
 func main() {
@@ -46,7 +46,7 @@ func main() {
 		}
 	}
 	if err := cmd(); err != nil {
-		slog.Error("caretakarr failed", "error", err)
+		slog.Error("servanago failed", "error", err)
 		os.Exit(1)
 	}
 }
@@ -59,7 +59,7 @@ func run() error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
-	st, err := store.Open(filepath.Join(cfg.DataDir, "caretakarr.db"))
+	st, err := store.Open(filepath.Join(cfg.DataDir, "servanago.db"))
 	if err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func run() error {
 	srv := newUIServer(cfg.UIListen, ui.Handler())
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()
-	slog.Info("caretakarr started", "ui_listen", cfg.UIListen, "host", cfg.Host)
+	slog.Info("servanago started", "ui_listen", cfg.UIListen, "host", cfg.Host)
 
 	select {
 	case err := <-errc:

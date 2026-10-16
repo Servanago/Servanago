@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-// Site is one site block that Caretakarr can model: a single reverse_proxy to one upstream.
+// Site is one site block that ServanaGo can model: a single reverse_proxy to one upstream.
 type Site struct {
 	Hostname   string
 	Scheme     string // http | https
@@ -21,10 +21,10 @@ type Site struct {
 	SkipVerify bool
 	Stream     bool     // flush_interval -1
 	MaxBody    string   // request_body max_size, as written ("2GB")
-	Dropped    []string // directives Caretakarr has no equivalent for
+	Dropped    []string // directives ServanaGo has no equivalent for
 }
 
-// Skipped is a site block Caretakarr cannot model at all.
+// Skipped is a site block ServanaGo cannot model at all.
 type Skipped struct{ Hostname, Reason string }
 
 // Parse returns the importable sites and the blocks it had to skip. Snippets "(name) {" are ignored.
@@ -40,7 +40,7 @@ func Parse(r io.Reader) ([]Site, []Skipped) {
 		inProxy bool
 		inBody  bool // inside request_body, which may come before or after reverse_proxy
 		maxBody string
-		drops   []string // directives with no Caretakarr equivalent, in order
+		drops   []string // directives with no ServanaGo equivalent, in order
 	)
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {

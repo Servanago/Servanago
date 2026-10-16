@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 type Issuer int
@@ -113,7 +113,7 @@ func Render(st State, o Options) ([]byte, error) {
 		"admin":   m{"disabled": true, "config": m{"persist": false}},
 		"storage": m{"module": "file_system", "root": o.StoragePath},
 		"logging": m{"logs": m{"default": m{
-			"writer": m{"output": "caretakarr"}, "encoder": m{"format": "json"}, "level": "INFO"}}},
+			"writer": m{"output": "servanago"}, "encoder": m{"format": "json"}, "level": "INFO"}}},
 		"apps": apps,
 	})
 }
@@ -172,7 +172,7 @@ func routeHandler(host string, r store.Route) (any, error) {
 
 	var sub []any
 	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
-		sub = append(sub, m{"handle": []any{m{"handler": "caretakarr_gate", "host": host, "mode": r.GateMode, "route_id": r.ID}}})
+		sub = append(sub, m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "route_id": r.ID}}})
 	}
 	if cidrs := strings.Fields(r.Allowlist); len(cidrs) > 0 {
 		sub = append(sub, m{

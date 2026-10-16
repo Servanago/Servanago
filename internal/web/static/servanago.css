@@ -39,7 +39,7 @@ html, body {
   outline-offset: 2px;
 }
 
-/* ---- Pico mapping: Caretakarr dark theme ---------------------------------------------------- */
+/* ---- Pico mapping: ServanaGo dark theme ---------------------------------------------------- */
 :root[data-theme="dark"] {
   --pico-font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --pico-background-color: var(--ct-bg);

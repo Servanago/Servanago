@@ -10,8 +10,8 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/store"
 )
 
 // applyControls sets the allowlist and basic-auth fields on r from the form.

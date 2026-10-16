@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/store"
 )
 
 // fail writes an HTML-escaped message: htmx swaps error bodies into the page as HTML.

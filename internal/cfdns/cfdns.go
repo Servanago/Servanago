@@ -71,10 +71,10 @@ func (c *Client) VerifyToken(ctx context.Context) error {
 	return nil
 }
 
-// Record is the subset of a Cloudflare A record Caretakarr cares about.
+// Record is the subset of a Cloudflare A record ServanaGo cares about.
 type Record struct{ ID, Name, Content string }
 
-const managedComment = "managed by caretakarr"
+const managedComment = "managed by servanago"
 
 // FindA returns the A record named name, or nil if there is none.
 func (c *Client) FindA(ctx context.Context, zoneID, name string) (*Record, error) {

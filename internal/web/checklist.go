@@ -5,7 +5,7 @@ import (
 	"html"
 	"html/template"
 
-	"github.com/caretakarr/caretakarr/internal/probe"
+	"github.com/servanago/servanago/internal/probe"
 )
 
 // checkItem is one line of the first-run checklist on the dashboard.
@@ -17,7 +17,7 @@ type checkItem struct {
 }
 
 // checklist reports whether the basics work: token, the UI address (DNS + certificate), a first site.
-// host is nil when CARETAKARR_HOST_IP is not configured, which hides the UI-address items.
+// host is nil when SERVANAGO_HOST_IP is not configured, which hides the UI-address items.
 func (s *Server) checklist(ctx context.Context, routes []routeRow, host *hostCard) []checkItem {
 	items := []checkItem{s.tokenItem()}
 	if host != nil {

@@ -11,7 +11,7 @@ import (
 	"github.com/go-webauthn/webauthn/protocol"
 	"github.com/go-webauthn/webauthn/webauthn"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 const (
@@ -23,15 +23,15 @@ const (
 // waUser is the one admin account. The handle is constant: it is not PII and nothing else needs to tell users apart.
 type waUser struct{ creds []webauthn.Credential }
 
-func (waUser) WebAuthnID() []byte                           { return []byte("caretakarr-admin") }
+func (waUser) WebAuthnID() []byte                           { return []byte("servanago-admin") }
 func (waUser) WebAuthnName() string                         { return "admin" }
-func (waUser) WebAuthnDisplayName() string                  { return "Caretakarr admin" }
+func (waUser) WebAuthnDisplayName() string                  { return "ServanaGo admin" }
 func (u waUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
-var errNoRP = errors.New("passkeys work only on https://" + "<CARETAKARR_HOST> or on localhost")
+var errNoRP = errors.New("passkeys work only on https://" + "<SERVANAGO_HOST> or on localhost")
 
 // relyingParty builds the WebAuthn config for this request. RP ID is the request hostname, accepted only when it is
-// CARETAKARR_HOST (over TLS) or localhost (a secure context, for on-box recovery). Origin keeps the port.
+// SERVANAGO_HOST (over TLS) or localhost (a secure context, for on-box recovery). Origin keeps the port.
 func (s *Server) relyingParty(r *http.Request) (wa *webauthn.WebAuthn, rpID string, err error) {
 	host := hostOf(r)
 	scheme := "https"
@@ -47,7 +47,7 @@ func (s *Server) relyingParty(r *http.Request) (wa *webauthn.WebAuthn, rpID stri
 	default:
 		return nil, "", errNoRP
 	}
-	wa, err = webauthn.New(&webauthn.Config{RPID: host, RPDisplayName: "Caretakarr", RPOrigins: []string{scheme + "://" + r.Host}})
+	wa, err = webauthn.New(&webauthn.Config{RPID: host, RPDisplayName: "ServanaGo", RPOrigins: []string{scheme + "://" + r.Host}})
 	return wa, host, err
 }
 

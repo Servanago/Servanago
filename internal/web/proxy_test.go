@@ -13,14 +13,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/caretakarr/caretakarr/internal/apply"
-	"github.com/caretakarr/caretakarr/internal/caddycfg"
-	"github.com/caretakarr/caretakarr/internal/caddytest"
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/apply"
+	"github.com/servanago/servanago/internal/caddycfg"
+	"github.com/servanago/servanago/internal/caddytest"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/store"
 )
 
-// The Turnstile exemption (Host == CARETAKARR_HOST), Secure cookies (X-Forwarded-Proto) and the login throttle
+// The Turnstile exemption (Host == SERVANAGO_HOST), Secure cookies (X-Forwarded-Proto) and the login throttle
 // (X-Forwarded-For) all depend on what Caddy's reverse_proxy hands the UI. This pins it against a real Caddy.
 func TestUIBehindRealCaddyKeepsHostAndSetsForwardedHeaders(t *testing.T) {
 	storage := t.TempDir() // before Cleanup so it is removed after Caddy stops
@@ -76,7 +76,7 @@ func TestUIBehindRealCaddyKeepsHostAndSetsForwardedHeaders(t *testing.T) {
 		return resp, string(b)
 	}
 
-	// Host reaches the UI unchanged: the Turnstile widget (only rendered when Host == CARETAKARR_HOST) is present.
+	// Host reaches the UI unchanged: the Turnstile widget (only rendered when Host == SERVANAGO_HOST) is present.
 	if _, body := do("GET", "/login", nil, ""); !strings.Contains(body, `data-sitekey="site"`) {
 		t.Fatalf("UI did not see Host %s: %s", testHost, body)
 	}

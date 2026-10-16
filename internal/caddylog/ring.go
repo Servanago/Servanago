@@ -135,10 +135,10 @@ func init() { caddy.RegisterModule(Writer{}) }
 type Writer struct{}
 
 func (Writer) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{ID: "caddy.logging.writers.caretakarr", New: func() caddy.Module { return new(Writer) }}
+	return caddy.ModuleInfo{ID: "caddy.logging.writers.servanago", New: func() caddy.Module { return new(Writer) }}
 }
-func (Writer) String() string    { return "caretakarr" }
-func (Writer) WriterKey() string { return "caretakarr:ring" }
+func (Writer) String() string    { return "servanago" }
+func (Writer) WriterKey() string { return "servanago:ring" }
 
 // OpenWriter tees to the ring and stderr (so `docker logs` keeps working) with a no-op Close:
 // Caddy closes dropped writers on reload and must not close either.

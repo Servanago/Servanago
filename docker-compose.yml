@@ -1,6 +1,6 @@
 services:
-  caretakarr:
-    image: ghcr.io/caretakarr/caretakarr:latest
+  servanago:
+    image: ghcr.io/servanago/servanago:latest
     restart: unless-stopped
     env_file: .env
     ports:

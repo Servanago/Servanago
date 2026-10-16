@@ -19,8 +19,8 @@ import (
 )
 
 const (
-	sessionCookieName = "caretakarr_session"
-	pendingCookieName = "caretakarr_pending"
+	sessionCookieName = "servanago_session"
+	pendingCookieName = "servanago_pending"
 	sessionTTL        = 12 * time.Hour
 	maxFailures       = 5
 	throttleWindow    = 15 * time.Minute

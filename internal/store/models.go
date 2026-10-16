@@ -217,7 +217,7 @@ func (s *Store) DeleteDNS(ctx context.Context, routeID int64) error {
 	return nil
 }
 
-// GetUIDNS and UpsertUIDNS manage the single DNS record row for CARETAKARR_HOST (RouteID is unused).
+// GetUIDNS and UpsertUIDNS manage the single DNS record row for SERVANAGO_HOST (RouteID is unused).
 func (s *Store) GetUIDNS(ctx context.Context) (DNSRecord, error) {
 	var d DNSRecord
 	err := s.q.QueryRowContext(ctx, `SELECT COALESCE(cf_record_id,''), COALESCE(content,''), owned, state,

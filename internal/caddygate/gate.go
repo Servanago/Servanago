@@ -23,12 +23,12 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 
-	"github.com/caretakarr/caretakarr/internal/gatelogic"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/gatelogic"
+	"github.com/servanago/servanago/internal/store"
 )
 
 const (
-	CookieName = "caretakarr_gate"
+	CookieName = "servanago_gate"
 	Prefix     = "/_gate"
 	tokenTTL   = 15 * time.Minute
 )
@@ -49,7 +49,7 @@ type Handler struct {
 }
 
 func (Handler) CaddyModule() caddy.ModuleInfo {
-	return caddy.ModuleInfo{ID: "http.handlers.caretakarr_gate", New: func() caddy.Module { return new(Handler) }}
+	return caddy.ModuleInfo{ID: "http.handlers.servanago_gate", New: func() caddy.Module { return new(Handler) }}
 }
 
 // nextFunc is the rest of the route chain: the Caddy handler returns errors, plain handlers do not.
@@ -81,7 +81,7 @@ type Service struct {
 	st     *store.Store
 	mailer Mailer
 	from   string // MAIL_FROM
-	secret string // CARETAKARR_SECRET_KEY; empty = issuance disabled, sessions still check
+	secret string // SERVANAGO_SECRET_KEY; empty = issuance disabled, sessions still check
 	port   int    // HTTPS listen port; 443 = default, shown in magic links otherwise
 
 	lim limiter
@@ -256,7 +256,7 @@ func (s *Service) verify(w http.ResponseWriter, r *http.Request, h Handler) {
 // an identity: HKDF over the operator secret key, the email and the identity's random nonce.
 func (s *Service) sessionSecret(email, nonce string) string {
 	master := sha256.Sum256([]byte(s.secret))
-	d, err := hkdf.Key(sha256.New, master[:], []byte("caretakarr-gate"), "gate|"+email+"|"+nonce, 32)
+	d, err := hkdf.Key(sha256.New, master[:], []byte("servanago-gate"), "gate|"+email+"|"+nonce, 32)
 	if err != nil { // only fails when keyLength exceeds 255*hash size
 		panic(err)
 	}

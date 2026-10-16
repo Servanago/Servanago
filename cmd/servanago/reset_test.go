@@ -7,12 +7,12 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func TestResetWipesFactorsWithoutOtherEnv(t *testing.T) {
 	dir := t.TempDir()
-	st, err := store.Open(filepath.Join(dir, "caretakarr.db"))
+	st, err := store.Open(filepath.Join(dir, "servanago.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func TestResetWipesFactorsWithoutOtherEnv(t *testing.T) {
 	if !strings.Contains(out.String(), "totp=true backup_codes=2 passkeys=1") {
 		t.Fatalf("output: %s", out.String())
 	}
-	st, _ = store.Open(filepath.Join(dir, "caretakarr.db"))
+	st, _ = store.Open(filepath.Join(dir, "servanago.db"))
 	defer st.Close()
 	if _, ok, _ := st.GetTOTP(ctx); ok {
 		t.Error("totp survived")

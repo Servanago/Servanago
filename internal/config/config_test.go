@@ -9,7 +9,7 @@ import (
 func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
 func valid() map[string]string {
-	return map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "CARETAKARR_HOST": "caretakarr.example.com", "ACME_EMAIL": "me@example.com", "CARETAKARR_HOST_IP": "192.168.25.165"}
+	return map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "SERVANAGO_HOST": "servanago.example.com", "ACME_EMAIL": "me@example.com", "SERVANAGO_HOST_IP": "192.168.25.165"}
 }
 
 func with(k, v string) map[string]string {
@@ -24,12 +24,12 @@ func TestLoadErrors(t *testing.T) {
 		env  map[string]string
 		want []string // substrings that must appear in the error
 	}{
-		{"all missing", nil, []string{"CLOUDFLARE_API_TOKEN", "CARETAKARR_HOST", "ACME_EMAIL", "CARETAKARR_HOST_IP"}},
-		{"host ip public", with("CARETAKARR_HOST_IP", "203.0.113.10"), []string{"CARETAKARR_HOST_IP", "private"}},
-		{"host ip ipv6", with("CARETAKARR_HOST_IP", "fd00::1"), []string{"CARETAKARR_HOST_IP"}},
-		{"zone not a suffix of host", with("CARETAKARR_HOST_ZONE", "other.org"), []string{"CARETAKARR_HOST_ZONE"}},
-		{"zone is a public suffix-ish single label", with("CARETAKARR_HOST_ZONE", "com"), []string{"CARETAKARR_HOST_ZONE"}},
-		{"missing email", map[string]string{"CLOUDFLARE_API_TOKEN": "t", "CARETAKARR_HOST": "h.example.com"}, []string{"ACME_EMAIL"}},
+		{"all missing", nil, []string{"CLOUDFLARE_API_TOKEN", "SERVANAGO_HOST", "ACME_EMAIL", "SERVANAGO_HOST_IP"}},
+		{"host ip public", with("SERVANAGO_HOST_IP", "203.0.113.10"), []string{"SERVANAGO_HOST_IP", "private"}},
+		{"host ip ipv6", with("SERVANAGO_HOST_IP", "fd00::1"), []string{"SERVANAGO_HOST_IP"}},
+		{"zone not a suffix of host", with("SERVANAGO_HOST_ZONE", "other.org"), []string{"SERVANAGO_HOST_ZONE"}},
+		{"zone is a public suffix-ish single label", with("SERVANAGO_HOST_ZONE", "com"), []string{"SERVANAGO_HOST_ZONE"}},
+		{"missing email", map[string]string{"CLOUDFLARE_API_TOKEN": "t", "SERVANAGO_HOST": "h.example.com"}, []string{"ACME_EMAIL"}},
 		{"bad email", with("ACME_EMAIL", "not-an-email"), []string{"ACME_EMAIL"}},
 		{"display name form", with("ACME_EMAIL", "Name <a@b.co>"), []string{"ACME_EMAIL"}},
 		{"bad delay", with("ACME_PROPAGATION_DELAY", "soon"), []string{"ACME_PROPAGATION_DELAY"}},
@@ -38,7 +38,7 @@ func TestLoadErrors(t *testing.T) {
 		{"token too short", with("CLOUDFLARE_API_TOKEN", "tok"), []string{"CLOUDFLARE_API_TOKEN"}},
 		{"token quoted", with("CLOUDFLARE_API_TOKEN", `"`+strings.Repeat("a", 40)+`"`), []string{"CLOUDFLARE_API_TOKEN"}},
 		{"bad port", with("HTTPS_PORT", "70000"), []string{"HTTPS_PORT"}},
-		{"bad host", with("CARETAKARR_HOST", "https://x.example.com"), []string{"CARETAKARR_HOST"}},
+		{"bad host", with("SERVANAGO_HOST", "https://x.example.com"), []string{"SERVANAGO_HOST"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,8 +88,8 @@ func TestHostRecordSettings(t *testing.T) {
 	if err != nil || c.HostIP != "192.168.25.165" || c.HostZone != "" {
 		t.Fatalf("%+v %v", c, err)
 	}
-	for _, z := range []string{"example.com", "caretakarr.example.com"} { // a zone may be the host itself
-		if c, err := Load(env(with("CARETAKARR_HOST_ZONE", z))); err != nil || c.HostZone != z {
+	for _, z := range []string{"example.com", "servanago.example.com"} { // a zone may be the host itself
+		if c, err := Load(env(with("SERVANAGO_HOST_ZONE", z))); err != nil || c.HostZone != z {
 			t.Errorf("zone %q: %+v %v", z, c, err)
 		}
 	}
@@ -131,9 +131,9 @@ func TestAuthHardeningConfig(t *testing.T) {
 		env  map[string]string
 		want string
 	}{
-		{"short key", merge("CARETAKARR_SECRET_KEY", "short"), "CARETAKARR_SECRET_KEY"},
-		{"require without password", merge("REQUIRE_2FA", "true", "CARETAKARR_SECRET_KEY", key), "ADMIN_PASSWORD"},
-		{"require without key", merge("REQUIRE_2FA", "true", "ADMIN_PASSWORD", "pw"), "CARETAKARR_SECRET_KEY"},
+		{"short key", merge("SERVANAGO_SECRET_KEY", "short"), "SERVANAGO_SECRET_KEY"},
+		{"require without password", merge("REQUIRE_2FA", "true", "SERVANAGO_SECRET_KEY", key), "ADMIN_PASSWORD"},
+		{"require without key", merge("REQUIRE_2FA", "true", "ADMIN_PASSWORD", "pw"), "SERVANAGO_SECRET_KEY"},
 		{"require not a bool", merge("REQUIRE_2FA", "yes please"), "REQUIRE_2FA"},
 		{"site key alone", merge("TURNSTILE_SITE_KEY", "s"), "TURNSTILE_SECRET"},
 		{"secret alone", merge("TURNSTILE_SECRET", "s"), "TURNSTILE_SITE_KEY"},
@@ -146,9 +146,23 @@ func TestAuthHardeningConfig(t *testing.T) {
 			}
 		})
 	}
-	c, err := Load(env(merge("REQUIRE_2FA", "true", "ADMIN_PASSWORD", "pw", "CARETAKARR_SECRET_KEY", key,
+	c, err := Load(env(merge("REQUIRE_2FA", "true", "ADMIN_PASSWORD", "pw", "SERVANAGO_SECRET_KEY", key,
 		"TURNSTILE_SITE_KEY", "site", "TURNSTILE_SECRET", "sec", "TURNSTILE_BASE_URL", "http://x")))
 	if err != nil || !c.Require2FA || c.SecretKey != key || c.TurnstileSiteKey != "site" || c.TurnstileSecret != "sec" || c.TurnstileBaseURL != "http://x" {
 		t.Fatalf("%+v %v", c, err)
+	}
+}
+
+func TestLoadUsesServanagoEnvNames(t *testing.T) {
+	ok := map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), "SERVANAGO_HOST": "panel.example.com", "ACME_EMAIL": "me@example.com", "SERVANAGO_HOST_IP": "192.168.25.165"}
+	c, err := Load(env(ok))
+	if err != nil || c.Host != "panel.example.com" || c.HostIP != "192.168.25.165" {
+		t.Fatalf("SERVANAGO_* env not read: %+v, %v", c, err)
+	}
+	// The old names are not read, and the error names the new variables.
+	old := "CARETAK" + "ARR_" // split so a rename sweep does not rewrite the legacy prefix
+	_, err = Load(env(map[string]string{"CLOUDFLARE_API_TOKEN": strings.Repeat("a", 40), old + "HOST": "panel.example.com", "ACME_EMAIL": "me@example.com", old + "HOST_IP": "192.168.25.165"}))
+	if err == nil || !strings.Contains(err.Error(), "SERVANAGO_HOST") || strings.Contains(err.Error(), old) {
+		t.Fatalf("want an error naming SERVANAGO_HOST only, got %v", err)
 	}
 }

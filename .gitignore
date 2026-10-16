@@ -27,7 +27,7 @@ CLAUDE.md
 .env
 data/
 /bin/
-/caretakarr
+/servanago
 
 node_modules/
 test-results/

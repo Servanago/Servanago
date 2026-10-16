@@ -7,9 +7,9 @@ import (
 
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
-	"github.com/caretakarr/caretakarr/internal/cfdns"
-	"github.com/caretakarr/caretakarr/internal/cfdns/cftest"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/cfdns"
+	"github.com/servanago/servanago/internal/cfdns/cftest"
+	"github.com/servanago/servanago/internal/store"
 )
 
 type fx struct {
@@ -61,7 +61,7 @@ func TestCreate(t *testing.T) {
 	f := newFx(t)
 	f.reconcile(t)
 	recs := f.cf.Records()
-	if len(recs) != 1 || recs[0].Name != "sonarr.example.com" || recs[0].Content != "10.0.0.1" || recs[0].Proxied || recs[0].Comment != "managed by caretakarr" {
+	if len(recs) != 1 || recs[0].Name != "sonarr.example.com" || recs[0].Content != "10.0.0.1" || recs[0].Proxied || recs[0].Comment != "managed by servanago" {
 		t.Fatalf("%+v", recs)
 	}
 	if r := f.row(t); r.State != "synced" || !r.Owned || r.CFRecordID != recs[0].ID || r.Content != "10.0.0.1" || r.SyncedAt == "" {
@@ -186,7 +186,7 @@ func newHostFx(t *testing.T) *fx {
 	t.Helper()
 	f := newFx(t)
 	f.cf.AddZone("example.com", "z1")
-	f.sync.Host = HostSpec{Name: "caretakarr.example.com", IP: "192.168.25.165"}
+	f.sync.Host = HostSpec{Name: "servanago.example.com", IP: "192.168.25.165"}
 	return f
 }
 
@@ -210,7 +210,7 @@ func TestHostCreate(t *testing.T) {
 	f := newHostFx(t)
 	f.reconcileHost(t, false)
 	recs := f.cf.Records()
-	if len(recs) != 1 || recs[0].Name != "caretakarr.example.com" || recs[0].Content != "192.168.25.165" || recs[0].Proxied {
+	if len(recs) != 1 || recs[0].Name != "servanago.example.com" || recs[0].Content != "192.168.25.165" || recs[0].Proxied {
 		t.Fatalf("%+v", recs)
 	}
 	if r := f.hostRow(t); r.State != "synced" || !r.Owned || r.CFRecordID != recs[0].ID {
@@ -220,14 +220,14 @@ func TestHostCreate(t *testing.T) {
 
 func TestHostAdoptConflictTakeOver(t *testing.T) {
 	f := newHostFx(t)
-	f.cf.Seed("caretakarr.example.com", "192.168.25.165")
+	f.cf.Seed("servanago.example.com", "192.168.25.165")
 	f.reconcileHost(t, false)
 	if r := f.hostRow(t); r.State != "synced" || r.Owned || f.cf.Writes() != 0 {
 		t.Fatalf("adopt: %+v writes=%d", r, f.cf.Writes())
 	}
 
 	g := newHostFx(t)
-	g.cf.Seed("caretakarr.example.com", "192.168.25.99")
+	g.cf.Seed("servanago.example.com", "192.168.25.99")
 	g.reconcileHost(t, false)
 	if r := g.hostRow(t); r.State != "conflict" || !strings.Contains(r.Error, "192.168.25.99") || g.cf.Writes() != 0 {
 		t.Fatalf("conflict: %+v", r)
@@ -248,7 +248,7 @@ func TestHostIPChange(t *testing.T) {
 	}
 
 	g := newHostFx(t)
-	g.cf.Seed("caretakarr.example.com", "192.168.25.165") // adopted
+	g.cf.Seed("servanago.example.com", "192.168.25.165") // adopted
 	g.reconcileHost(t, false)
 	g.sync.Host.IP = "192.168.25.166"
 	g.reconcileHost(t, false)
@@ -270,7 +270,7 @@ func TestHostIdempotent(t *testing.T) {
 
 func TestHostFailuresBecomeErrorState(t *testing.T) {
 	f := newHostFx(t)
-	f.sync.Host.Name = "caretakarr.nozone.org" // no zone for it
+	f.sync.Host.Name = "servanago.nozone.org" // no zone for it
 	f.reconcileHost(t, false)
 	if r := f.hostRow(t); r.State != "error" || !strings.Contains(r.Error, "no Cloudflare zone") {
 		t.Fatalf("%+v", r)
@@ -293,7 +293,7 @@ func TestHostZoneOverride(t *testing.T) {
 	f := newHostFx(t)
 	f.cf.AddZone("lab.example.com", "z-lab")
 	f.sync.Host.Zone = "example.com" // ignore the closer lab.example.com zone
-	f.sync.Host.Name = "caretakarr.lab.example.com"
+	f.sync.Host.Name = "servanago.lab.example.com"
 	f.reconcileHost(t, false)
 	if r := f.hostRow(t); r.State != "synced" {
 		t.Fatalf("%+v", r)

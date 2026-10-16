@@ -53,7 +53,7 @@ func ValidateLabel(l string) error {
 var cgnat = netip.MustParsePrefix("100.64.0.0/10")
 
 // ValidateLANIP accepts private IPv4 (10/8, 172.16/12, 192.168/16) and CGNAT (100.64/10, Tailscale).
-// Caretakarr never publishes public addresses.
+// ServanaGo never publishes public addresses.
 func ValidateLANIP(s string) (netip.Addr, error) {
 	a, err := netip.ParseAddr(s)
 	if err != nil || !a.Is4() || !(a.IsPrivate() || cgnat.Contains(a)) {

@@ -8,12 +8,12 @@ import (
 
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
-	"github.com/caretakarr/caretakarr/internal/caddyfile"
-	"github.com/caretakarr/caretakarr/internal/cfdns"
-	"github.com/caretakarr/caretakarr/internal/cfdns/cftest"
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/dnssync"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/caddyfile"
+	"github.com/servanago/servanago/internal/cfdns"
+	"github.com/servanago/servanago/internal/cfdns/cftest"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func importFx(t *testing.T) (*cftest.Fake, *store.Store, importer) {
@@ -27,7 +27,7 @@ func importFx(t *testing.T) (*cftest.Fake, *store.Store, importer) {
 	t.Cleanup(func() { st.Close() })
 	cf := cfdns.New("tok", option.WithBaseURL(fake.URL), option.WithMaxRetries(0))
 	return fake, st, importer{
-		cfg: config.Config{Host: "caretakarr.example.com", HostIP: "10.0.0.5"},
+		cfg: config.Config{Host: "servanago.example.com", HostIP: "10.0.0.5"},
 		cf:  cf, st: st, dns: dnssync.New(cf, st),
 	}
 }
@@ -38,7 +38,7 @@ func TestImportSites(t *testing.T) {
 	sites := []caddyfile.Site{
 		{Hostname: "kept.example.com", Scheme: "http", Host: "192.168.1.9", Port: 80},
 		{Hostname: "secure.example.com", Scheme: "https", Host: "192.168.1.9", Port: 443, SkipVerify: true, Stream: true, MaxBody: "2GB"},
-		{Hostname: "caretakarr.example.com", Scheme: "http", Host: "192.168.1.9", Port: 1},
+		{Hostname: "servanago.example.com", Scheme: "http", Host: "192.168.1.9", Port: 1},
 		{Hostname: "deep.sub.example.com", Scheme: "http", Host: "192.168.1.9", Port: 1},
 		{Hostname: "nozone.other.org", Scheme: "http", Host: "192.168.1.9", Port: 1},
 	}
@@ -64,7 +64,7 @@ func TestImportSites(t *testing.T) {
 	if secure.Scheme != "https" || !secure.TLSSkipVerify || !secure.Enabled || secure.UpstreamPort != 443 || !secure.Stream || secure.MaxBody != 2<<30 {
 		t.Errorf("secure = %+v", secure)
 	}
-	for _, want := range []string{"caretakarr.example.com", "deep.sub.example.com", "nozone.other.org"} {
+	for _, want := range []string{"servanago.example.com", "deep.sub.example.com", "nozone.other.org"} {
 		if !strings.Contains(out.String(), "skip "+want) {
 			t.Errorf("output lacks skip for %s:\n%s", want, out.String())
 		}

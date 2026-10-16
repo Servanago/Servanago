@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/caretakarr/caretakarr/internal/discovery"
+	"github.com/servanago/servanago/internal/discovery"
 )
 
 func fakeDocker(t *testing.T, status int, body string) *discovery.Client {

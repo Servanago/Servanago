@@ -29,7 +29,7 @@
               "match": [
                 {
                   "host": [
-                    "caretakarr.example.com"
+                    "servanago.example.com"
                   ]
                 }
               ],
@@ -43,7 +43,7 @@
                     {
                       "handle": [
                         {
-                          "handler": "caretakarr_gate",
+                          "handler": "servanago_gate",
                           "host": "sonarr.example.com",
                           "mode": "open",
                           "route_id": 1
@@ -101,7 +101,7 @@
               }
             ],
             "subjects": [
-              "caretakarr.example.com"
+              "servanago.example.com"
             ]
           },
           {
@@ -139,7 +139,7 @@
         },
         "level": "INFO",
         "writer": {
-          "output": "caretakarr"
+          "output": "servanago"
         }
       }
     }

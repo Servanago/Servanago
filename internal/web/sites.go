@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/discovery"
-	"github.com/caretakarr/caretakarr/internal/presets"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/discovery"
+	"github.com/servanago/servanago/internal/presets"
+	"github.com/servanago/servanago/internal/store"
 )
 
 // dockerPanel is the opt-in container list shown on both route-creation pages.
@@ -88,7 +88,7 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 		zoneName = managed.Name
 	} else {
 		if _, err := config.ValidateLANIP(s.deps.Cfg.HostIP); err != nil {
-			fail(w, http.StatusUnprocessableEntity, "CARETAKARR_HOST_IP: "+err.Error())
+			fail(w, http.StatusUnprocessableEntity, "SERVANAGO_HOST_IP: "+err.Error())
 			return
 		}
 		zoneID, zone, err := s.deps.CF.ZoneFor(r.Context(), hostname, "")

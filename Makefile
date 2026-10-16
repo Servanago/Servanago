@@ -16,7 +16,7 @@ e2e: build
 check: lint test e2e
 
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/caretakarr ./cmd/caretakarr
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/servanago ./cmd/servanago
 
 docker:
-	docker build -t ghcr.io/caretakarr/caretakarr .
+	docker build -t ghcr.io/servanago/servanago .

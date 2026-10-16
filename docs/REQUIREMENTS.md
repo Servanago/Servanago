@@ -1,4 +1,4 @@
-# Caretakarr — Requirements
+# ServanaGo — Requirements
 
 Status: draft from `/sc:brainstorm`. License: MIT. Next step: `/sc:design`.
 
@@ -12,7 +12,7 @@ One Docker container, one Go process, that lets self-hosters put their arr stack
 |---|---|
 | Caddy topology | Embedded in the Go binary (`caddy/v2` + `caddy-dns/cloudflare` as Go imports, `caddy.Load`). No xcaddy, no supervisor, no separate admin-API client. Needs a spike to confirm. |
 | UI auth | Optional `ADMIN_PASSWORD` in `.env`. If unset, UI is open and a loud startup warning is logged. |
-| DNS scope | Caretakarr creates/updates/deletes Cloudflare A records per route, using the official `cloudflare-go` SDK. |
+| DNS scope | ServanaGo creates/updates/deletes Cloudflare A records per route, using the official `cloudflare-go` SDK. |
 | Upstream entry | Manual entry with arr presets by default. Docker socket discovery is opt-in, only active if the user mounts the socket. |
 | Hostname model | Subdomain per service under managed domains. One wildcard cert per domain. |
 | Frontend | Go templates + htmx + Pico or Tailwind, served from `embed.FS`. No Node build step. |
@@ -23,16 +23,16 @@ One Docker container, one Go process, that lets self-hosters put their arr stack
 - `CLOUDFLARE_API_TOKEN` (required): scoped token with `Zone:Read` and `DNS:Edit`. Same name as the homelab Caddyfile's `{$CLOUDFLARE_API_TOKEN}`, so existing `.env` files drop in.
 - `ACME_PROPAGATION_DELAY` (optional, unset = Caddy default), `ACME_PROPAGATION_TIMEOUT` (optional, unset = Caddy default): DNS-01 tuning, only emitted into the config when set. A working homelab config uses `2m` / `10m`.
 - `ACME_RESOLVERS` (default `1.1.1.1,8.8.8.8`).
-- `CARETAKARR_HOST` (required): hostname for the Caretakarr UI itself, e.g. `caretakarr.example.com`.
-- `CARETAKARR_HOST_IP` (required): the address `CARETAKARR_HOST` resolves to; Caretakarr manages that A record. IPv4 in 10/8, 172.16/12, 192.168/16 or 100.64/10 only. The same rule applies to every domain and route IP: Caretakarr never publishes public addresses. See `docs/DESIGN.md` §16.
-- `CARETAKARR_HOST_ZONE` (optional): Cloudflare zone name for that record; unset means walk up the host's labels.
+- `SERVANAGO_HOST` (required): hostname for the ServanaGo UI itself, e.g. `servanago.example.com`.
+- `SERVANAGO_HOST_IP` (required): the address `SERVANAGO_HOST` resolves to; ServanaGo manages that A record. IPv4 in 10/8, 172.16/12, 192.168/16 or 100.64/10 only. The same rule applies to every domain and route IP: ServanaGo never publishes public addresses. See `docs/DESIGN.md` §16.
+- `SERVANAGO_HOST_ZONE` (optional): Cloudflare zone name for that record; unset means walk up the host's labels.
 - `ADMIN_PASSWORD` (optional): enables UI login.
-- `ACME_EMAIL` (required): Let's Encrypt account contact (expiry and problem notices). Must parse as a valid address (`net/mail`). Caddy itself treats it as optional, Caretakarr requires it and fails fast at startup naming the variable.
+- `ACME_EMAIL` (required): Let's Encrypt account contact (expiry and problem notices). Must parse as a valid address (`net/mail`). Caddy itself treats it as optional, ServanaGo requires it and fails fast at startup naming the variable.
 - `ACME_STAGING` (optional): use the Let's Encrypt staging CA.
 
 ## Functional requirements
 
-1. **Bootstrap.** On first boot, with an empty database, generate a Caddy config from `.env` alone that serves the UI at `CARETAKARR_HOST` with a valid certificate.
+1. **Bootstrap.** On first boot, with an empty database, generate a Caddy config from `.env` alone that serves the UI at `SERVANAGO_HOST` with a valid certificate.
 2. **Domains.** Add and remove domains. Validate that the domain is a zone reachable by the token. Reject `.local`, `.internal`, `.home.arpa`, IP literals and other names Caddy would send to its internal CA.
 3. **Certs.** Per-domain `cert_mode`: `wildcard` (default, one `*.domain` cert) or `per_host` (one cert per route hostname, like a plain Caddyfile). Both via DNS-01 with Cloudflare. Apply propagation delay and timeout only if set, and resolvers from `.env`. Switching mode re-renders and Caddy issues what is missing.
 4. **Routes.** A route is subdomain + upstream host/IP + port + scheme (http/https, with skip-verify option for self-signed upstreams) under a managed domain.
@@ -58,7 +58,7 @@ One Docker container, one Go process, that lets self-hosters put their arr stack
 
 ## User stories and acceptance
 
-- *As a self-hoster,* I set `CF_API_TOKEN` and `CARETAKARR_HOST`, run `docker compose up`, and open `https://CARETAKARR_HOST` with a valid cert. **Accept:** no manual Caddy or DNS steps beyond pointing that host at the server.
+- *As a self-hoster,* I set `CF_API_TOKEN` and `SERVANAGO_HOST`, run `docker compose up`, and open `https://SERVANAGO_HOST` with a valid cert. **Accept:** no manual Caddy or DNS steps beyond pointing that host at the server.
 - *I add `example.com`.* **Accept:** wildcard cert issues, status shows the expiry date.
 - *I add Sonarr at `192.168.1.20:8989` as `sonarr`.* **Accept:** `https://sonarr.example.com` works with a valid cert, websockets included, and the A record exists in Cloudflare.
 - *I restrict a route to my LAN.* **Accept:** a request from outside the CIDR gets 403.
@@ -80,4 +80,4 @@ One Docker container, one Go process, that lets self-hosters put their arr stack
 3. Does deleting a route also delete its DNS record, or only after confirmation?
 4. First-run default: staging CA or production?
 5. Import/export of config (JSON) in v1 or later?
-6. Should `CARETAKARR_HOST`'s domain have to be added as a managed domain, or is it auto-registered?
+6. Should `SERVANAGO_HOST`'s domain have to be added as a managed domain, or is it auto-registered?

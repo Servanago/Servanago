@@ -14,12 +14,12 @@ import (
 
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
-	"github.com/caretakarr/caretakarr/internal/cfdns"
-	"github.com/caretakarr/caretakarr/internal/cfdns/cftest"
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/dnssync"
-	"github.com/caretakarr/caretakarr/internal/probe"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/cfdns"
+	"github.com/servanago/servanago/internal/cfdns/cftest"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/probe"
+	"github.com/servanago/servanago/internal/store"
 )
 
 // txApplier stands in for apply.Service: runs the mutation in a tx without Caddy.

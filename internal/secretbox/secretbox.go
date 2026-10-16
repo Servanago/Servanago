@@ -11,7 +11,7 @@ import (
 	"fmt"
 )
 
-var aad = []byte("caretakarr/totp/v1")
+var aad = []byte("servanago/totp/v1")
 
 func gcm(secret string) (cipher.AEAD, error) {
 	if secret == "" {
@@ -52,7 +52,7 @@ func Open(secret string, blob []byte) ([]byte, error) {
 	}
 	plain, err := g.Open(nil, blob[:g.NonceSize()], blob[g.NonceSize():], aad)
 	if err != nil {
-		return nil, errors.New("secretbox: cannot decrypt (wrong CARETAKARR_SECRET_KEY or corrupted data)")
+		return nil, errors.New("secretbox: cannot decrypt (wrong SERVANAGO_SECRET_KEY or corrupted data)")
 	}
 	return plain, nil
 }

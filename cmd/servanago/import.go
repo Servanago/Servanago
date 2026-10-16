@@ -13,14 +13,14 @@ import (
 
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
-	"github.com/caretakarr/caretakarr/internal/caddyfile"
-	"github.com/caretakarr/caretakarr/internal/cfdns"
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/dnssync"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/caddyfile"
+	"github.com/servanago/servanago/internal/cfdns"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/store"
 )
 
-// runImport implements `caretakarr import [-dry-run] <Caddyfile>`. It writes SQLite and Cloudflare directly and
+// runImport implements `servanago import [-dry-run] <Caddyfile>`. It writes SQLite and Cloudflare directly and
 // does not touch a running Caddy: stop the container first, then start it to serve the imported routes.
 func runImport(args []string, out io.Writer) error {
 	fs := flag.NewFlagSet("import", flag.ContinueOnError)
@@ -29,7 +29,7 @@ func runImport(args []string, out io.Writer) error {
 		return err
 	}
 	if fs.NArg() != 1 {
-		return errors.New("usage: caretakarr import [-dry-run] <Caddyfile>")
+		return errors.New("usage: servanago import [-dry-run] <Caddyfile>")
 	}
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
@@ -47,7 +47,7 @@ func runImport(args []string, out io.Writer) error {
 	if err := os.MkdirAll(cfg.DataDir, 0o750); err != nil {
 		return fmt.Errorf("create data dir: %w", err)
 	}
-	st, err := store.Open(filepath.Join(cfg.DataDir, "caretakarr.db"))
+	st, err := store.Open(filepath.Join(cfg.DataDir, "servanago.db"))
 	if err != nil {
 		return err
 	}
@@ -99,7 +99,7 @@ func (im importer) run(ctx context.Context, sites []caddyfile.Site, dry bool, ou
 			continue
 		}
 		if host == im.cfg.Host {
-			skip(host, "is the Caretakarr UI host")
+			skip(host, "is the ServanaGo UI host")
 			continue
 		}
 		if exists[host] {
@@ -161,7 +161,7 @@ func (im importer) domainFor(ctx context.Context, domains *[]store.Domain, host 
 		return *best, nil
 	}
 	if _, err := config.ValidateLANIP(im.cfg.HostIP); err != nil {
-		return store.Domain{}, fmt.Errorf("CARETAKARR_HOST_IP: %w", err)
+		return store.Domain{}, fmt.Errorf("SERVANAGO_HOST_IP: %w", err)
 	}
 	zoneID, zone, err := im.cf.ZoneFor(ctx, host, "")
 	if err != nil {

@@ -95,9 +95,9 @@ func Load(getenv func(string) string) (Config, error) {
 		HTTPPort:           port("HTTP_PORT", 80),
 		HTTPSPort:          port("HTTPS_PORT", 443),
 		CloudflareToken:    req("CLOUDFLARE_API_TOKEN"),
-		Host:               req("CARETAKARR_HOST"),
-		HostIP:             req("CARETAKARR_HOST_IP"),
-		HostZone:           strings.ToLower(strings.TrimSpace(getenv("CARETAKARR_HOST_ZONE"))),
+		Host:               req("SERVANAGO_HOST"),
+		HostIP:             req("SERVANAGO_HOST_IP"),
+		HostZone:           strings.ToLower(strings.TrimSpace(getenv("SERVANAGO_HOST_ZONE"))),
 		ACMEEmail:          req("ACME_EMAIL"),
 		AdminPassword:      getenv("ADMIN_PASSWORD"),
 		PropagationDelay:   dur("ACME_PROPAGATION_DELAY"),
@@ -117,7 +117,7 @@ func Load(getenv func(string) string) (Config, error) {
 		}
 		c.Staging = b
 	}
-	c.SecretKey = getenv("CARETAKARR_SECRET_KEY")
+	c.SecretKey = getenv("SERVANAGO_SECRET_KEY")
 	c.TurnstileSiteKey = strings.TrimSpace(getenv("TURNSTILE_SITE_KEY"))
 	c.TurnstileSecret = strings.TrimSpace(getenv("TURNSTILE_SECRET"))
 	c.TurnstileBaseURL = strings.TrimSpace(getenv("TURNSTILE_BASE_URL"))
@@ -135,13 +135,13 @@ func Load(getenv func(string) string) (Config, error) {
 		c.Require2FA = b
 	}
 	if c.SecretKey != "" && len(c.SecretKey) < 32 {
-		errs = append(errs, errors.New("CARETAKARR_SECRET_KEY: must be at least 32 characters (try: openssl rand -hex 32)"))
+		errs = append(errs, errors.New("SERVANAGO_SECRET_KEY: must be at least 32 characters (try: openssl rand -hex 32)"))
 	}
 	if c.Require2FA && c.AdminPassword == "" {
 		errs = append(errs, errors.New("REQUIRE_2FA needs ADMIN_PASSWORD"))
 	}
 	if c.Require2FA && c.SecretKey == "" {
-		errs = append(errs, errors.New("REQUIRE_2FA needs CARETAKARR_SECRET_KEY"))
+		errs = append(errs, errors.New("REQUIRE_2FA needs SERVANAGO_SECRET_KEY"))
 	}
 	if (c.TurnstileSiteKey == "") != (c.TurnstileSecret == "") {
 		if c.TurnstileSiteKey == "" {
@@ -155,16 +155,16 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if c.Host != "" {
 		if err := ValidateDomain(c.Host); err != nil {
-			errs = append(errs, fmt.Errorf("CARETAKARR_HOST: %w", err))
+			errs = append(errs, fmt.Errorf("SERVANAGO_HOST: %w", err))
 		}
 	}
 	if c.HostIP != "" {
 		if _, err := ValidateLANIP(c.HostIP); err != nil {
-			errs = append(errs, fmt.Errorf("CARETAKARR_HOST_IP: %w", err))
+			errs = append(errs, fmt.Errorf("SERVANAGO_HOST_IP: %w", err))
 		}
 	}
 	if c.HostZone != "" && c.Host != "" && c.Host != c.HostZone && !strings.HasSuffix(c.Host, "."+c.HostZone) || c.HostZone != "" && !strings.Contains(c.HostZone, ".") {
-		errs = append(errs, fmt.Errorf("CARETAKARR_HOST_ZONE: %q must be a zone containing %q (at least two labels)", c.HostZone, c.Host))
+		errs = append(errs, fmt.Errorf("SERVANAGO_HOST_ZONE: %q must be a zone containing %q (at least two labels)", c.HostZone, c.Host))
 	}
 	if c.ACMEEmail != "" {
 		// Bare address only: ParseAddress also accepts "Name <a@b>", which Caddy would pass through verbatim.

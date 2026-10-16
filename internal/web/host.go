@@ -4,11 +4,11 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/caretakarr/caretakarr/internal/dnssync"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/store"
 )
 
-// hostCard is the dashboard card for CARETAKARR_HOST's own A record.
+// hostCard is the dashboard card for SERVANAGO_HOST's own A record.
 type hostCard struct {
 	Spec dnssync.HostSpec
 	DNS  store.DNSRecord

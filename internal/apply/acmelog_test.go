@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/caddycfg"
-	"github.com/caretakarr/caretakarr/internal/caddylog"
-	"github.com/caretakarr/caretakarr/internal/caddytest"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/caddycfg"
+	"github.com/servanago/servanago/internal/caddylog"
+	"github.com/servanago/servanago/internal/caddytest"
+	"github.com/servanago/servanago/internal/store"
 )
 
 // A real ACME issuer pointed at a dead CA must fail issuance and surface it in the log ring.

@@ -1,5 +1,5 @@
 // Package dnssync keeps Cloudflare A records in line with routes (DESIGN.md §7).
-// A record Caretakarr created is "owned" and may be updated or deleted; one it merely adopted is never touched.
+// A record ServanaGo created is "owned" and may be updated or deleted; one it merely adopted is never touched.
 package dnssync
 
 import (
@@ -9,8 +9,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/cfdns"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/cfdns"
+	"github.com/servanago/servanago/internal/store"
 )
 
 type Syncer struct {
@@ -88,7 +88,7 @@ func (s *Syncer) step(ctx context.Context, zone, name, want string, row store.DN
 	}
 }
 
-// Remove deletes the record if Caretakarr owns it and reports whether it did.
+// Remove deletes the record if ServanaGo owns it and reports whether it did.
 func (s *Syncer) Remove(ctx context.Context, zoneID string, rec store.DNSRecord) (bool, error) {
 	if !rec.Owned || rec.CFRecordID == "" {
 		return false, nil
@@ -99,7 +99,7 @@ func (s *Syncer) Remove(ctx context.Context, zoneID string, rec store.DNSRecord)
 	return true, nil
 }
 
-// HostSpec describes the record for CARETAKARR_HOST itself. A zero Name disables it.
+// HostSpec describes the record for SERVANAGO_HOST itself. A zero Name disables it.
 type HostSpec struct{ Name, IP, Zone string }
 
 // ReconcileHost syncs the UI host's A record with the same owned/adopt/conflict rules as routes.
@@ -114,7 +114,7 @@ func (s *Syncer) ReconcileHost(ctx context.Context, takeOver bool) error {
 	}
 	zone, _, err := s.cf.ZoneFor(ctx, s.Host.Name, s.Host.Zone)
 	if err != nil && s.Host.Zone == "" {
-		err = fmt.Errorf("%w; set CARETAKARR_HOST_ZONE to the zone name", err)
+		err = fmt.Errorf("%w; set SERVANAGO_HOST_ZONE to the zone name", err)
 	}
 	var next store.DNSRecord
 	if err == nil {

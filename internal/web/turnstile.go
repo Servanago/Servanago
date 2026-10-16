@@ -36,7 +36,7 @@ func hostOf(r *http.Request) string {
 	return strings.ToLower(h)
 }
 
-// turnstileOn: configured, and the request came in on CARETAKARR_HOST. The UI_LISTEN recovery listener
+// turnstileOn: configured, and the request came in on SERVANAGO_HOST. The UI_LISTEN recovery listener
 // (reached by LAN IP or localhost) is exempt so a Cloudflare or widget-hostname problem cannot lock you out.
 func (s *Server) turnstileOn(r *http.Request) bool {
 	c := s.deps.Cfg

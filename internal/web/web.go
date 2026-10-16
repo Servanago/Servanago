@@ -11,13 +11,13 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/caretakarr/caretakarr/internal/caddylog"
-	"github.com/caretakarr/caretakarr/internal/cfdns"
-	"github.com/caretakarr/caretakarr/internal/config"
-	"github.com/caretakarr/caretakarr/internal/discovery"
-	"github.com/caretakarr/caretakarr/internal/dnssync"
-	"github.com/caretakarr/caretakarr/internal/probe"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/caddylog"
+	"github.com/servanago/servanago/internal/cfdns"
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/discovery"
+	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/probe"
+	"github.com/servanago/servanago/internal/store"
 )
 
 //go:embed templates static

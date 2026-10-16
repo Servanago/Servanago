@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func addRoute(t *testing.T, s *Server, d store.Domain, extra ...string) store.Route {

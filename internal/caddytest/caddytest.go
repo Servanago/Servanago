@@ -18,7 +18,7 @@ import (
 	_ "github.com/caddyserver/caddy/v2/modules/standard"
 
 	_ "github.com/caddy-dns/cloudflare"
-	"github.com/caretakarr/caretakarr/internal/caddylog"
+	"github.com/servanago/servanago/internal/caddylog"
 )
 
 // FreePort returns a currently unused loopback TCP port.

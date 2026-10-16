@@ -14,10 +14,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/apply"
-	"github.com/caretakarr/caretakarr/internal/caddycfg"
-	"github.com/caretakarr/caretakarr/internal/caddytest"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/apply"
+	"github.com/servanago/servanago/internal/caddycfg"
+	"github.com/servanago/servanago/internal/caddytest"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func TestGateBehindRealCaddy(t *testing.T) {
@@ -44,7 +44,7 @@ func TestGateBehindRealCaddy(t *testing.T) {
 	m := newFakeMailer()
 	httpsPort := caddytest.FreePort(t)
 	Install(New(st, m, "access@example.com", "gate-test-secret-0123456789abcdef-1", httpsPort))
-	svc := apply.New(st, caddycfg.Options{UIHost: "caretakarr.example.test", UIUpstream: "127.0.0.1:1", Email: "me@example.test",
+	svc := apply.New(st, caddycfg.Options{UIHost: "servanago.example.test", UIUpstream: "127.0.0.1:1", Email: "me@example.test",
 		Issuer: caddycfg.Internal, HTTPPort: caddytest.FreePort(t), HTTPSPort: httpsPort, StoragePath: storage})
 	if err := svc.Start(context.Background()); err != nil {
 		t.Fatal(err)

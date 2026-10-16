@@ -4,12 +4,12 @@ import (
 	"time"
 
 	"context"
-	"github.com/caretakarr/caretakarr/internal/probe"
+	"github.com/servanago/servanago/internal/probe"
 	"net/url"
 	"strings"
 	"testing"
 
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func form(kv ...string) url.Values {

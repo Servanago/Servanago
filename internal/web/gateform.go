@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/caretakarr/caretakarr/internal/gatelogic"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/gatelogic"
+	"github.com/servanago/servanago/internal/store"
 )
 
 // parseGate reads the route form's protection block. Gate-off clears the grants; other modes
@@ -55,7 +55,7 @@ func (s *Server) gateNeedsHelp(rt store.Route) error {
 		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs email delivery: set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and MAIL_FROM in .env and recreate the container."}
 	}
 	if s.deps.Cfg.SecretKey == "" {
-		return userError{http.StatusUnprocessableEntity, fmt.Sprintf("Magic-link sessions need CARETAKARR_SECRET_KEY (at least 32 characters) in .env to mint session keys for %s.", rt.Subdomain)}
+		return userError{http.StatusUnprocessableEntity, fmt.Sprintf("Magic-link sessions need SERVANAGO_SECRET_KEY (at least 32 characters) in .env to mint session keys for %s.", rt.Subdomain)}
 	}
 	return nil
 }

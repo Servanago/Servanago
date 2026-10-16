@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/caretakarr/caretakarr/internal/gatelogic"
+	"github.com/servanago/servanago/internal/gatelogic"
 )
 
 // gateIdentityView is one row of the Security page's gate listing.

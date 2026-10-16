@@ -10,7 +10,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/gatelogic"
+	"github.com/servanago/servanago/internal/gatelogic"
 )
 
 type Grant struct {

@@ -10,8 +10,8 @@ import (
 
 	"github.com/caddyserver/caddy/v2"
 
-	"github.com/caretakarr/caretakarr/internal/caddycfg"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/caddycfg"
+	"github.com/servanago/servanago/internal/store"
 )
 
 type Service struct {

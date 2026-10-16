@@ -20,7 +20,7 @@ import (
 	"github.com/pquerna/otp"
 	"github.com/pquerna/otp/totp"
 
-	"github.com/caretakarr/caretakarr/internal/secretbox"
+	"github.com/servanago/servanago/internal/secretbox"
 )
 
 const (
@@ -33,8 +33,8 @@ const (
 var (
 	totpOpts = totp.ValidateOpts{Period: totpPeriod, Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1}
 
-	errUnreadable = errors.New("the saved authenticator cannot be decrypted: wrong or missing CARETAKARR_SECRET_KEY. Use a backup code, or run caretakarr 2fa-reset")
-	errNoKey      = errors.New("TOTP needs CARETAKARR_SECRET_KEY to be set")
+	errUnreadable = errors.New("the saved authenticator cannot be decrypted: wrong or missing SERVANAGO_SECRET_KEY. Use a backup code, or run servanago 2fa-reset")
+	errNoKey      = errors.New("TOTP needs SERVANAGO_SECRET_KEY to be set")
 )
 
 func newBackupCodes() (shown, hashes []string, err error) {
@@ -277,7 +277,7 @@ func (s *Server) totpBegin(w http.ResponseWriter, r *http.Request) {
 	if account == "" {
 		account = "admin"
 	}
-	key, err := totp.Generate(totp.GenerateOpts{Issuer: "Caretakarr", AccountName: account, Period: totpPeriod,
+	key, err := totp.Generate(totp.GenerateOpts{Issuer: "ServanaGo", AccountName: account, Period: totpPeriod,
 		Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1})
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())

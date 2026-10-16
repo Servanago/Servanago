@@ -11,9 +11,9 @@ import (
 	"github.com/caddyserver/caddy/v2"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/caretakarr/caretakarr/internal/caddycfg"
-	"github.com/caretakarr/caretakarr/internal/caddytest"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/caddycfg"
+	"github.com/servanago/servanago/internal/caddytest"
+	"github.com/servanago/servanago/internal/store"
 )
 
 const uiHost = "ui.example.com"

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/config"
+	"github.com/servanago/servanago/internal/config"
 )
 
 // All user-facing help lives here so form hints, status tooltips, error explanations and the /help
@@ -16,9 +16,9 @@ import (
 // hints are one-line, plain-text field explanations (rendered by the hint template func).
 var hints = map[string]string{
 	"domain":        "The Cloudflare zone your sites live in, such as example.com. Add it once; sites like oc.example.com go under it.",
-	"default_ip":    "The address your sites' DNS records point to: this server, the machine running Caretakarr. It must be a private address (192.168.x.x, 10.x.x.x, 172.16-31.x.x or 100.64-127.x.x).",
+	"default_ip":    "The address your sites' DNS records point to: this server, the machine running ServanaGo. It must be a private address (192.168.x.x, 10.x.x.x, 172.16-31.x.x or 100.64-127.x.x).",
 	"cert_mode":     "Wildcard gets one *.example.com certificate for every site, so adding sites is instant and site names stay private. Per host gets a separate certificate for each site.",
-	"hostname":      "The address people type, such as oc.example.com. Caretakarr finds its Cloudflare zone and adds it if it is new.",
+	"hostname":      "The address people type, such as oc.example.com. ServanaGo finds its Cloudflare zone and adds it if it is new.",
 	"preset":        "Fills in the usual port for this app. You can still change it.",
 	"scheme":        "How Caddy talks to your app. Use http unless the app itself serves HTTPS.",
 	"upstream_host": "Where the app really runs: an IP address such as 192.168.25.165, or a Docker container name on a shared network. Not the public hostname.",
@@ -31,11 +31,11 @@ var hints = map[string]string{
 	"allowlist":     "Only these networks can open the site; everyone else gets an error 403. One per line. Leave empty to allow anyone who can reach this server. Example: 192.168.0.0/16 is a typical whole home network.",
 	"basic_auth":    "Puts a username and password prompt in front of the app. Leave the user empty for no prompt.",
 	"enabled":       "Turn off to stop serving the site without deleting it. Caddy ignores it completely, so no certificate work happens for it. Its DNS record is kept.",
-	"admin_login":   "The password set as ADMIN_PASSWORD when Caretakarr was started.",
+	"admin_login":   "The password set as ADMIN_PASSWORD when ServanaGo was started.",
 	"totp_code":     "The 6-digit code from your authenticator app. A backup code also works, once.",
 	"backup_codes":  "Each code works once if you lose your authenticator. Keep them somewhere safe; they are not shown again.",
 	"passkey_name":  "A label so you can tell your passkeys apart, such as Laptop or Phone.",
-	"secret_key":    "Authenticator codes are stored encrypted. Set CARETAKARR_SECRET_KEY (at least 32 characters, for example from openssl rand -hex 32) in .env and recreate the container to turn them on. Back it up with your data volume.",
+	"secret_key":    "Authenticator codes are stored encrypted. Set SERVANAGO_SECRET_KEY (at least 32 characters, for example from openssl rand -hex 32) in .env and recreate the container to turn them on. Back it up with your data volume.",
 	"gate_mode":     "A magic link (sent by email, valid for 15 minutes and single-use) opens the site only after it is clicked. With the allowlist, only listed emails and @domain rules get a link; with any email, anyone with a working inbox can ask for one.",
 	"gate_acl":      "One rule per line: alice@example.com admits exactly that address; @contractor.example admits everyone at that domain. Rules are matched after lowering case; a session is shared between all gated sites that allow the address.",
 	"smtp_setup":    "Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and MAIL_FROM in .env and recreate the container. A gated site cannot send links until then.",
@@ -48,14 +48,14 @@ var statusOrder = []string{"cert:issued", "cert:pending", "cert:expiring", "cert
 
 var statusHelp = map[string]statusInfo{
 	"cert:issued":   {"Certificate issued", "A valid HTTPS certificate is being served for this site.", ""},
-	"cert:pending":  {"Certificate pending", "Caretakarr is still getting the certificate from Let's Encrypt. It proves it owns the domain by writing a temporary DNS record and waiting for Cloudflare to publish it.", "Wait; the first one can take several minutes. Watch the Logs page if it takes longer."},
+	"cert:pending":  {"Certificate pending", "ServanaGo is still getting the certificate from Let's Encrypt. It proves it owns the domain by writing a temporary DNS record and waiting for Cloudflare to publish it.", "Wait; the first one can take several minutes. Watch the Logs page if it takes longer."},
 	"cert:expiring": {"Certificate expiring soon", "The certificate expires in less than three weeks. Caddy normally renews it a month early, so renewal is overdue or failing.", "Open the Logs page and look for certificate errors."},
 	"cert:error":    {"Certificate error", "Getting or serving the certificate failed.", "Read the explanation shown with it, then check the Logs page."},
 	"dns:synced":    {"DNS in sync", "The A record in Cloudflare exists and points where this site expects.", ""},
-	"dns:pending":   {"DNS not yet synced", "Caretakarr has not created or checked this site's A record yet.", "Press Resync."},
-	"dns:conflict":  {"DNS conflict", "An A record with this name already exists and points somewhere else. Caretakarr did not touch it.", "Press Take over to replace it, or fix it in Cloudflare and press Resync."},
+	"dns:pending":   {"DNS not yet synced", "ServanaGo has not created or checked this site's A record yet.", "Press Resync."},
+	"dns:conflict":  {"DNS conflict", "An A record with this name already exists and points somewhere else. ServanaGo did not touch it.", "Press Take over to replace it, or fix it in Cloudflare and press Resync."},
 	"dns:error":     {"DNS error", "Talking to Cloudflare failed. The site itself still works if its record already exists.", "Read the explanation shown with it, then press Retry."},
-	"up:up":         {"Backend reachable", "Caretakarr can open a connection to the app's address and port.", ""},
+	"up:up":         {"Backend reachable", "ServanaGo can open a connection to the app's address and port.", ""},
 	"up:down":       {"Backend unreachable", "Nothing answered at the app's address and port, so visitors will get an error.", "Check the app is running, and that the host and port are right and reachable from this server."},
 }
 
@@ -67,13 +67,13 @@ var errTable = []struct {
 	explained
 }{
 	{"timed out waiting for record to fully propagate", explained{"Cloudflare was slow to publish the verification record",
-		"This is common and Caretakarr keeps retrying. If it never succeeds, raise ACME_PROPAGATION_TIMEOUT (and ACME_PROPAGATION_DELAY) in .env and recreate the container."}},
+		"This is common and ServanaGo keeps retrying. If it never succeeds, raise ACME_PROPAGATION_TIMEOUT (and ACME_PROPAGATION_DELAY) in .env and recreate the container."}},
 	{"no cloudflare zone found", explained{"That domain's zone was not found in Cloudflare",
 		"Check the spelling, that the domain is added to your Cloudflare account, and that the API token can read that zone."}},
 	{"the token cannot see it", explained{"That domain's zone was not found in Cloudflare",
 		"Check the spelling, that the domain is added to your Cloudflare account, and that the API token can read that zone."}},
 	{"cannot be decrypted", explained{"The saved authenticator cannot be opened",
-		"CARETAKARR_SECRET_KEY is missing or different from when it was set up. Restore the old key, use a backup code, or run caretakarr 2fa-reset."}},
+		"SERVANAGO_SECRET_KEY is missing or different from when it was set up. Restore the old key, use a backup code, or run servanago 2fa-reset."}},
 	{"multiple a records", explained{"More than one A record has this name",
 		"Delete the extra records in Cloudflare so only one is left, then press Resync."}},
 	{"invalid access token", explained{"Cloudflare rejected the API token",
@@ -82,7 +82,7 @@ var errTable = []struct {
 		"Create a new token with Zone:Read and DNS:Edit, put it in .env as CLOUDFLARE_API_TOKEN, and recreate the container."}},
 	{"must be a private ipv4", explained{"Only private addresses are allowed",
 		"Use an address from your own network: 192.168.x.x, 10.x.x.x, 172.16-31.x.x, or 100.64-127.x.x (Tailscale)."}},
-	{"is the caretakarr ui host", explained{"That name is Caretakarr's own address",
+	{"is the servanago ui host", explained{"That name is ServanaGo's own address",
 		"Choose a different subdomain for this site."}},
 	{"is a zone itself", explained{"Use a subdomain, not the domain itself",
 		"Use a subdomain such as app.example.com instead of example.com itself."}},
@@ -136,12 +136,12 @@ type helpSection struct {
 }
 
 var helpSections = []helpSection{
-	{"how-it-works", "How Caretakarr works", `
-<p>Caretakarr puts your apps (Sonarr, Radarr, Plex and so on) behind real web addresses with valid HTTPS. For each <strong>site</strong>, such as <code>oc.example.com</code>, it does three things:</p>
+	{"how-it-works", "How ServanaGo works", `
+<p>ServanaGo puts your apps (Sonarr, Radarr, Plex and so on) behind real web addresses with valid HTTPS. For each <strong>site</strong>, such as <code>oc.example.com</code>, it does three things:</p>
 <ol>
 <li>Creates a <strong>DNS record</strong> in Cloudflare so the name points to this server.</li>
 <li>Gets an <strong>HTTPS certificate</strong> from Let's Encrypt. It proves it owns the domain by writing a temporary record in Cloudflare, so this server never needs to be reachable from the internet.</li>
-<li>Tells <strong>Caddy</strong> (the web server inside Caretakarr) to forward requests for that name to your app's <strong>backend</strong>: its IP address and port, such as <code>192.168.25.165:9200</code>.</li>
+<li>Tells <strong>Caddy</strong> (the web server inside ServanaGo) to forward requests for that name to your app's <strong>backend</strong>: its IP address and port, such as <code>192.168.25.165:9200</code>.</li>
 </ol>
 <p>Every change is checked by Caddy before it goes live. If Caddy rejects it, nothing changes and you see the reason.</p>`},
 	{"sites", "Sites, domains and ports", `
@@ -149,16 +149,16 @@ var helpSections = []helpSection{
 <p>The <strong>backend port</strong> is the port your app listens on and differs for every app. It is not 443; Caddy provides HTTPS in front of it. The DNS record points at this server, not at the backend, so the backend can be on another machine.</p>`},
 	{"sign-in", "Sign-in security", `
 <p>Under <strong>Security</strong> you can add an <strong>authenticator app</strong> (a 6-digit code after the password) and <strong>passkeys</strong> (sign in with your fingerprint, face or device PIN instead of the password). A passkey sign-in counts as full two-factor, so it asks for no code. Passkeys work only on the HTTPS address, or on <code>localhost</code>.</p>
-<p>If you lose your authenticator and passkeys, use a backup code. If those are gone too, run <code>docker compose run --rm caretakarr caretakarr 2fa-reset</code>: it removes all of them and the password works alone again.</p>
+<p>If you lose your authenticator and passkeys, use a backup code. If those are gone too, run <code>docker compose run --rm servanago servanago 2fa-reset</code>: it removes all of them and the password works alone again.</p>
 <p>Setting <code>TURNSTILE_SITE_KEY</code> and <code>TURNSTILE_SECRET</code> adds a Cloudflare Turnstile check to the password form on the HTTPS address. The recovery address (<code>UI_LISTEN</code>) skips it.</p>`},
 	{"certificates", "Certificates: wildcard or per host", `
 <p><strong>Wildcard</strong> (the default) gets one certificate for <code>*.example.com</code> that covers every site under the domain. New sites are instant, and the names of your sites stay out of public certificate logs.</p>
 <p><strong>Per host</strong> gets a separate certificate for each site, which is slower for each new site. A wildcard covers one level only: <code>oc.example.com</code> yes, <code>a.oc.example.com</code> no.</p>`},
 	{"statuses", "What the status words mean", ``}, // table is generated from statusHelp
 	{"token", "The Cloudflare token", `
-<p>Caretakarr needs one Cloudflare API token with two permissions on your zones: <strong>Zone &rarr; Zone &rarr; Read</strong> and <strong>Zone &rarr; DNS &rarr; Edit</strong>. Create it under My Profile, API Tokens. It is set as <code>CLOUDFLARE_API_TOKEN</code> in <code>.env</code> and is never stored in the database or shown here. After changing <code>.env</code>, recreate the container: <code>docker compose up -d --force-recreate</code>.</p>`},
+<p>ServanaGo needs one Cloudflare API token with two permissions on your zones: <strong>Zone &rarr; Zone &rarr; Read</strong> and <strong>Zone &rarr; DNS &rarr; Edit</strong>. Create it under My Profile, API Tokens. It is set as <code>CLOUDFLARE_API_TOKEN</code> in <code>.env</code> and is never stored in the database or shown here. After changing <code>.env</code>, recreate the container: <code>docker compose up -d --force-recreate</code>.</p>`},
 	{"lan-only", "Private addresses only", `
-<p>Caretakarr only publishes <strong>private</strong> addresses: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, and 100.64-127.x.x (Tailscale). Your apps are reachable from your home network or tailnet, not from the open internet. Public addresses and IPv6 are not supported.</p>`},
+<p>ServanaGo only publishes <strong>private</strong> addresses: 10.x.x.x, 172.16-31.x.x, 192.168.x.x, and 100.64-127.x.x (Tailscale). Your apps are reachable from your home network or tailnet, not from the open internet. Public addresses and IPv6 are not supported.</p>`},
 	{"access", "Limiting who can open a site", `
 <p>On a site's edit page you can limit it to certain networks (<strong>Allowed sources</strong>, for example <code>192.168.0.0/16</code> for your whole home network) and add a <strong>username and password</strong>. Everyone else gets an error. The password is stored only as a hash.</p>
 <p><strong>Magic-link access</strong> goes one step further: after the allowlist (if you use one), the site asks for an email address and sends a single-use link. Sessions last 30 days with an allowlist, 7 days with any email, sliding: activity extends them. Revoke one identity under <strong>Security</strong> and its access dies on every gated site at once.</p>`},

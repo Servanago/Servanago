@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/caretakarr/caretakarr/internal/apply"
-	"github.com/caretakarr/caretakarr/internal/caddycfg"
-	"github.com/caretakarr/caretakarr/internal/caddytest"
-	"github.com/caretakarr/caretakarr/internal/store"
+	"github.com/servanago/servanago/internal/apply"
+	"github.com/servanago/servanago/internal/caddycfg"
+	"github.com/servanago/servanago/internal/caddytest"
+	"github.com/servanago/servanago/internal/store"
 )
 
 func listener(t *testing.T) (string, int) {
