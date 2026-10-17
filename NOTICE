@@ -13,5 +13,9 @@ This product includes software developed by third parties:
   Apache License 2.0. Authenticator-app codes.
 - boombuler/barcode (https://github.com/boombuler/barcode)
   MIT License. QR code for authenticator enrollment (via pquerna/otp).
+- modelcontextprotocol/go-sdk (https://github.com/modelcontextprotocol/go-sdk)
+  Apache License 2.0 (earlier contributions MIT). The MCP endpoint and `servanago mcp`.
+- google/jsonschema-go (https://github.com/google/jsonschema-go)
+  MIT License. Tool schemas (via the MCP SDK).
 - Lucide icons (https://lucide.dev)
   ISC License. Row action icons in internal/web/icons.go.

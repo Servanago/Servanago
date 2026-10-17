@@ -130,6 +130,7 @@ func TestAuthHardeningConfig(t *testing.T) {
 		want string
 	}{
 		{"short key", merge("SERVANAGO_SECRET_KEY", "short"), "SERVANAGO_SECRET_KEY"},
+		{"short mcp token", merge("SERVANAGO_MCP_TOKEN", "short"), "SERVANAGO_MCP_TOKEN"},
 		{"bad admin user", merge("ADMIN_PASSWORD", "pw", "ADMIN_USER", "Not Valid!"), "ADMIN_USER"},
 		{"require without key", merge("REQUIRE_2FA", "true", "ADMIN_PASSWORD", "pw"), "SERVANAGO_SECRET_KEY"},
 		{"require not a bool", merge("REQUIRE_2FA", "yes please"), "REQUIRE_2FA"},

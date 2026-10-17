@@ -34,6 +34,7 @@ type Config struct {
 	HTTPPort           int    // Caddy listen ports; default 80/443, overridable for unprivileged runs
 	HTTPSPort          int
 	SecretKey          string // seals TOTP seeds at rest; empty = TOTP enrollment off
+	MCPToken           string // bearer token for /mcp; empty = the MCP endpoint is off
 	Require2FA         bool
 	TurnstileSiteKey   string // both set = Turnstile on the password step
 	TurnstileSecret    string
@@ -131,6 +132,7 @@ func Load(getenv func(string) string) (Config, error) {
 		c.StaticRoots = append(c.StaticRoots, r)
 	}
 	c.SecretKey = getenv("SERVANAGO_SECRET_KEY")
+	c.MCPToken = getenv("SERVANAGO_MCP_TOKEN")
 	c.TurnstileSiteKey = strings.TrimSpace(getenv("TURNSTILE_SITE_KEY"))
 	c.TurnstileSecret = strings.TrimSpace(getenv("TURNSTILE_SECRET"))
 	c.TurnstileBaseURL = strings.TrimSpace(getenv("TURNSTILE_BASE_URL"))
@@ -144,6 +146,9 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if c.SecretKey != "" && len(c.SecretKey) < 32 {
 		errs = append(errs, errors.New("SERVANAGO_SECRET_KEY: must be at least 32 characters (try: openssl rand -hex 32)"))
+	}
+	if c.MCPToken != "" && len(c.MCPToken) < 32 {
+		errs = append(errs, errors.New("SERVANAGO_MCP_TOKEN: must be at least 32 characters (try: openssl rand -hex 32)"))
 	}
 	if c.AdminPassword != "" {
 		if err := ValidateUsername(c.AdminUser); err != nil {

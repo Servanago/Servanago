@@ -192,7 +192,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sites/{id}/toggle", s.protected(s.toggleSite))
 	mux.Handle("POST /sites/{id}/dns/resync", s.protected(s.resyncDNS))
 	mux.Handle("POST /sites/{id}/dns/takeover", s.protected(s.takeOverDNS))
-	return s.csrf(mux)
+	// /mcp authenticates with its own bearer token and carries no cookie, so the cookie-era CSRF check does not apply.
+	top := http.NewServeMux()
+	top.Handle("/mcp", s.mcpHandler())
+	top.Handle("/", s.csrf(mux))
+	return top
 }
 
 type page struct {
