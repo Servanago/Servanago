@@ -11,6 +11,8 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/servanago/servanago/internal/caddylog"
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
@@ -64,21 +66,62 @@ func (s *Server) takeFlashes() []string {
 }
 
 func New(d Deps) *Server {
-	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
+	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn()}
 	for _, p := range []string{"dashboard", "login", "login_totp", "security", "settings", "domains", "siteedit", "logs", "help"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
 		s.startupErr = d.Apply.StartupError
 	}
-	if d.Cfg.AdminPassword == "" {
-		slog.Warn("ADMIN_PASSWORD is not set: the web UI is open to anyone who can reach it")
-		if d.Cfg.TurnstileSecret != "" || d.Cfg.SecretKey != "" {
-			slog.Warn("2FA, passkeys and Turnstile are inactive while ADMIN_PASSWORD is unset")
-		}
-	}
+	s.initUsers()
 	s.warnUnreadableSeed()
 	return s
+}
+
+// initUsers wires the session lookup and decides whether the UI is open. With no users and ADMIN_PASSWORD set,
+// the first admin is created from it; once any user exists the variable is ignored. No users and no password
+// keeps the UI open, as before.
+func (s *Server) initUsers() {
+	if s.deps.Store == nil {
+		return
+	}
+	ctx := context.Background()
+	s.auth.lookup = func(id int64) (store.User, bool) {
+		u, err := s.deps.Store.GetUser(ctx, id)
+		return u, err == nil
+	}
+	n, err := s.deps.Store.CountUsers(ctx)
+	if err != nil {
+		slog.Error("count users", "error", err)
+		return
+	}
+	pw := s.deps.Cfg.AdminPassword
+	switch {
+	case n == 0 && pw != "":
+		name := normalizeUsername(s.deps.Cfg.AdminUser)
+		if name == "" {
+			name = "admin"
+		}
+		hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+		if err == nil {
+			_, err = s.deps.Store.CreateUser(ctx, name, string(hash))
+		}
+		if err != nil {
+			slog.Error("create the first admin from ADMIN_PASSWORD", "error", err)
+			return
+		}
+		slog.Info("created the first admin from ADMIN_PASSWORD", "user", name)
+		n = 1
+	case n > 0 && pw != "":
+		slog.Info("ADMIN_PASSWORD is ignored: administrators already exist (manage them under Users)")
+	}
+	s.auth.on.Store(n > 0)
+	if n == 0 {
+		slog.Warn("no administrator exists and ADMIN_PASSWORD is not set: the web UI is open to anyone who can reach it")
+		if s.deps.Cfg.TurnstileSecret != "" || s.deps.Cfg.SecretKey != "" {
+			slog.Warn("2FA, passkeys and Turnstile are inactive while the UI is open")
+		}
+	}
 }
 
 // dnsOn reports whether Cloudflare is configured. Without it there is no zone lookup, no A-record sync and no DNS column.

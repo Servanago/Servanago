@@ -82,7 +82,7 @@ func TestUIBehindRealCaddyKeepsHostAndSetsForwardedHeaders(t *testing.T) {
 	}
 
 	// X-Forwarded-Proto is https: the session cookie is Secure. A Host mismatch would fail the CSRF Origin check here.
-	resp, body := do("POST", "/login", url.Values{"password": {"pw"}, "cf-turnstile-response": {"t"}}, "")
+	resp, body := do("POST", "/login", url.Values{"username": {"admin"}, "password": {"pw"}, "cf-turnstile-response": {"t"}}, "")
 	if resp.StatusCode != 204 {
 		t.Fatalf("login via Caddy: %d %s", resp.StatusCode, body)
 	}
@@ -99,11 +99,11 @@ func TestUIBehindRealCaddyKeepsHostAndSetsForwardedHeaders(t *testing.T) {
 	// X-Forwarded-For is the real client address, not a caller-supplied one: five wrong passwords, each claiming a
 	// different origin, still share one throttle bucket.
 	for i := range maxFailures {
-		if resp, _ := do("POST", "/login", url.Values{"password": {"bad"}}, fmt.Sprintf("203.0.113.%d", i+1)); resp.StatusCode != 401 {
+		if resp, _ := do("POST", "/login", url.Values{"username": {"admin"}, "password": {"bad"}}, fmt.Sprintf("203.0.113.%d", i+1)); resp.StatusCode != 401 {
 			t.Fatalf("attempt %d: %d", i, resp.StatusCode)
 		}
 	}
-	if resp, _ := do("POST", "/login", url.Values{"password": {"bad"}}, "203.0.113.99"); resp.StatusCode != 429 {
+	if resp, _ := do("POST", "/login", url.Values{"username": {"admin"}, "password": {"bad"}}, "203.0.113.99"); resp.StatusCode != 429 {
 		t.Fatalf("spoofed X-Forwarded-For escaped the throttle: %d", resp.StatusCode)
 	}
 }

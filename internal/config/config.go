@@ -21,7 +21,8 @@ type Config struct {
 	HostIP6            string // optional AAAA record target for Host; IPv6 (dual-stack, never instead of HostIP)
 	HostZone           string // optional Cloudflare zone name for Host; empty = walk up labels
 	ACMEEmail          string
-	AdminPassword      string
+	AdminUser          string // name of the first admin created from AdminPassword; default "admin"
+	AdminPassword      string // seeds the first admin once; ignored when users exist
 	Staging            bool
 	PropagationDelay   time.Duration // 0 = unset
 	PropagationTimeout time.Duration // 0 = unset
@@ -100,6 +101,7 @@ func Load(getenv func(string) string) (Config, error) {
 		HostIP6:            strings.TrimSpace(getenv("SERVANAGO_HOST_IP6")),
 		HostZone:           strings.ToLower(strings.TrimSpace(getenv("SERVANAGO_HOST_ZONE"))),
 		ACMEEmail:          req("ACME_EMAIL"),
+		AdminUser:          strings.ToLower(opt("ADMIN_USER", "admin")),
 		AdminPassword:      getenv("ADMIN_PASSWORD"),
 		PropagationDelay:   dur("ACME_PROPAGATION_DELAY"),
 		PropagationTimeout: dur("ACME_PROPAGATION_TIMEOUT"),
@@ -143,8 +145,10 @@ func Load(getenv func(string) string) (Config, error) {
 	if c.SecretKey != "" && len(c.SecretKey) < 32 {
 		errs = append(errs, errors.New("SERVANAGO_SECRET_KEY: must be at least 32 characters (try: openssl rand -hex 32)"))
 	}
-	if c.Require2FA && c.AdminPassword == "" {
-		errs = append(errs, errors.New("REQUIRE_2FA needs ADMIN_PASSWORD"))
+	if c.AdminPassword != "" {
+		if err := ValidateUsername(c.AdminUser); err != nil {
+			errs = append(errs, fmt.Errorf("ADMIN_USER: %w", err))
+		}
 	}
 	if c.Require2FA && c.SecretKey == "" {
 		errs = append(errs, errors.New("REQUIRE_2FA needs SERVANAGO_SECRET_KEY"))

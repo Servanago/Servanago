@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"net/netip"
+	"regexp"
 	"strings"
 )
 
@@ -30,6 +31,16 @@ func ValidateDomain(name string) error {
 		if err := ValidateLabel(l); err != nil {
 			return fmt.Errorf("domain %q: %w", name, err)
 		}
+	}
+	return nil
+}
+
+var usernameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,31}$`)
+
+// ValidateUsername accepts a lower-case admin username: 1-32 characters of a-z, 0-9, '.', '_' and '-', starting with a letter or digit.
+func ValidateUsername(name string) error {
+	if !usernameRE.MatchString(name) {
+		return fmt.Errorf("username %q: use 1-32 lower-case letters, digits, '.', '_' or '-', starting with a letter or digit", name)
 	}
 	return nil
 }

@@ -86,16 +86,16 @@ func matchStep(secret, code string, now time.Time) (int64, bool) {
 	return 0, false
 }
 
-// secondFactor checks a TOTP or backup code. A TOTP step is accepted once; a backup code once.
-func (s *Server) secondFactor(ctx context.Context, code string) (bool, error) {
+// secondFactor checks the user's TOTP or backup code. A TOTP step is accepted once; a backup code once.
+func (s *Server) secondFactor(ctx context.Context, uid int64, code string) (bool, error) {
 	code = normalizeCode(code)
 	if code == "" {
 		return false, nil
 	}
 	if !isTOTPCode(code) {
-		return s.deps.Store.UseBackupCode(ctx, hashCode(code))
+		return s.deps.Store.UseBackupCode(ctx, uid, hashCode(code))
 	}
-	t, ok, err := s.deps.Store.GetTOTP(ctx)
+	t, ok, err := s.deps.Store.GetTOTP(ctx, uid)
 	if err != nil || !ok || !t.Enabled {
 		return false, err
 	}
@@ -107,7 +107,7 @@ func (s *Server) secondFactor(ctx context.Context, code string) (bool, error) {
 	if !ok {
 		return false, nil
 	}
-	return s.deps.Store.AdvanceTOTPStep(ctx, step) // false = replay
+	return s.deps.Store.AdvanceTOTPStep(ctx, uid, step) // false = replay
 }
 
 func (s *Server) openSeed(sealed []byte) (string, error) {
@@ -126,12 +126,19 @@ func (s *Server) warnUnreadableSeed() {
 	if s.deps.Store == nil {
 		return
 	}
-	t, ok, err := s.deps.Store.GetTOTP(context.Background())
-	if err != nil || !ok || !t.Enabled {
+	ctx := context.Background()
+	ids, err := s.deps.Store.TOTPUsers(ctx)
+	if err != nil {
 		return
 	}
-	if _, err := s.openSeed(t.Secret); err != nil {
-		slog.Error("totp is enrolled but its seed cannot be decrypted", "error", err)
+	for _, id := range ids {
+		t, ok, err := s.deps.Store.GetTOTP(ctx, id)
+		if err != nil || !ok || !t.Enabled {
+			continue
+		}
+		if _, err := s.openSeed(t.Secret); err != nil {
+			slog.Error("totp is enrolled but its seed cannot be decrypted", "user_id", id, "error", err)
+		}
 	}
 }
 
@@ -159,8 +166,14 @@ func (s *Server) loginTOTPSubmit(w http.ResponseWriter, r *http.Request) {
 		redirect(w, r, "/login", http.StatusUnauthorized)
 		return
 	}
+	uid, _ := s.auth.pendingUser(c.Value) // live: checked above
+	u, err := s.deps.Store.GetUser(r.Context(), uid)
+	if err != nil {
+		redirect(w, r, "/login", http.StatusUnauthorized) // removed since the password step
+		return
+	}
 	code := r.PostFormValue("code")
-	ok, err := s.secondFactor(r.Context(), code)
+	ok, err := s.secondFactor(r.Context(), u.ID, code)
 	if errors.Is(err, errUnreadable) {
 		fail(w, http.StatusServiceUnavailable, err.Error())
 		return
@@ -171,7 +184,7 @@ func (s *Server) loginTOTPSubmit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !ok {
-		slog.Warn("login failed", "event", "login", "method", "totp", "ip", ip)
+		slog.Warn("login failed", "event", "login", "method", "totp", "user", u.Username, "ip", ip)
 		http.Error(w, "Wrong code.", http.StatusUnauthorized)
 		return
 	}
@@ -179,11 +192,11 @@ func (s *Server) loginTOTPSubmit(w http.ResponseWriter, r *http.Request) {
 	if !isTOTPCode(normalizeCode(code)) {
 		method = "backup-code"
 	}
-	slog.Info("login", "event", "login", "method", method, "ip", ip)
+	slog.Info("login", "event", "login", "method", method, "user", u.Username, "ip", ip)
 	s.auth.endPending(c.Value)
 	s.auth.clear(ip)
 	s.setPending(w, r, "", -1)
-	s.setSession(w, r, levelFull)
+	s.setSession(w, r, levelFull, u)
 	hxRedirect(w, "/")
 }
 
@@ -195,15 +208,16 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 		http.Error(w, "Too many attempts. Try again later.", http.StatusTooManyRequests)
 		return false
 	}
-	if !s.auth.checkPassword(r.PostFormValue("password")) {
+	u, signedIn := currentUser(r)
+	if !signedIn || !checkPassword(u, true, r.PostFormValue("password")) {
 		fail(w, http.StatusUnauthorized, "Wrong password.")
 		return false
 	}
-	if t, ok, err := s.deps.Store.GetTOTP(r.Context()); err != nil {
+	if t, ok, err := s.deps.Store.GetTOTP(r.Context(), u.ID); err != nil {
 		fail(w, http.StatusInternalServerError, "Internal error.")
 		return false
 	} else if ok && t.Enabled {
-		good, err := s.secondFactor(r.Context(), r.PostFormValue("code"))
+		good, err := s.secondFactor(r.Context(), u.ID, r.PostFormValue("code"))
 		if errors.Is(err, errUnreadable) {
 			fail(w, http.StatusServiceUnavailable, err.Error())
 			return false
@@ -234,12 +248,13 @@ func (s *Server) securityPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
-	t, ok, err := s.deps.Store.GetTOTP(ctx)
+	u, _ := currentUser(r)
+	t, ok, err := s.deps.Store.GetTOTP(ctx, u.ID)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	left, _ := s.deps.Store.CountBackupCodes(ctx)
+	left, _ := s.deps.Store.CountBackupCodes(ctx, u.ID)
 	d := securityData{Limited: s.auth.level(r) == levelEnroll, Require2FA: s.deps.Cfg.Require2FA,
 		HasKey: s.deps.Cfg.SecretKey != "", TOTPEnabled: ok && t.Enabled, BackupLeft: left}
 	if gs, err := s.gateIdentitiesData(ctx); err == nil {
@@ -273,9 +288,10 @@ func (s *Server) totpBegin(w http.ResponseWriter, r *http.Request) {
 	if !s.reauth(w, r) {
 		return
 	}
-	account := s.deps.Cfg.Host
-	if account == "" {
-		account = "admin"
+	u, _ := currentUser(r)
+	account := u.Username
+	if s.deps.Cfg.Host != "" {
+		account += "@" + s.deps.Cfg.Host
 	}
 	key, err := totp.Generate(totp.GenerateOpts{Issuer: "ServanaGo", AccountName: account, Period: totpPeriod,
 		Digits: otp.DigitsSix, Algorithm: otp.AlgorithmSHA1})
@@ -285,7 +301,7 @@ func (s *Server) totpBegin(w http.ResponseWriter, r *http.Request) {
 	}
 	sealed, err := secretbox.Seal(s.deps.Cfg.SecretKey, []byte(key.Secret()))
 	if err == nil {
-		err = s.deps.Store.SaveTOTP(r.Context(), sealed)
+		err = s.deps.Store.SaveTOTP(r.Context(), u.ID, sealed)
 	}
 	if err != nil {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
@@ -308,7 +324,8 @@ func (s *Server) totpBegin(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) totpConfirm(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
-	t, ok, err := s.deps.Store.GetTOTP(ctx)
+	u, _ := currentUser(r)
+	t, ok, err := s.deps.Store.GetTOTP(ctx, u.ID)
 	if err != nil || !ok || t.Enabled {
 		fail(w, http.StatusUnprocessableEntity, "There is no authenticator waiting to be confirmed. Start again.")
 		return
@@ -330,16 +347,16 @@ func (s *Server) totpConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	shown, hashes, err := newBackupCodes()
 	if err == nil {
-		err = s.deps.Store.EnableTOTP(ctx, step, hashes)
+		err = s.deps.Store.EnableTOTP(ctx, u.ID, step, hashes)
 	}
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 	s.auth.clear(ip)
-	slog.Info("totp enabled", "event", "totp.enabled")
+	slog.Info("totp enabled", "event", "totp.enabled", "user", u.Username)
 	if s.auth.level(r) == levelEnroll {
-		s.setSession(w, r, levelFull)
+		s.setSession(w, r, levelFull, u)
 	}
 	s.fragment(w, "backup_codes", map[string]any{"Codes": shown, "Done": true})
 }
@@ -352,16 +369,18 @@ func (s *Server) totpDisable(w http.ResponseWriter, r *http.Request) {
 	if !s.reauth(w, r) {
 		return
 	}
-	if err := s.deps.Store.DeleteTOTP(r.Context()); err != nil {
+	u, _ := currentUser(r)
+	if err := s.deps.Store.DeleteTOTP(r.Context(), u.ID); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	slog.Info("totp disabled", "event", "totp.disabled")
+	slog.Info("totp disabled", "event", "totp.disabled", "user", u.Username)
 	hxRedirect(w, "/security")
 }
 
 func (s *Server) backupRegenerate(w http.ResponseWriter, r *http.Request) {
-	if _, ok, _ := s.deps.Store.GetTOTP(r.Context()); !ok {
+	u, _ := currentUser(r)
+	if _, ok, _ := s.deps.Store.GetTOTP(r.Context(), u.ID); !ok {
 		fail(w, http.StatusUnprocessableEntity, "Turn on the authenticator first.")
 		return
 	}
@@ -370,17 +389,17 @@ func (s *Server) backupRegenerate(w http.ResponseWriter, r *http.Request) {
 	}
 	shown, hashes, err := newBackupCodes()
 	if err == nil {
-		err = s.deps.Store.ReplaceBackupCodes(r.Context(), hashes)
+		err = s.deps.Store.ReplaceBackupCodes(r.Context(), u.ID, hashes)
 	}
 	if err != nil {
 		fail(w, http.StatusInternalServerError, fmt.Sprint(err))
 		return
 	}
-	slog.Info("backup codes regenerated", "event", "backup_codes.regenerated")
+	slog.Info("backup codes regenerated", "event", "backup_codes.regenerated", "user", u.Username)
 	s.fragment(w, "backup_codes", map[string]any{"Codes": shown})
 }
 
-// security gates the /security routes: they only exist when ADMIN_PASSWORD is set.
+// security gates the /security routes: they only exist once a user does (not in open mode).
 func (s *Server) security(h http.HandlerFunc, allowEnroll bool) http.Handler {
 	return s.gate(func(w http.ResponseWriter, r *http.Request) {
 		if !s.auth.enabled() {

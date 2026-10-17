@@ -234,87 +234,89 @@ func TestUIDNSRecord(t *testing.T) {
 
 func TestTOTPLifecycle(t *testing.T) {
 	s, ctx := open(t), context.Background()
-	if _, ok, err := s.GetTOTP(ctx); ok || err != nil {
+	u := mustUser(t, s, "admin")
+	if _, ok, err := s.GetTOTP(ctx, u.ID); ok || err != nil {
 		t.Fatalf("empty: %v %v", ok, err)
 	}
-	if err := s.SaveTOTP(ctx, []byte("sealed1")); err != nil {
+	if err := s.SaveTOTP(ctx, u.ID, []byte("sealed1")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.SaveTOTP(ctx, []byte("sealed2")); err != nil { // unconfirmed seed is replaceable
+	if err := s.SaveTOTP(ctx, u.ID, []byte("sealed2")); err != nil { // unconfirmed seed is replaceable
 		t.Fatal(err)
 	}
-	if ok, _ := s.AdvanceTOTPStep(ctx, 5); ok {
+	if ok, _ := s.AdvanceTOTPStep(ctx, u.ID, 5); ok {
 		t.Fatal("step accepted before enable")
 	}
-	if err := s.EnableTOTP(ctx, 10, []string{"h1", "h2"}); err != nil {
+	if err := s.EnableTOTP(ctx, u.ID, 10, []string{"h1", "h2"}); err != nil {
 		t.Fatal(err)
 	}
-	got, ok, _ := s.GetTOTP(ctx)
+	got, ok, _ := s.GetTOTP(ctx, u.ID)
 	if !ok || !got.Enabled || string(got.Secret) != "sealed2" || got.LastStep != 10 {
 		t.Fatalf("%+v", got)
 	}
-	if err := s.SaveTOTP(ctx, []byte("x")); err == nil {
+	if err := s.SaveTOTP(ctx, u.ID, []byte("x")); err == nil {
 		t.Error("enabled seed overwritten")
 	}
 	for _, c := range []struct {
 		step int64
 		want bool
 	}{{10, false}, {9, false}, {11, true}, {11, false}} {
-		if ok, _ := s.AdvanceTOTPStep(ctx, c.step); ok != c.want {
+		if ok, _ := s.AdvanceTOTPStep(ctx, u.ID, c.step); ok != c.want {
 			t.Errorf("step %d: %v want %v", c.step, ok, c.want)
 		}
 	}
-	if ok, _ := s.UseBackupCode(ctx, "h1"); !ok {
+	if ok, _ := s.UseBackupCode(ctx, u.ID, "h1"); !ok {
 		t.Error("first use")
 	}
-	if ok, _ := s.UseBackupCode(ctx, "h1"); ok {
+	if ok, _ := s.UseBackupCode(ctx, u.ID, "h1"); ok {
 		t.Error("second use")
 	}
-	if ok, _ := s.UseBackupCode(ctx, "nope"); ok {
+	if ok, _ := s.UseBackupCode(ctx, u.ID, "nope"); ok {
 		t.Error("unknown code")
 	}
-	if n, _ := s.CountBackupCodes(ctx); n != 1 {
+	if n, _ := s.CountBackupCodes(ctx, u.ID); n != 1 {
 		t.Errorf("unused %d", n)
 	}
-	if err := s.EnableTOTP(ctx, 1, nil); err != nil { // idempotent update path
+	if err := s.EnableTOTP(ctx, u.ID, 1, nil); err != nil { // idempotent update path
 		t.Fatal(err)
 	}
 }
 
 func TestPasskeysAndResetAuth(t *testing.T) {
 	s, ctx := open(t), context.Background()
+	u := mustUser(t, s, "admin")
 	p := Passkey{ID: "a", RPID: "h.example.com", CredentialID: []byte{1}, Credential: "{}", Name: "laptop"}
-	if err := s.AddPasskey(ctx, p); err != nil {
+	if err := s.AddPasskey(ctx, u.ID, p); err != nil {
 		t.Fatal(err)
 	}
 	p.ID = "b"
-	if err := s.AddPasskey(ctx, p); err == nil {
+	if err := s.AddPasskey(ctx, u.ID, p); err == nil {
 		t.Error("duplicate credential id accepted")
 	}
 	if err := s.TouchPasskey(ctx, []byte{1}, `{"n":2}`); err != nil {
 		t.Fatal(err)
 	}
-	ps, _ := s.ListPasskeys(ctx)
+	ps, _ := s.ListPasskeys(ctx, u.ID)
 	if len(ps) != 1 || ps[0].Credential != `{"n":2}` || ps[0].LastUsedAt == "" {
 		t.Fatalf("%+v", ps)
 	}
-	if err := s.SaveTOTP(ctx, []byte("s")); err != nil {
+	if err := s.SaveTOTP(ctx, u.ID, []byte("s")); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.EnableTOTP(ctx, 1, []string{"x", "y"}); err != nil {
+	if err := s.EnableTOTP(ctx, u.ID, 1, []string{"x", "y"}); err != nil {
 		t.Fatal(err)
 	}
-	totp, codes, keys, err := s.ResetAuth(ctx)
+	totp, codes, keys, err := s.ResetAuth(ctx, u.ID)
 	if err != nil || !totp || codes != 2 || keys != 1 {
 		t.Fatalf("%v %d %d %v", totp, codes, keys, err)
 	}
-	if ps, _ := s.ListPasskeys(ctx); len(ps) != 0 {
+	if ps, _ := s.ListPasskeys(ctx, u.ID); len(ps) != 0 {
 		t.Error("passkeys left")
 	}
-	if _, ok, _ := s.GetTOTP(ctx); ok {
+	if _, ok, _ := s.GetTOTP(ctx, u.ID); ok {
 		t.Error("totp left")
 	}
-	if ok, _ := s.DeletePasskey(ctx, "a"); ok {
+	if ok, _ := s.DeletePasskey(ctx, u.ID, "a"); ok {
 		t.Error("deleted a ghost")
 	}
 }

@@ -20,12 +20,15 @@ const (
 	maxCredBody    = 64 << 10
 )
 
-// waUser is the one admin account. The handle is constant: it is not PII and nothing else needs to tell users apart.
-type waUser struct{ creds []webauthn.Credential }
+// waUser is one admin as WebAuthn sees them. The handle is the user's random id, stable for their lifetime.
+type waUser struct {
+	user  store.User
+	creds []webauthn.Credential
+}
 
-func (waUser) WebAuthnID() []byte                           { return []byte("servanago-admin") }
-func (waUser) WebAuthnName() string                         { return "admin" }
-func (waUser) WebAuthnDisplayName() string                  { return "ServanaGo admin" }
+func (u waUser) WebAuthnID() []byte                         { return u.user.WebAuthnID }
+func (u waUser) WebAuthnName() string                       { return u.user.Username }
+func (u waUser) WebAuthnDisplayName() string                { return u.user.Username }
 func (u waUser) WebAuthnCredentials() []webauthn.Credential { return u.creds }
 
 var errNoRP = errors.New("passkeys work only on https://" + "<SERVANAGO_HOST> or on localhost")
@@ -62,25 +65,17 @@ func (s *Server) passkeysOffered(r *http.Request) bool {
 	if err != nil {
 		return false
 	}
-	ps, err := s.deps.Store.ListPasskeys(r.Context())
-	if err != nil {
-		return false
-	}
-	for _, p := range ps {
-		if p.RPID == rp {
-			return true
-		}
-	}
-	return false
+	has, err := s.deps.Store.HasPasskeyFor(r.Context(), rp)
+	return err == nil && has
 }
 
-// loadUser returns the admin with the credentials registered for rpID.
-func (s *Server) loadUser(r *http.Request, rpID string) (waUser, error) {
-	ps, err := s.deps.Store.ListPasskeys(r.Context())
+// loadUser returns user with the credentials they registered for rpID.
+func (s *Server) loadUser(r *http.Request, user store.User, rpID string) (waUser, error) {
+	ps, err := s.deps.Store.ListPasskeys(r.Context(), user.ID)
 	if err != nil {
 		return waUser{}, err
 	}
-	var u waUser
+	u := waUser{user: user}
 	for _, p := range ps {
 		if p.RPID != rpID {
 			continue
@@ -101,7 +96,8 @@ type passkeyView struct {
 
 func (s *Server) passkeyViews(r *http.Request) ([]passkeyView, error) {
 	_, rp, _ := s.relyingParty(r)
-	ps, err := s.deps.Store.ListPasskeys(r.Context())
+	cu, _ := currentUser(r)
+	ps, err := s.deps.Store.ListPasskeys(r.Context(), cu.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -130,12 +126,13 @@ func (s *Server) passkeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	if !s.reauth(w, r) {
 		return
 	}
-	u, err := s.loadUser(r, rp)
+	cu, _ := currentUser(r)
+	u, err := s.loadUser(r, cu, rp)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	all, _ := s.deps.Store.ListPasskeys(r.Context())
+	all, _ := s.deps.Store.ListPasskeys(r.Context(), cu.ID)
 	if len(all) >= maxPasskeys {
 		fail(w, http.StatusUnprocessableEntity, "Passkey limit reached. Delete one first.")
 		return
@@ -179,7 +176,8 @@ func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, "Name too long.")
 		return
 	}
-	u, err := s.loadUser(r, rp)
+	cu, _ := currentUser(r)
+	u, err := s.loadUser(r, cu, rp)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
@@ -202,18 +200,19 @@ func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	js, err := json.Marshal(cred)
 	if err == nil {
-		err = s.deps.Store.AddPasskey(r.Context(), store.Passkey{ID: randToken(), RPID: rp, CredentialID: cred.ID, Credential: string(js), Name: name})
+		err = s.deps.Store.AddPasskey(r.Context(), cu.ID, store.Passkey{ID: randToken(), RPID: rp, CredentialID: cred.ID, Credential: string(js), Name: name})
 	}
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	slog.Info("passkey added", "event", "passkey.added", "rp", rp)
+	slog.Info("passkey added", "event", "passkey.added", "user", cu.Username, "rp", rp)
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) passkeyDelete(w http.ResponseWriter, r *http.Request) {
-	ok, err := s.deps.Store.DeletePasskey(r.Context(), r.PathValue("id"))
+	cu, _ := currentUser(r)
+	ok, err := s.deps.Store.DeletePasskey(r.Context(), cu.ID, r.PathValue("id"))
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
@@ -222,7 +221,7 @@ func (s *Server) passkeyDelete(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusNotFound, "No such passkey.")
 		return
 	}
-	slog.Info("passkey removed", "event", "passkey.removed")
+	slog.Info("passkey removed", "event", "passkey.removed", "user", cu.Username)
 	hxRedirect(w, "/security")
 }
 
@@ -281,16 +280,18 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	handler := func(_, handle []byte) (webauthn.User, error) {
-		if string(handle) != string(waUser{}.WebAuthnID()) {
+		user, found, err := s.deps.Store.GetUserByWebAuthnID(r.Context(), handle)
+		if err != nil || !found {
 			return nil, errors.New("unknown user handle")
 		}
-		return s.loadUser(r, rp)
+		return s.loadUser(r, user, rp) // only this user's own credentials can validate
 	}
-	_, cred, err := wa.ValidatePasskeyLogin(handler, sd, parsed)
+	wu, cred, err := wa.ValidatePasskeyLogin(handler, sd, parsed)
 	if err != nil {
 		deny("validate", err)
 		return
 	}
+	user := wu.(waUser).user
 	if cred.Authenticator.CloneWarning {
 		deny("clone warning", nil)
 		return
@@ -305,7 +306,7 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auth.clear("pk:" + ip)
-	slog.Info("login", "event", "login", "method", "passkey", "ip", ip)
-	s.setSession(w, r, levelFull)
+	slog.Info("login", "event", "login", "method", "passkey", "user", user.Username, "ip", ip)
+	s.setSession(w, r, levelFull, user)
 	hxRedirect(w, "/")
 }

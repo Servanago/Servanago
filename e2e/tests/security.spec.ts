@@ -24,6 +24,7 @@ function totp(secret: string): string {
 
 async function signIn(page: Page) {
   await page.goto('/login');
+  await page.getByLabel('Username').fill('admin');
   await page.getByLabel('Password').fill('e2e-pass');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
 }

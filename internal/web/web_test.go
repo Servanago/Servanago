@@ -61,7 +61,12 @@ func (s *Server) do(r req) *httptest.ResponseRecorder {
 
 var htmxPost = map[string]string{"HX-Request": "true", "Origin": "https://servanago.example.com"}
 
+// login signs in as the seeded admin ("admin"); loginAs picks the user.
 func login(s *Server, password string, extra map[string]string, peer string) *httptest.ResponseRecorder {
+	return loginAs(s, "admin", password, extra, peer)
+}
+
+func loginAs(s *Server, user, password string, extra map[string]string, peer string) *httptest.ResponseRecorder {
 	h := map[string]string{}
 	for k, v := range htmxPost {
 		h[k] = v
@@ -69,7 +74,7 @@ func login(s *Server, password string, extra map[string]string, peer string) *ht
 	for k, v := range extra {
 		h[k] = v
 	}
-	return s.do(req{method: "POST", path: "/login", body: url.Values{"password": {password}}.Encode(), hdr: h, peer: peer})
+	return s.do(req{method: "POST", path: "/login", body: url.Values{"username": {user}, "password": {password}}.Encode(), hdr: h, peer: peer})
 }
 
 func sessionCookie(t *testing.T, w *httptest.ResponseRecorder) *http.Cookie {

@@ -67,20 +67,36 @@ CREATE TABLE ui_dns_record (
   synced_at    TEXT
 );
 
--- Admin 2FA. totp has one row (single admin); the seed is secretbox-sealed, never plaintext.
+-- Admins: equal, no roles. username is stored lower-case. session_epoch is part of every session cookie and is bumped
+-- whenever the user's sessions must end (password change, 2FA reset, removal). webauthn_id is the random,
+-- stable WebAuthn user handle.
+CREATE TABLE users (
+  id            INTEGER PRIMARY KEY,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,                -- bcrypt
+  webauthn_id   BLOB NOT NULL UNIQUE,
+  session_epoch INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  last_login_at TEXT
+);
+
+-- Admin 2FA, per user. The seed is secretbox-sealed, never plaintext.
 CREATE TABLE totp (
-  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
   secret     BLOB NOT NULL,
   enabled    INTEGER NOT NULL DEFAULT 0 CHECK (enabled IN (0,1)),
   last_step  INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE TABLE backup_codes (
-  code_hash TEXT PRIMARY KEY,
-  used_at   TEXT
+  user_id   INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  code_hash TEXT NOT NULL,
+  used_at   TEXT,
+  PRIMARY KEY (user_id, code_hash)
 );
 CREATE TABLE passkeys (
   id            TEXT PRIMARY KEY,
+  user_id       INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   rp_id         TEXT NOT NULL,
   credential_id BLOB NOT NULL UNIQUE,
   credential    TEXT NOT NULL,
@@ -88,6 +104,17 @@ CREATE TABLE passkeys (
   created_at    TEXT NOT NULL DEFAULT (datetime('now')),
   last_used_at  TEXT
 );
+
+-- Who did what. actor is the username at the time (kept after the user is removed); never holds secrets.
+CREATE TABLE audit_log (
+  id     INTEGER PRIMARY KEY,
+  at     TEXT NOT NULL,
+  actor  TEXT NOT NULL,
+  action TEXT NOT NULL,
+  target TEXT NOT NULL DEFAULT '',
+  ip     TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX audit_log_at ON audit_log (id DESC);
 
 -- Magic-link site gate (DESIGN.md §18).
 CREATE TABLE gate_grants (

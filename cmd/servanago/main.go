@@ -42,7 +42,7 @@ func main() {
 		case "import":
 			cmd = func() error { return runImport(os.Args[2:], os.Stdout) }
 		case "2fa-reset":
-			cmd = func() error { return runReset(os.Stdout) }
+			cmd = func() error { return runReset(os.Args[2:], os.Stdout) }
 		}
 	}
 	if err := cmd(); err != nil {

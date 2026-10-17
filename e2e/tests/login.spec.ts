@@ -7,14 +7,16 @@ test('unauthenticated visit redirects to login', async ({ page }) => {
 
 test('wrong password shows an error and stays on login', async ({ page }) => {
   await page.goto('/login');
+  await page.getByLabel('Username').fill('admin');
   await page.getByLabel('Password').fill('nope');
   await page.getByRole('button', { name: 'Sign in' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'Wrong password' })).toBeVisible();
+  await expect(page.getByRole('alert').filter({ hasText: 'Wrong username or password' })).toBeVisible();
   await expect(page).toHaveURL(/\/login$/);
 });
 
 test('login reaches the dashboard and logout returns to login', async ({ page }) => {
   await page.goto('/login');
+  await page.getByLabel('Username').fill('admin');
   await page.getByLabel('Password').fill('e2e-pass');
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);

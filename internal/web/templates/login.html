@@ -7,7 +7,8 @@
 <article>
 <h1>Sign in</h1>
 <form id="login-form" hx-post="/login" hx-target="#msg">
-<input type="password" name="password" placeholder="Password" aria-label="Password" autocomplete="current-password" autofocus required>
+<input type="text" name="username" placeholder="Username" aria-label="Username" autocomplete="username" autocapitalize="none" spellcheck="false" autofocus required>
+<input type="password" name="password" placeholder="Password" aria-label="Password" autocomplete="current-password" required>
 {{with .Data.SiteKey}}<div class="cf-turnstile" data-sitekey="{{.}}" data-action="login"></div>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js" async defer></script>{{end}}
 <button type="submit">Sign in</button>

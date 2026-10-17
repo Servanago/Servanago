@@ -347,7 +347,7 @@ func TestTurnstileOnPasswordStep(t *testing.T) {
 	s, _ := newServerCfg(t, cfg)
 
 	submit := func(token, host string) *httptest.ResponseRecorder {
-		f := url.Values{"password": {"pw"}}
+		f := url.Values{"username": {"admin"}, "password": {"pw"}}
 		if token != "" {
 			f.Set("cf-turnstile-response", token)
 		}

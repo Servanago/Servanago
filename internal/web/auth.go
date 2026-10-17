@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -13,9 +14,13 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/go-webauthn/webauthn/webauthn"
+	"golang.org/x/crypto/bcrypt"
+
+	"github.com/servanago/servanago/internal/store"
 )
 
 const (
@@ -34,6 +39,7 @@ const (
 )
 
 type pending struct {
+	uid   int64 // the user whose password was accepted
 	exp   time.Time
 	tries int
 }
@@ -45,10 +51,10 @@ type ceremony struct {
 }
 
 type authn struct {
-	passHash [32]byte
-	on       bool
-	key      []byte // per boot: a restart logs everyone out
-	now      func() time.Time
+	on     atomic.Bool // at least one user exists; otherwise the UI is open
+	key    []byte      // per boot: a restart logs everyone out
+	now    func() time.Time
+	lookup func(id int64) (store.User, bool) // the session's user, as stored now
 
 	mu         sync.Mutex
 	failures   map[string][]time.Time // attempts per bucket (client IP, or "pk:"+IP) within throttleWindow
@@ -57,16 +63,17 @@ type authn struct {
 	ceremonies map[string]ceremony
 }
 
-func newAuthn(password string) *authn {
+func newAuthn() *authn {
 	key := make([]byte, 32)
 	if _, err := rand.Read(key); err != nil {
 		panic(err) // no entropy: cannot sign sessions safely
 	}
-	return &authn{passHash: sha256.Sum256([]byte(password)), on: password != "", key: key, now: time.Now,
+	return &authn{key: key, now: time.Now,
+		lookup:   func(int64) (store.User, bool) { return store.User{}, false },
 		failures: map[string][]time.Time{}, pendings: map[string]*pending{}, ceremonies: map[string]ceremony{}}
 }
 
-func (a *authn) enabled() bool { return a.on }
+func (a *authn) enabled() bool { return a.on.Load() }
 
 func (a *authn) sign(exp string) string {
 	m := hmac.New(sha256.New, a.key)
@@ -82,15 +89,16 @@ func randToken() string {
 	return hex.EncodeToString(b)
 }
 
-// newCookie signs "expiry:level" so a limited (enroll) session cannot be upgraded by editing the cookie.
-func (a *authn) newCookie(secure bool, level string) *http.Cookie {
-	p := strconv.FormatInt(a.now().Add(sessionTTL).Unix(), 10) + ":" + level
+// newCookie signs "expiry:level:uid:epoch" so a limited (enroll) session cannot be upgraded by editing the cookie,
+// and so ending a user's sessions (epoch bump, removal) invalidates every cookie issued to them.
+func (a *authn) newCookie(secure bool, level string, u store.User) *http.Cookie {
+	p := strconv.FormatInt(a.now().Add(sessionTTL).Unix(), 10) + ":" + level + ":" + strconv.FormatInt(u.ID, 10) + ":" + strconv.FormatInt(u.SessionEpoch, 10)
 	return &http.Cookie{Name: sessionCookieName, Value: p + "." + a.sign(p), Path: "/",
 		MaxAge: int(sessionTTL.Seconds()), HttpOnly: true, Secure: secure, SameSite: http.SameSiteStrictMode}
 }
 
-// newPending starts the second-factor step for an already password-verified login.
-func (a *authn) newPending() string {
+// newPending starts the second-factor step for a login whose password was verified for user uid.
+func (a *authn) newPending(uid int64) string {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	now := a.now()
@@ -100,8 +108,19 @@ func (a *authn) newPending() string {
 		}
 	}
 	tok := randToken()
-	a.pendings[tok] = &pending{exp: now.Add(pendingTTL)}
+	a.pendings[tok] = &pending{uid: uid, exp: now.Add(pendingTTL)}
 	return tok
+}
+
+// pendingUser is the user a live pending login belongs to.
+func (a *authn) pendingUser(tok string) (int64, bool) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	p, ok := a.pendings[tok]
+	if !ok || !a.now().Before(p.exp) || p.tries >= maxPendingTries {
+		return 0, false
+	}
+	return p.uid, true
 }
 
 func (a *authn) pendingLive(tok string) bool {
@@ -164,27 +183,62 @@ func secureRequest(r *http.Request) bool {
 	return r.TLS != nil || (loopbackPeer(r) && r.Header.Get("X-Forwarded-Proto") == "https")
 }
 
-// level returns levelFull, levelEnroll, or "" for no valid session.
-func (a *authn) level(r *http.Request) string {
+// session returns the session's level and its user, or "" when there is no valid session: bad signature, expired,
+// or the user is gone or has had their sessions ended since the cookie was issued (epoch mismatch).
+func (a *authn) session(r *http.Request) (string, store.User) {
 	c, err := r.Cookie(sessionCookieName)
 	if err != nil {
-		return ""
+		return "", store.User{}
 	}
 	p, sig, ok := strings.Cut(c.Value, ".")
 	if !ok || subtle.ConstantTimeCompare([]byte(sig), []byte(a.sign(p))) != 1 {
-		return ""
+		return "", store.User{}
 	}
-	exp, level, _ := strings.Cut(p, ":")
-	n, err := strconv.ParseInt(exp, 10, 64)
-	if err != nil || a.now().Unix() >= n || (level != levelFull && level != levelEnroll) {
-		return ""
+	f := strings.Split(p, ":")
+	if len(f) != 4 || (f[1] != levelFull && f[1] != levelEnroll) {
+		return "", store.User{}
 	}
-	return level
+	exp, err1 := strconv.ParseInt(f[0], 10, 64)
+	uid, err2 := strconv.ParseInt(f[2], 10, 64)
+	epoch, err3 := strconv.ParseInt(f[3], 10, 64)
+	if err1 != nil || err2 != nil || err3 != nil || a.now().Unix() >= exp {
+		return "", store.User{}
+	}
+	u, ok := a.lookup(uid)
+	if !ok || u.SessionEpoch != epoch {
+		return "", store.User{}
+	}
+	return f[1], u
 }
 
-func (a *authn) checkPassword(p string) bool {
-	h := sha256.Sum256([]byte(p))
-	return subtle.ConstantTimeCompare(h[:], a.passHash[:]) == 1
+// level returns levelFull, levelEnroll, or "" for no valid session.
+func (a *authn) level(r *http.Request) string {
+	l, _ := a.session(r)
+	return l
+}
+
+// dummyHash makes a login for an unknown username cost one bcrypt comparison, like a wrong password does.
+var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("servanago-no-such-user"), bcrypt.DefaultCost)
+
+// checkPassword compares pw with the user's hash; with ok=false it still burns one comparison.
+func checkPassword(u store.User, found bool, pw string) bool {
+	hash := []byte(dummyHash)
+	if found {
+		hash = []byte(u.PasswordHash)
+	}
+	return bcrypt.CompareHashAndPassword(hash, []byte(pw)) == nil && found
+}
+
+type userCtxKey struct{}
+
+// currentUser is the signed-in admin of this request; ok=false in open mode (no users exist).
+func currentUser(r *http.Request) (store.User, bool) {
+	u, ok := r.Context().Value(userCtxKey{}).(store.User)
+	return u, ok
+}
+
+func withUser(r *http.Request, u store.User) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), userCtxKey{}, u))
 }
 
 // attempt reserves one login attempt for ip and reports whether the budget allowed it. Checking and
@@ -252,7 +306,7 @@ func (s *Server) protected(h http.HandlerFunc) http.Handler { return s.gate(h, f
 func (s *Server) gate(h http.HandlerFunc, allowEnroll bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.auth.enabled() {
-			lvl := s.auth.level(r)
+			lvl, u := s.auth.session(r)
 			if lvl == "" {
 				redirect(w, r, "/login", http.StatusUnauthorized)
 				return
@@ -261,6 +315,7 @@ func (s *Server) gate(h http.HandlerFunc, allowEnroll bool) http.Handler {
 				redirect(w, r, "/security", http.StatusForbidden)
 				return
 			}
+			r = withUser(r, u)
 		}
 		h(w, r)
 	})
@@ -276,8 +331,11 @@ func redirect(w http.ResponseWriter, r *http.Request, to string, hxStatus int) {
 	http.Redirect(w, r, to, http.StatusSeeOther)
 }
 
-func (s *Server) setSession(w http.ResponseWriter, r *http.Request, level string) {
-	http.SetCookie(w, s.auth.newCookie(secureRequest(r), level))
+func (s *Server) setSession(w http.ResponseWriter, r *http.Request, level string, u store.User) {
+	http.SetCookie(w, s.auth.newCookie(secureRequest(r), level, u))
+	if err := s.deps.Store.TouchLogin(r.Context(), u.ID, s.auth.now().UTC().Format(time.RFC3339)); err != nil {
+		slog.Error("record login time", "user", u.Username, "error", err)
+	}
 }
 
 func (s *Server) setPending(w http.ResponseWriter, r *http.Request, tok string, maxAge int) {
@@ -341,33 +399,43 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	if !s.auth.checkPassword(r.PostFormValue("password")) {
-		slog.Warn("login failed", "event", "login", "method", "password", "ip", ip)
-		http.Error(w, "Wrong password.", http.StatusUnauthorized)
+	name := normalizeUsername(r.PostFormValue("username"))
+	u, found, err := s.deps.Store.GetUserByName(r.Context(), name)
+	if err != nil {
+		slog.Error("login: read user", "error", err)
+		http.Error(w, "Internal error.", http.StatusInternalServerError)
 		return
 	}
-	t, enrolled, err := s.deps.Store.GetTOTP(r.Context())
+	if !checkPassword(u, found, r.PostFormValue("password")) { // same cost and answer for an unknown name
+		slog.Warn("login failed", "event", "login", "method", "password", "user", name, "ip", ip)
+		http.Error(w, "Wrong username or password.", http.StatusUnauthorized)
+		return
+	}
+	t, enrolled, err := s.deps.Store.GetTOTP(r.Context(), u.ID)
 	if err != nil {
 		slog.Error("login: read totp", "error", err)
 		http.Error(w, "Internal error.", http.StatusInternalServerError)
 		return
 	}
 	if enrolled && t.Enabled {
-		s.setPending(w, r, s.auth.newPending(), int(pendingTTL.Seconds()))
+		s.setPending(w, r, s.auth.newPending(u.ID), int(pendingTTL.Seconds()))
 		hxRedirect(w, "/login/totp")
 		return
 	}
 	s.auth.clear(ip)
 	if s.deps.Cfg.Require2FA {
-		slog.Info("login", "event", "login", "method", "password", "session", "enroll-only", "ip", ip)
-		s.setSession(w, r, levelEnroll)
+		slog.Info("login", "event", "login", "method", "password", "session", "enroll-only", "user", u.Username, "ip", ip)
+		s.setSession(w, r, levelEnroll, u)
 		hxRedirect(w, "/security")
 		return
 	}
-	slog.Info("login", "event", "login", "method", "password", "ip", ip)
-	s.setSession(w, r, levelFull)
+	slog.Info("login", "event", "login", "method", "password", "user", u.Username, "ip", ip)
+	s.setSession(w, r, levelFull, u)
 	hxRedirect(w, "/")
 }
+
+// normalizeUsername is the form usernames are stored and compared in.
+func normalizeUsername(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode})
