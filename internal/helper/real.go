@@ -8,6 +8,7 @@ import (
 	osuser "os/user"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
 // RealSeam is what the running helper uses: os calls plus the systemctl tools. Tests never
@@ -53,6 +54,22 @@ func (RealSeam) FPMTest(bin, conf string) error {
 	out, err := exec.Command(bin, "-t", "-y", conf).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	return nil
+}
+
+// CheckBinary refuses a binary the site user (or anyone but root) could have replaced: the unit runs it.
+func (RealSeam) CheckBinary(path string) error {
+	fi, err := os.Stat(path)
+	if err != nil {
+		return err
+	}
+	st, ok := fi.Sys().(*syscall.Stat_t)
+	switch {
+	case !fi.Mode().IsRegular() || fi.Mode().Perm()&0o111 == 0:
+		return fmt.Errorf("%s is not an executable file", path)
+	case !ok || st.Uid != 0 || fi.Mode().Perm()&0o022 != 0:
+		return fmt.Errorf("%s must be owned by root and not writable by group or others", path)
 	}
 	return nil
 }

@@ -29,6 +29,8 @@ type fakeSeam struct {
 	startStopErr                   error
 	disabled                       string
 	disableErr                     error
+	binErr                         error
+	binChecked                     string
 }
 
 func newFakeSeam() *fakeSeam { return &fakeSeam{written: map[string][]byte{}} }
@@ -85,8 +87,9 @@ func (s *fakeSeam) FPMTest(bin, conf string) error {
 	s.fpmTestBin, s.fpmTested = bin, conf
 	return s.fpmTestErr
 }
-func (s *fakeSeam) StartUnit(name string) error { s.started = name; return s.startStopErr }
-func (s *fakeSeam) StopUnit(name string) error  { s.stopped = name; return s.startStopErr }
+func (s *fakeSeam) CheckBinary(path string) error { s.binChecked = path; return s.binErr }
+func (s *fakeSeam) StartUnit(name string) error   { s.started = name; return s.startStopErr }
+func (s *fakeSeam) StopUnit(name string) error    { s.stopped = name; return s.startStopErr }
 func (s *fakeSeam) DisableUnit(name string) error {
 	s.disabled = name
 	return s.disableErr

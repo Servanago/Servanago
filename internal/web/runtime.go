@@ -2,6 +2,7 @@ package web
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -34,16 +35,23 @@ func (s *Server) detect(ctx context.Context) runtimes.Report {
 
 // runtimeApply installs (and starts, when enabled) a runtime site's user and unit.
 func (s *Server) runtimeApply(r *http.Request, rt store.Site) error {
-	if rt.Kind != "node" && rt.Kind != "php" {
+	if !rt.IsRuntime() {
 		return nil
 	}
 	hc := s.helperClient()
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 60*time.Second)
 	defer cancel()
 	install := helper.Spec{Slug: rt.Slug, Kind: rt.Kind, Root: rt.StaticRoot}
-	if rt.Kind == "node" {
+	switch rt.Kind {
+	case "node":
 		install.Port, install.Start = rt.UpstreamPort, rt.StartCommand
-	} else { // the helper needs the exact binary; the version label was validated against detection
+	case "frankenphp":
+		fr := s.detect(ctx).Franken
+		if !fr.Installed {
+			return errors.New("frankenphp is not installed on this host")
+		}
+		install.Port, install.FrankenBin = rt.UpstreamPort, fr.Path
+	default: // the helper needs the exact binary; the version label was validated against detection
 		rep := s.detect(ctx)
 		for _, v := range rep.PHP {
 			if v.Version == rt.FPMVersion {
@@ -84,7 +92,7 @@ type unitPanel struct {
 // unitPanelFor asks the helper for the unit's status and journal tail. Any failure becomes a note in the
 // panel: the edit page must render even when the helper is down.
 func (s *Server) unitPanelFor(r *http.Request, rt store.Site) *unitPanel {
-	if rt.Kind != "node" && rt.Kind != "php" {
+	if !rt.IsRuntime() {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -106,7 +114,7 @@ func (s *Server) unitPanelFor(r *http.Request, rt store.Site) *unitPanel {
 
 // runtimeRemove tears down a runtime site's unit and user; missing files are fine.
 func (s *Server) runtimeRemove(r *http.Request, rt store.Site) {
-	if rt.Kind != "node" && rt.Kind != "php" {
+	if !rt.IsRuntime() {
 		return
 	}
 	hc := s.helperClient()

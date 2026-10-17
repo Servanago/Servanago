@@ -84,6 +84,20 @@ func TestDetect(t *testing.T) {
 	}
 }
 
+func TestDetectFrankenPHP(t *testing.T) {
+	ex := &fakeExec{
+		globs: map[string][]string{"/usr/bin/frankenphp": {"/usr/bin/frankenphp"}, "/opt/frankenphp/frankenphp": {"/opt/frankenphp/frankenphp"}},
+		out:   map[string]string{"/usr/bin/frankenphp version": "FrankenPHP v1.5.0 PHP 8.4.1 Caddy v2.9.1 h1:abc\n"},
+	}
+	r := Detect(context.Background(), ex)
+	if f := r.Franken; !f.Installed || f.Path != "/usr/bin/frankenphp" || f.Version != "1.5.0" {
+		t.Errorf("first searched path must win: %+v", f)
+	}
+	if r := Detect(context.Background(), &fakeExec{}); r.Franken.Installed || r.Franken.Install == "" {
+		t.Errorf("absent frankenphp: %+v", r.Franken)
+	}
+}
+
 func TestPHPPDupesSortedNewestFirst(t *testing.T) {
 	ex := &fakeExec{globs: map[string][]string{
 		"/usr/sbin/php-fpm*": {"/usr/sbin/php-fpm7.4", "/usr/sbin/php-fpm8.2"},

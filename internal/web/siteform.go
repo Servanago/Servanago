@@ -51,9 +51,9 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 		r.Kind = "proxy"
 	}
 	switch r.Kind {
-	case "proxy", "static", "node", "php":
+	case "proxy", "static", "node", "php", "frankenphp":
 	default:
-		return r, fmt.Errorf("kind %q must be proxy, static, node or php", r.Kind)
+		return r, fmt.Errorf("kind %q must be proxy, static, node, php or frankenphp", r.Kind)
 	}
 	if r.Hostnames, err = parseHostnames(v.Get("hostnames")); err != nil {
 		return r, err
@@ -68,10 +68,9 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
 			return r, err
 		}
-		r.Scheme = "http"
-		r.UpstreamHost = "127.0.0.1"
-		if r.UpstreamPort, err = strconv.Atoi(strings.TrimSpace(v.Get("port"))); err != nil || r.UpstreamPort < 1024 || r.UpstreamPort > 65535 {
-			return r, fmt.Errorf("port %q must be 1024-65535", v.Get("port"))
+		r.Scheme, r.UpstreamHost = "http", "127.0.0.1"
+		if r.UpstreamPort, err = parseAppPort(v); err != nil {
+			return r, err
 		}
 		if r.StartCommand, err = parseCommand(v.Get("start_command"), true); err != nil {
 			return r, err
@@ -83,6 +82,14 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 			return r, err
 		}
 		if r.BuildCommand, err = parseCommand(v.Get("build_command"), false); err != nil {
+			return r, err
+		}
+	case "frankenphp":
+		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+			return r, err
+		}
+		r.Scheme, r.UpstreamHost = "http", "127.0.0.1"
+		if r.UpstreamPort, err = parseAppPort(v); err != nil {
 			return r, err
 		}
 	case "php":
@@ -119,6 +126,15 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 	}
 	r.Enabled = v.Get("enabled") != ""
 	return r, nil
+}
+
+// parseAppPort reads the loopback port a node or frankenphp app listens on.
+func parseAppPort(v url.Values) (int, error) {
+	p, err := strconv.Atoi(strings.TrimSpace(v.Get("port")))
+	if err != nil || p < 1024 || p > 65535 {
+		return 0, fmt.Errorf("port %q must be 1024-65535", v.Get("port"))
+	}
+	return p, nil
 }
 
 // rootOrErr validates the folder for node/php sites, same rules as a static site.
@@ -168,6 +184,9 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 			return in, nil, userError{http.StatusUnprocessableEntity, "php-fpm " + in.FPMVersion + " is not installed on this host; pick a detected version"}
 		}
 	}
+	if in.Kind == "frankenphp" && !s.detect(r.Context()).Franken.Installed {
+		return in, nil, userError{http.StatusUnprocessableEntity, "frankenphp is not installed on this host; install it, then save again"}
+	}
 	// Overlay only the fields this form owns onto the stored site (base is the zero Site on create).
 	base.Kind, base.Hostnames, base.Scheme = in.Kind, in.Hostnames, in.Scheme
 	base.UpstreamHost, base.UpstreamPort, base.StaticRoot = in.UpstreamHost, in.UpstreamPort, in.StaticRoot
@@ -192,10 +211,10 @@ func (s *Server) checkHostnames(r *http.Request, tx *store.Store, rt store.Site)
 	if err != nil {
 		return err
 	}
-	if rt.Kind == "node" {
+	if rt.Kind == "node" || rt.Kind == "frankenphp" { // one loopback port space for both
 		for _, x := range all {
-			if x.ID != rt.ID && x.Kind == "node" && x.UpstreamPort == rt.UpstreamPort {
-				return userError{http.StatusConflict, fmt.Sprintf("Port %d is already used by the Node.js app for %s; choose another port.", rt.UpstreamPort, x.Hostnames[0])}
+			if x.ID != rt.ID && (x.Kind == "node" || x.Kind == "frankenphp") && x.UpstreamPort == rt.UpstreamPort {
+				return userError{http.StatusConflict, fmt.Sprintf("Port %d is already used by the app for %s; choose another port.", rt.UpstreamPort, x.Hostnames[0])}
 			}
 		}
 	}
@@ -368,6 +387,7 @@ type siteEditForm struct {
 	PHPVersions []runtimes.Opt // detected php-fpm versions for the pick list
 	PHPInstall  string         // install command to show when none is installed
 	Node        runtimes.NodeReport
+	Franken     runtimes.FrankenReport
 	Unit        *unitPanel // node and php sites: state and journal tail; nil otherwise
 }
 
@@ -387,7 +407,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 	title := "Add site"
 	rep := s.detect(r.Context())
 	form := siteEditForm{Site: rt, Edit: edit, HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
-		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPInstall: rep.PHPInstall, Node: rep.Node}
+		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPInstall: rep.PHPInstall, Node: rep.Node, Franken: rep.Franken}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
 	}

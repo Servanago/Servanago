@@ -110,6 +110,8 @@ func TestRenderGolden(t *testing.T) {
 		// Node.js sites are a reverse proxy to the app's own port; same chain as a proxy route.
 		{"node", opts(), State{[]store.Domain{dom}, []store.Site{asNode(site, "app11", 3000, "node server.js")}}},
 		{"node_gated", opts(), State{[]store.Domain{dom}, []store.Site{with(asNode(site, "app11", 3000, "node server.js"), func(r *store.Site) { r.GateMode = "open" })}}},
+		// FrankenPHP sites are a reverse proxy to the site's own loopback port, like node.
+		{"frankenphp", opts(), State{[]store.Domain{dom}, []store.Site{with(asNode(site, "shop", 8100, ""), func(r *store.Site) { r.Kind = "frankenphp" })}}},
 		// PHP sites render the documented php_fastcgi expansion over the per-site socket.
 		{"php", opts(), State{[]store.Domain{dom}, []store.Site{asPHP(site, "blog", "8.2")}}},
 		{"php_gate_basic", opts(), State{[]store.Domain{dom}, []store.Site{with(asPHP(site, "blog", "8.2"), func(r *store.Site) {

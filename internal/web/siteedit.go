@@ -107,7 +107,7 @@ func (s *Server) deleteSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.deleted", host)
-	if deleted.Kind == "node" || deleted.Kind == "php" {
+	if deleted.IsRuntime() {
 		s.runtimeRemove(r, deleted)
 	}
 	if r.FormValue("delete_dns") != "" { // the A record is kept unless the user asked; Remove skips adopted records

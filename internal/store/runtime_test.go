@@ -48,6 +48,19 @@ func TestRuntimeSiteKinds(t *testing.T) {
 		t.Errorf("php round trip: %+v", got)
 	}
 
+	franken, err := st.CreateSite(ctx, Site{
+		Hostnames: []string{"shop.example.com"}, Kind: "frankenphp",
+		StaticRoot: "/srv/shop", UpstreamHost: "127.0.0.1", UpstreamPort: 8100, Enabled: true})
+	if err != nil {
+		t.Fatalf("create frankenphp site: %v", err)
+	}
+	if got, _ = st.GetSite(ctx, franken.ID); got.Kind != "frankenphp" || got.UpstreamPort != 8100 || !got.IsRuntime() || !got.HasUpstream() {
+		t.Errorf("frankenphp round trip: %+v", got)
+	}
+	if _, err := st.CreateSite(ctx, Site{Hostnames: []string{"d.example.com"}, Kind: "frankenphp", StaticRoot: "/srv/d", UpstreamHost: "127.0.0.1", UpstreamPort: 8101, StartCommand: "x"}); err == nil || !strings.Contains(err.Error(), "CHECK constraint") {
+		t.Errorf("frankenphp with a start command: %v", err)
+	}
+
 	// CHECK violations: node without a start command, php without a version, node with an fpm version.
 	for _, tt := range []struct {
 		name string

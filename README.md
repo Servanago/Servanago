@@ -6,7 +6,7 @@
 
 A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an embedded [Caddy](https://caddyserver.com), SQLite and (planned) systemd integration. Caddy's configuration is generated from SQLite and applied atomically.
 
-> **Status: early.** Reverse-proxy, static, Node.js and PHP-FPM sites work. FrankenPHP, CGI/FastCGI, an MCP server and hardening are on the [roadmap](docs/ROADMAP.md), not shipped. Nothing below describes planned features as working.
+> **Status: early.** Reverse-proxy, static, Node.js, PHP-FPM and FrankenPHP sites work. CGI/FastCGI, an MCP server and hardening are on the [roadmap](docs/ROADMAP.md), not shipped. Nothing below describes planned features as working.
 
 ## What works today
 

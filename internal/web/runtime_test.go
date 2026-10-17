@@ -37,15 +37,18 @@ func (f *fakeHost) log() string {
 }
 
 // runtimeExec is the runtime detector's view of the fake host: node 20 and php-fpm 8.2.
-type runtimeExec struct{}
+type runtimeExec struct{ noFranken bool }
 
 func (runtimeExec) LookupPath(string) (string, error) { return "/usr/bin/node", nil }
 func (runtimeExec) Run(context.Context, string, ...string) ([]byte, error) {
 	return []byte("v20.11.0\n"), nil
 }
-func (runtimeExec) Glob(p string) ([]string, error) {
-	if p == "/usr/sbin/php-fpm*" {
+func (e runtimeExec) Glob(p string) ([]string, error) {
+	switch {
+	case p == "/usr/sbin/php-fpm*":
 		return []string{"/usr/sbin/php-fpm8.2"}, nil
+	case p == "/usr/bin/frankenphp" && !e.noFranken:
+		return []string{p}, nil
 	}
 	return nil, nil
 }
@@ -281,5 +284,57 @@ func TestRuntimeSiteSurvivesHelperFailure(t *testing.T) {
 	}
 	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "runtime setup failed") {
 		t.Errorf("no failure notice on the next page: %s", body)
+	}
+}
+
+func frankenForm(root string, kv ...string) []string {
+	return append([]string{"kind", "frankenphp", "static_root", root, "hostnames", "shop.example.com", "port", "8100", "enabled", "on"}, kv...)
+}
+
+func TestCreateFrankenPHPSite(t *testing.T) {
+	s, host := runtimeServer(t)
+	root := t.TempDir()
+	w := s.do(req{method: "POST", path: "/sites", body: form(frankenForm(root)...).Encode(), hdr: htmxPost})
+	if w.Code != 204 {
+		t.Fatalf("create: %d %q", w.Code, w.Body.String())
+	}
+	rs, _ := s.deps.Store.ListSites(context.Background())
+	if len(rs) != 1 {
+		t.Fatalf("%+v", rs)
+	}
+	got := rs[0]
+	if got.Kind != "frankenphp" || got.UpstreamHost != "127.0.0.1" || got.UpstreamPort != 8100 || got.StartCommand != "" || got.FPMVersion != "" || !got.HasUpstream() {
+		t.Fatalf("frankenphp site stored wrong: %+v", got)
+	}
+	if want := "user-add " + got.Slug + " |unit-install " + got.Slug + " frankenphp|unit-start " + got.Slug + " "; host.log() != want {
+		t.Errorf("helper calls\n got %q\nwant %q", host.log(), want)
+	}
+}
+
+func TestFrankenPHPRejections(t *testing.T) {
+	s, host := runtimeServer(t)
+	root := t.TempDir()
+	if w := s.do(req{method: "POST", path: "/sites", body: form(nodeForm(root)...).Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("node site: %d %q", w.Code, w.Body.String())
+	}
+	host.mu.Lock()
+	host.calls = nil
+	host.mu.Unlock()
+	// Node and FrankenPHP share one loopback port space.
+	if w := s.do(req{method: "POST", path: "/sites", body: form(frankenForm(root, "port", "3000")...).Encode(), hdr: htmxPost}); w.Code != 409 || !strings.Contains(w.Body.String(), "3000") {
+		t.Fatalf("port shared with a node site: %d %q", w.Code, w.Body.String())
+	}
+	if w := s.do(req{method: "POST", path: "/sites", body: form(frankenForm(root, "port", "80")...).Encode(), hdr: htmxPost}); w.Code != 422 {
+		t.Fatalf("low port: %d %q", w.Code, w.Body.String())
+	}
+	s.deps.Exec = runtimeExec{noFranken: true}
+	if w := s.do(req{method: "POST", path: "/sites", body: form(frankenForm(root)...).Encode(), hdr: htmxPost}); w.Code != 422 || !strings.Contains(w.Body.String(), "not installed") {
+		t.Fatalf("frankenphp missing: %d %q", w.Code, w.Body.String())
+	}
+	if rs, _ := s.deps.Store.ListSites(context.Background()); len(rs) != 1 {
+		t.Errorf("rejected forms left sites: %+v", rs)
+	}
+	if host.log() != "" {
+		t.Errorf("rejected forms reached the helper: %q", host.log())
 	}
 }

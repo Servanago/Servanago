@@ -28,6 +28,17 @@ type Report struct {
 	Node       NodeReport
 	PHP        []PHPVersion // newest version first
 	PHPInstall string       // shown when empty, unless overridden
+	Franken    FrankenReport
+}
+
+// FrankenPaths are where a frankenphp binary is looked for (the helper accepts exactly these).
+var FrankenPaths = []string{"/usr/local/bin/frankenphp", "/usr/bin/frankenphp", "/opt/frankenphp/frankenphp"}
+
+type FrankenReport struct {
+	Installed bool
+	Path      string // the first of FrankenPaths that exists
+	Version   string // "1.5.0" (v prefix trimmed); "" when `version` printed nothing usable
+	Install   string // the pointer for the admin to follow
 }
 
 type NodeReport struct {
@@ -78,6 +89,18 @@ func Detect(ctx context.Context, ex RunExec) Report {
 	r.PHP = dedupe(php) // the first path searched wins for a repeated version
 	if len(r.PHP) > 0 {
 		r.PHPInstall = "sudo apt install php" + r.PHP[0].Version + "-fpm"
+	}
+	r.Franken.Install = "https://frankenphp.dev/docs/#getting-started"
+	for _, p := range FrankenPaths {
+		if m, _ := ex.Glob(p); len(m) == 1 { // Glob of a literal path is an existence test through the seam
+			r.Franken.Installed, r.Franken.Path = true, p
+			if out, err := ex.Run(ctx, p, "version"); err == nil { // "FrankenPHP v1.5.0 PHP 8.4.1 Caddy ..."
+				if f := strings.Fields(string(out)); len(f) > 1 {
+					r.Franken.Version = strings.TrimPrefix(f[1], "v")
+				}
+			}
+			break
+		}
 	}
 	return r
 }

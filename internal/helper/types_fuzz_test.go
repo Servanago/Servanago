@@ -15,11 +15,16 @@ func FuzzUnitInstallNoInjection(f *testing.F) {
 	f.Add("node", "/srv/app /etc", "node a %h $HOME")
 	f.Add("php", "/srv/blog", "")
 	f.Add("php", "/srv/blog\r\nUser=root", "")
+	f.Add("frankenphp", "/srv/shop\nUser=root", "")
+	f.Add("frankenphp", "/srv/shop %h", "")
 	benign := func(kind string) int {
 		seam := newFakeSeam()
 		spec := `{"kind":"node","slug":"site1","root":"/srv/app","port":3000,"start":"node server.js"}`
-		if kind == "php" {
+		switch kind {
+		case "php":
 			spec = `{"kind":"php","slug":"site1","root":"/srv/app","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.2"}`
+		case "frankenphp":
+			spec = `{"kind":"frankenphp","slug":"site1","root":"/srv/app","port":8100,"franken_bin":"/usr/bin/frankenphp"}`
 		}
 		req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":` + spec + `}`))
 		if err != nil {
@@ -30,26 +35,26 @@ func FuzzUnitInstallNoInjection(f *testing.F) {
 		}
 		return strings.Count(string(seam.written["/etc/systemd/system/servanago-site1.service"]), "\n")
 	}
-	nodeLines, phpLines := benign("node"), benign("php")
+	lines := map[string]int{"node": benign("node"), "php": benign("php"), "frankenphp": benign("frankenphp")}
 	f.Fuzz(func(t *testing.T, kind, root, start string) {
-		if kind != "node" && kind != "php" {
+		want, ok := lines[kind]
+		if !ok {
 			return
 		}
 		spec := Spec{Kind: kind, Slug: "site1", Root: root}
-		if kind == "node" {
+		switch kind {
+		case "node":
 			spec.Port, spec.Start = 3000, start
-		} else {
+		case "php":
 			spec.FPMBin, spec.FPMVersion = "/usr/sbin/php-fpm8.2", "8.2"
+		case "frankenphp":
+			spec.Port, spec.FrankenBin = 8100, "/usr/bin/frankenphp"
 		}
 		seam := newFakeSeam()
 		if resp := NewActions(seam).UnitInstall(Request{Action: ActionUnitInstall, Vals: spec}); !resp.OK {
 			return // rejected: nothing to check
 		}
 		u := string(seam.written["/etc/systemd/system/servanago-site1.service"])
-		want := nodeLines
-		if kind == "php" {
-			want = phpLines
-		}
 		// benign line counts differ only by the root, which has no line breaks once accepted
 		if got := strings.Count(u, "\n"); got != want {
 			t.Fatalf("injected lines: %d lines, benign has %d\nroot=%q start=%q\n%s", got, want, root, start, u)

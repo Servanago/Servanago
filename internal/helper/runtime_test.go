@@ -13,6 +13,7 @@ func TestRuntimeUnitInstall(t *testing.T) {
 	}{
 		{"node", "app11", `{"kind":"node","slug":"app11","root":"/home/brian/app11","port":3000,"start":"node server.js"}`},
 		{"php", "blog", `{"kind":"php","slug":"blog","root":"/home/brian/blog","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.2"}`},
+		{"frankenphp", "shop", `{"kind":"frankenphp","slug":"shop","root":"/home/brian/shop","port":8100,"franken_bin":"/usr/local/bin/frankenphp"}`},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -52,6 +53,16 @@ func TestRuntimeUnitInstall(t *testing.T) {
 				}
 				if len(seam.written) != 1 {
 					t.Errorf("node wrote extra files: %v", keys(seam.written))
+				}
+			case "frankenphp":
+				for _, want := range []string{"User=sg-shop", "ExecStart=/usr/local/bin/frankenphp php-server --root /home/brian/shop --listen 127.0.0.1:8100",
+					"XDG_DATA_HOME=/tmp/xdg-data", "ReadWritePaths=/home/brian/shop", "WorkingDirectory=/home/brian/shop"} {
+					if !strings.Contains(u, want) {
+						t.Errorf("frankenphp unit missing %q:\n%s", want, u)
+					}
+				}
+				if seam.binChecked != "/usr/local/bin/frankenphp" || len(seam.written) != 1 {
+					t.Errorf("binary check %q, files %v", seam.binChecked, keys(seam.written))
 				}
 			case "php":
 				// php-fpm's own model: the master (root) creates the socket in the root-owned /run/servanago
@@ -97,6 +108,8 @@ func TestRuntimeUnitInstallRejections(t *testing.T) {
 	// (An earlier version used a one-letter slug, which ValidateSlug rejects: the whole table passed vacuously.)
 	const nodeHead = `{"kind":"node","slug":"site1","port":3000,`
 	const phpHead = `{"kind":"php","slug":"site1","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.2",`
+	const frankenBin = "/usr/bin/frankenphp"
+	const frankenHead = `{"kind":"frankenphp","slug":"site1","port":8100,`
 	tests := []struct{ name, spec, want string }{
 		{"unknown kind", `{"kind":"cgi","slug":"site1"}`, "kind"},
 		{"bad slug", `{"kind":"node","slug":"../x","root":"/srv/x","port":3000,"start":"node a"}`, "slug"},
@@ -116,6 +129,13 @@ func TestRuntimeUnitInstallRejections(t *testing.T) {
 		{"php traversal root", phpHead + `"root":"/srv/../etc"}`, "root"},
 		{"php bad binary name", `{"kind":"php","slug":"site1","root":"/srv/x","fpm_bin":"/bin/sh","fpm_version":"8.2"}`, "php-fpm binary"},
 		{"php mismatched version", `{"kind":"php","slug":"site1","root":"/srv/x","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.1"}`, "version"},
+		{"franken unknown binary", frankenHead + `"root":"/srv/x","franken_bin":"/bin/sh"}`, "frankenphp binary"},
+		{"franken traversal binary", frankenHead + `"root":"/srv/x","franken_bin":"/usr/bin/../../tmp/frankenphp"}`, "frankenphp binary"},
+		{"franken no binary", frankenHead + `"root":"/srv/x"}`, "frankenphp binary"},
+		{"franken bad port", `{"kind":"frankenphp","slug":"site1","port":80,"root":"/srv/x","franken_bin":"` + frankenBin + `"}`, "port"},
+		{"franken newline root", frankenHead + `"root":"/srv/x\nUser=root","franken_bin":"` + frankenBin + `"}`, "root"},
+		{"franken space root", frankenHead + `"root":"/srv/x /etc","franken_bin":"` + frankenBin + `"}`, "root"},
+		{"franken relative root", frankenHead + `"root":"srv/x","franken_bin":"` + frankenBin + `"}`, "root"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -135,6 +155,20 @@ func TestRuntimeUnitInstallRejections(t *testing.T) {
 				t.Errorf("host was written: %v", keys(seam.written))
 			}
 		})
+	}
+}
+
+// A binary the site user could have replaced is refused before anything is written.
+func TestFrankenBinaryMustBeTrusted(t *testing.T) {
+	seam := newFakeSeam()
+	seam.binErr = errors.New("must be owned by root")
+	req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":{"kind":"frankenphp","slug":"site1","root":"/srv/x","port":8100,"franken_bin":"/usr/bin/frankenphp"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := NewActions(seam).UnitInstall(req)
+	if resp.OK || !strings.Contains(resp.Error, "owned by root") || len(seam.written) != 0 {
+		t.Fatalf("untrusted binary accepted: %+v written=%v", resp, keys(seam.written))
 	}
 }
 

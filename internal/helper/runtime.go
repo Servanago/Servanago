@@ -6,7 +6,10 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
+
+	"github.com/servanago/servanago/internal/runtimes"
 )
 
 // runtime.go: privileged work the runtime site kinds need — a dedicated system user,
@@ -38,6 +41,33 @@ ReadWritePaths=%s
 [Install]
 WantedBy=multi-user.target
 `, user, user, user, root, esc, root))
+}
+
+// frankenUnitTemplate runs one FrankenPHP php-server per site, as the unprivileged site user, on a loopback
+// port Caddy proxies to. The site user's home is the webroot, so Caddy's per-user data and config dirs are
+// pointed at the unit's private /tmp instead of letting FrankenPHP create .local and .config inside it.
+func frankenUnitTemplate(user, bin, root string, port int) []byte {
+	return []byte(fmt.Sprintf(`[Unit]
+Description=ServanaGo site %s (FrankenPHP)
+After=network.target
+
+[Service]
+User=%s
+Group=%s
+WorkingDirectory=%s
+Environment=XDG_DATA_HOME=/tmp/xdg-data XDG_CONFIG_HOME=/tmp/xdg-config
+ExecStart=%s php-server --root %s --listen 127.0.0.1:%d
+Restart=on-failure
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%s
+
+[Install]
+WantedBy=multi-user.target
+`, user, user, user, root, bin, root, port, root))
 }
 
 // poolTemplate is the per-site php-fpm pool; the socket is what Caddy dials.
@@ -123,7 +153,7 @@ func (a Actions) UserRemove(r Request) Response {
 	return Response{OK: true}
 }
 
-// validateKindSpec checks a unit-install spec for kind node or php.
+// validateKindSpec checks a unit-install spec for kind node, php or frankenphp.
 func validateKindSpec(s Spec) error {
 	switch s.Kind {
 	case "node":
@@ -146,8 +176,18 @@ func validateKindSpec(s Spec) error {
 		if got := strings.TrimPrefix(filepath.Base(s.FPMBin), "php-fpm"); got != s.FPMVersion {
 			return fmt.Errorf("fpm version %q does not match the binary %q", s.FPMVersion, s.FPMBin)
 		}
+	case "frankenphp":
+		if err := validateRoot(s.Root, false); err != nil {
+			return err
+		}
+		if s.Port < 1024 || s.Port > 65535 {
+			return fmt.Errorf("port %d: a frankenphp site uses 1024-65535", s.Port)
+		}
+		if !slices.Contains(runtimes.FrankenPaths, s.FrankenBin) {
+			return fmt.Errorf("frankenphp binary %q must be one of %v", s.FrankenBin, runtimes.FrankenPaths)
+		}
 	default:
-		return fmt.Errorf("kind %q must be node or php", s.Kind)
+		return fmt.Errorf("kind %q must be node, php or frankenphp", s.Kind)
 	}
 	return nil
 }
@@ -202,8 +242,11 @@ func systemdEscape(s string) string {
 // unitTemplates render the unit (and, for php, the pool) from validated fields only.
 func (a Actions) unitFor(s Spec) (unitPath string, content []byte) {
 	user := "sg-" + s.Slug
-	if s.Kind == "node" {
+	switch s.Kind {
+	case "node":
 		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), nodeUnitTemplate(user, s.Root, s.Start)
+	case "frankenphp":
+		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), frankenUnitTemplate(user, s.FrankenBin, s.Root, s.Port)
 	}
 	conf := filepath.Join("/etc/servanago/fpm", s.Slug+".conf")
 	return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), phpUnitTemplate(user, s.FPMBin, conf, s.Root)
@@ -221,6 +264,11 @@ func (a Actions) UnitInstall(r Request) Response {
 		return Response{Error: err.Error()}
 	}
 	s := r.Vals
+	if s.Kind == "frankenphp" { // the unit runs this binary; refuse one the site user could have swapped
+		if err := a.s.CheckBinary(s.FrankenBin); err != nil {
+			return Response{Error: fmt.Sprintf("frankenphp binary: %v", err)}
+		}
+	}
 
 	// The pool exists before the unit so both verify against their target state.
 	if s.Kind == "php" {

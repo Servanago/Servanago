@@ -27,6 +27,7 @@ type Seam interface {
 	UserAdd(user, root string) error
 	UserRemove(user string) error
 	FPMTest(bin, conf string) error
+	CheckBinary(path string) error // a regular, executable file owned by root that no one else can write
 	UnitStatus(name string) (StatusData, error)
 	UnitLogs(name string, lines int) ([]string, error)
 }
