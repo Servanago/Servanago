@@ -170,18 +170,21 @@ func issuer(o Options) m {
 	return i
 }
 
-// siteHandler is the site's terminal handler (reverse_proxy or file_server) wrapped in the shared
-// gate, allowlist and basic-auth chain when any of them is set.
+// siteHandler is the site's terminal handler (reverse_proxy, file_server or the php_fastcgi
+// expansion) wrapped in the shared gate, allowlist and basic-auth chain when any of them is set.
 func siteHandler(host string, r store.Site) (any, error) {
 	var handlers []any
-	if r.Kind == "static" {
+	switch r.Kind {
+	case "static":
 		// file_server lists no directories unless asked. Dotfiles and dot-directories get a 404 by request path;
 		// file_server's own "hide" would also match dot-directories in the root's location.
 		handlers = []any{m{"handler": "subroute", "routes": []any{
 			m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true},
 			m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
 		}}}
-	} else {
+	case "php":
+		handlers = []any{phpRoute(r)}
+	default:
 		proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
 		if r.Scheme == "https" {
 			tls := m{}
@@ -221,4 +224,30 @@ func siteHandler(host string, r store.Site) (any, error) {
 	}
 	sub = append(sub, m{"handle": handlers})
 	return m{"handler": "subroute", "routes": sub}, nil
+}
+
+// phpRoute is the JSON form of the documented php_fastcgi expansion, pointed at the site's own
+// pool socket: canonical-path redirect, index.php fallback rewrite, the FastCGI proxy, and a
+// plain file_server underneath (dotfiles 404 first, as for static sites).
+func phpRoute(r store.Site) any {
+	dial := "unix//run/servanago/" + r.Slug + ".sock"
+	proxy := m{
+		"handler":   "reverse_proxy",
+		"upstreams": []any{m{"dial": dial}},
+		"transport": m{"protocol": "fastcgi", "root": r.StaticRoot, "split_path": []any{".php"}},
+	}
+	routes := []any{
+		m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true},
+		m{
+			"match":  []any{m{"file": m{"try_files": []any{"{http.request.uri.path}/index.php"}}, "not": []any{m{"path": []any{"*/"}}}}},
+			"handle": []any{m{"handler": "static_response", "status_code": "308", "headers": m{"Location": []any{"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"}}}},
+		},
+		m{
+			"match":  []any{m{"file": m{"try_files": []any{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"}, "try_policy": "first_exist_fallback", "split_path": []any{".php"}}}},
+			"handle": []any{m{"handler": "rewrite", "uri": "{http.matchers.file.relative}"}},
+		},
+		m{"match": []any{m{"path": []any{"*.php"}}}, "handle": []any{proxy}},
+		m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
+	}
+	return m{"handler": "subroute", "routes": routes}
 }

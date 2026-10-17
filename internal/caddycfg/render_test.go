@@ -35,6 +35,20 @@ func asStatic(r store.Site, root string) store.Site {
 	return r
 }
 
+// asNode turns a proxy site into a Node.js app site on localhost:port.
+func asNode(r store.Site, slug string, port int, start string) store.Site {
+	r.Kind, r.Slug, r.StaticRoot, r.Scheme = "node", slug, "/srv/www/"+slug, ""
+	r.UpstreamHost, r.UpstreamPort, r.StartCommand = "127.0.0.1", port, start
+	return r
+}
+
+// asPHP turns a site into a PHP-FPM site on version.
+func asPHP(r store.Site, slug, version string) store.Site {
+	r.Kind, r.Slug, r.StaticRoot, r.Scheme = "php", slug, "/srv/www/"+slug, ""
+	r.UpstreamHost, r.UpstreamPort, r.FPMVersion = "", 0, version
+	return r
+}
+
 func TestRenderGolden(t *testing.T) {
 	staging := opts()
 	staging.Staging = true
@@ -92,6 +106,14 @@ func TestRenderGolden(t *testing.T) {
 		{"static", opts(), State{[]store.Domain{dom}, []store.Site{asStatic(site, "/srv/www/blog")}}},
 		{"static_gate_basic_allowlist", opts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/srv/www/blog"), func(r *store.Site) {
 			r.GateMode, r.Allowlist, r.BasicUser, r.BasicHash = "acl", "192.168.0.0/16", "u", "$2a$14$abc"
+		})}}},
+		// Node.js sites are a reverse proxy to the app's own port; same chain as a proxy route.
+		{"node", opts(), State{[]store.Domain{dom}, []store.Site{asNode(site, "app11", 3000, "node server.js")}}},
+		{"node_gated", opts(), State{[]store.Domain{dom}, []store.Site{with(asNode(site, "app11", 3000, "node server.js"), func(r *store.Site) { r.GateMode = "open" })}}},
+		// PHP sites render the documented php_fastcgi expansion over the per-site socket.
+		{"php", opts(), State{[]store.Domain{dom}, []store.Site{asPHP(site, "blog", "8.2")}}},
+		{"php_gate_basic", opts(), State{[]store.Domain{dom}, []store.Site{with(asPHP(site, "blog", "8.2"), func(r *store.Site) {
+			r.GateMode, r.BasicUser, r.BasicHash = "acl", "u", "$2a$14$abc"
 		})}}},
 		{"wildcard_uncovered_names", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) {
 			r.Hostnames = []string{"example.com", "a.b.example.com", "sonarr.example.com"}
