@@ -9,7 +9,7 @@ Target platform: native host, Debian 12+ / Ubuntu 22.04+ with systemd. There is 
 Prerequisites: Go and a domain. Cloudflare is optional: with a Cloudflare API token (`Zone:Zone:Read` and `Zone:DNS:Edit`) ServanaGo uses DNS-01 certificates (wildcards available) and manages A records; without one it uses per-host HTTP-01/TLS-ALPN certificates (ports 80 and 443 reachable from the internet), manages no DNS, and each domain is added by hand on the Domains page. A record targets can be any usable IPv4 (public, private or CGNAT); loopback, link-local, multicast and reserved addresses are refused. IPv6 is dual-stack: an optional IPv6 address beside each IPv4 one adds an AAAA record (IPv4 stays required; no IPv6-only sites).
 
 1. `make build` produces `bin/servanago`.
-2. `cp .env.example .env` and fill it in. Required: `SERVANAGO_HOST` (hostname for the UI), `ACME_EMAIL` (bare address). Optional Cloudflare: `CLOUDFLARE_API_TOKEN`, which then also requires `SERVANAGO_HOST_IP` (private IPv4 the host resolves to). Set `ADMIN_PASSWORD`: unset means the UI is open.
+2. `cp .env.example .env` and fill it in. Required: `SERVANAGO_HOST` (hostname for the UI), `ACME_EMAIL` (bare address). Optional Cloudflare: `CLOUDFLARE_API_TOKEN`, which then also requires `SERVANAGO_HOST_IP` (private IPv4 the host resolves to). Set `ADMIN_PASSWORD`: it creates the first administrator (`ADMIN_USER`, default `admin`) on first start; with no administrator the UI is open.
 3. ServanaGo reads the process environment only; export the file (`set -a; . ./.env; set +a`) and run `DATA_DIR="$PWD/data" ./bin/servanago` as an unprivileged user. To bind 80/443: `sudo setcap cap_net_bind_service=+ep bin/servanago`, or set `HTTP_PORT` and `HTTPS_PORT`.
 4. Open `https://<SERVANAGO_HOST>` and log in. ServanaGo creates the `SERVANAGO_HOST` A record itself.
 
@@ -23,7 +23,7 @@ Environment variables (secrets are read from the environment only, never stored 
 - `CLOUDFLARE_API_TOKEN` (optional), `SERVANAGO_HOST_IP` (required with a token), `SERVANAGO_HOST_IP6` (optional AAAA target for the host).
 - `SERVANAGO_STATIC_ROOTS`: optional colon-separated prefixes a static site's folder must sit under (default: any folder outside `DATA_DIR`, `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/`).
 - `SERVANAGO_HOST_ZONE`: Cloudflare zone of the host; set it if zone auto-detection fails.
-- `ADMIN_PASSWORD`: enables login. `SERVANAGO_SECRET_KEY` (32+ chars) enables the authenticator app; `REQUIRE_2FA` enforces it; `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` add Turnstile to the password form.
+- `ADMIN_PASSWORD` + optional `ADMIN_USER`: create the first administrator once, then are ignored (administrators live in the DB: Users page, equal powers, each with their own password, authenticator, backup codes and passkeys; every action is on the Audit page). `SERVANAGO_SECRET_KEY` (32+ chars) enables the authenticator app; `REQUIRE_2FA` enforces it for everyone; `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` add Turnstile to the password form.
 - Email for the optional magic-link site gate is set on the Settings page (SMTP host, port, user, password, MAIL FROM), not in env. The password is stored sealed with `SERVANAGO_SECRET_KEY`.
 - `ACME_STAGING`, `ACME_ISSUER` (`internal` = self-signed), `ACME_PROPAGATION_DELAY` / `ACME_PROPAGATION_TIMEOUT` (`2m` / `10m` fixes "timed out waiting for record to fully propagate"), `ACME_RESOLVERS` (default `1.1.1.1,8.8.8.8`).
 - `UI_LISTEN` (default `127.0.0.1:8080`), `DATA_DIR` (default `/data`, a container-era default; set it explicitly), `HTTP_PORT` / `HTTPS_PORT` (default 80/443).
@@ -43,7 +43,7 @@ All management is through the web UI (htmx, server-rendered); there is no public
 - Every change writes SQLite, renders the full Caddy JSON, then calls `caddy.Load`. If Caddy rejects it, the DB change is reverted and the exact error is shown. If stored config fails to load at startup, a bootstrap config (UI only) is served with a banner.
 - Only Cloudflare records marked `managed by servanago` are changed or deleted. Records are DNS-only (never proxied); A targets are IPv4, with an optional IPv6 AAAA target beside each.
 - Rejected domains: `.local`, `.internal`, `.home.arpa`, IP literals (Caddy would use its internal CA instead of ACME). A route cannot use the `SERVANAGO_HOST` hostname.
-- Backups: copy `DATA_DIR` (SQLite DB and Caddy certificate storage). Lost authenticator and passkeys: stop the service and run `servanago 2fa-reset`.
+- Backups: copy `DATA_DIR` (SQLite DB and Caddy certificate storage). Locked out: another administrator resets you on the Users page, or on the server run `servanago user passwd NAME` (set a password), `servanago user add NAME` (new administrator) or `servanago 2fa-reset NAME` (remove that person's authenticator, backup codes and passkeys); they need only `DATA_DIR`.
 - `UI_LISTEN=0.0.0.0:8080` is a recovery hatch only: the UI is then served without TLS.
 
 ## Troubleshooting

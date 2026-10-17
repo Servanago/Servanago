@@ -38,7 +38,7 @@ There is no package or image yet. ServanaGo reads its configuration from the pro
    cp .env.example .env
    ```
 
-   `SERVANAGO_HOST` and `ACME_EMAIL` are required, plus `SERVANAGO_HOST_IP` if you set `CLOUDFLARE_API_TOKEN`. Set `ADMIN_PASSWORD` too.
+   `SERVANAGO_HOST` and `ACME_EMAIL` are required, plus `SERVANAGO_HOST_IP` if you set `CLOUDFLARE_API_TOKEN`. Set `ADMIN_PASSWORD` too: it creates the first administrator on the first start.
 4. Run it as an unprivileged user. Either let it bind 80 and 443 with a capability, or choose other ports:
 
    ```sh
@@ -69,9 +69,10 @@ scoped to the zones you want to manage. The same token is used for certificate i
 |---|---|---|
 | `SERVANAGO_HOST` | yes | Hostname the UI is served on. It gets its own certificate. |
 | `ACME_EMAIL` | yes | Let's Encrypt contact; a bare address. |
-| `ADMIN_PASSWORD` | no | Enables login. **Unset means the UI is open** (warning in the log and a red banner). |
-| `SERVANAGO_SECRET_KEY` | no | At least 32 characters (`openssl rand -hex 32`). Encrypts the authenticator-app seed and the SMTP password in SQLite, and signs magic-link sessions; without it those options are off. Back it up with the data directory: if it is lost, run `2fa-reset`. |
-| `REQUIRE_2FA` | no | `true`: a password login must be followed by an authenticator code, and a password-only session is limited to the Security page until one is set up. Needs `ADMIN_PASSWORD` and `SERVANAGO_SECRET_KEY`. |
+| `ADMIN_PASSWORD` | no | Creates the first administrator (named by `ADMIN_USER`) on the first start, when no administrators exist yet. After that it is **ignored**: passwords live in the database and are changed in the UI. **Unset with no administrators means the UI is open** (warning in the log and a red banner). |
+| `ADMIN_USER` | no | Name of that first administrator: lower-case letters, digits, `.`, `_`, `-`. Default `admin`. |
+| `SERVANAGO_SECRET_KEY` | no | At least 32 characters (`openssl rand -hex 32`). Encrypts the authenticator-app seed and the SMTP password in SQLite, and signs magic-link sessions; without it those options are off. Back it up with the data directory: if it is lost, run `servanago 2fa-reset NAME` for each administrator. |
+| `REQUIRE_2FA` | no | `true`: a password login must be followed by an authenticator code, and a password-only session is limited to the Security page until one is set up. Applies to every administrator. Needs `SERVANAGO_SECRET_KEY`. |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | no | Both or neither. Adds a Cloudflare Turnstile check to the password form on `SERVANAGO_HOST`. The `UI_LISTEN` recovery address is exempt. Passkey and code steps have no widget. |
 | `SERVANAGO_STATIC_ROOTS` | no | Colon-separated absolute prefixes that a static site's folder must sit under, such as `/srv/www:/home`. Unset allows any folder except `DATA_DIR`, `/etc`, `/proc`, `/sys`, `/dev`, `/root` and `/`. Symlinks are resolved before the check. ServanaGo never changes permissions: the user it runs as needs execute on the parent directories and read on the folder. |
 | `ACME_ISSUER` | no | `internal` serves self-signed certificates from Caddy's local CA (offline setups and tests). Default is Let's Encrypt. |
@@ -93,9 +94,11 @@ scoped to the zones you want to manage. The same token is used for certificate i
 
 ## Warnings
 
-**`UI_LISTEN` is a recovery hatch, not a default.** The UI listens on loopback and Caddy proxies `SERVANAGO_HOST` to it. If Caddy is broken you can set `UI_LISTEN=0.0.0.0:8080` to fix things, but then the UI is reachable without TLS. Without `ADMIN_PASSWORD` that is a full authentication bypass. Remove it again afterwards.
+**`UI_LISTEN` is a recovery hatch, not a default.** The UI listens on loopback and Caddy proxies `SERVANAGO_HOST` to it. If Caddy is broken you can set `UI_LISTEN=0.0.0.0:8080` to fix things, but then the UI is reachable without TLS. With no administrators that is a full authentication bypass. Remove it again afterwards.
 
-**Two-factor and passkeys.** With `ADMIN_PASSWORD` set, the Security page adds an authenticator app (with 10 one-time backup codes) and passkeys. A passkey sign-in skips the code. Passkeys work on `https://SERVANAGO_HOST` and on `localhost`, and are tied to that hostname: changing `SERVANAGO_HOST` makes existing ones unusable. Lost everything? Stop ServanaGo and run `servanago 2fa-reset` (it needs only `DATA_DIR`); it removes the authenticator, backup codes and passkeys. Restart afterwards to end open sessions.
+**Administrators.** Everyone who can sign in is an administrator with the same powers; there are no roles. The **Users** page adds and removes administrators, sets their passwords and resets their second factor if they lose it. Each of those asks for your own password again (and a code, if you use an authenticator), ends the other person's open sessions, and cannot be done to yourself or to the last administrator. Every action is recorded on the **Audit** page (who, what, target, client address; never a password or code). If every administrator is locked out, run `servanago user passwd NAME` (or `user add NAME`) on the server; it reads only `DATA_DIR`.
+
+**Two-factor and passkeys.** Once an administrator exists, the Security page adds an authenticator app (with 10 one-time backup codes) and passkeys, for the signed-in administrator only. A passkey sign-in skips the code. Passkeys work on `https://SERVANAGO_HOST` and on `localhost`, and are tied to that hostname: changing `SERVANAGO_HOST` makes existing ones unusable. Lost an authenticator and passkeys? Another administrator can reset them on the Users page, or on the server run `servanago 2fa-reset NAME` (it needs only `DATA_DIR`); it removes that person's authenticator, backup codes and passkeys and ends their sessions.
 
 **Magic-link site access.** A site's form (add and edit) can require a magic link before it is served: either an allowlist of addresses and `@domains`, or open to any address. The link is sent by email, single-use, 15 minutes. Email delivery is configured once under **Settings** (SMTP host, port, user, MAIL FROM; an optional password is stored encrypted, which needs `SERVANAGO_SECRET_KEY`). Sessions are shared across the gated sites that allow that address and slide 30 days (allowlist) or 7 days (open) while in use; revoking one identity under Security cuts it on every gated site at once. This is an access barrier for staging sites, not full authentication: a site that needs real auth must do its own.
 

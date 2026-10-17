@@ -40,7 +40,7 @@ validate spec (runtime provider) -> write SQLite in a transaction -> helper writ
 | M0 | Fork and rebrand: rename, brand and dark theme, remove Docker discovery, presets and container packaging, docs | Done |
 | M1 | Decouple Cloudflare: optional token, HTTP-01 / TLS-ALPN default, public IPv4 and IPv6 (dual-stack) record targets, one initial schema | Done |
 | M2 | Site model (static, proxy) and renderer rewrite, golden tests | Done |
-| M2.5 | Multi-admin: users table, per-user TOTP, backup codes and passkeys, `reset` per user, audit actor | Planned |
+| M2.5 | Multi-admin: users table, per-user TOTP, backup codes and passkeys, `reset` per user, audit actor | Done |
 | M3 | Native packaging: systemd unit for the control plane, `.deb`, install script, directory layout above, `DATA_DIR` default | Planned |
 | M4 | Privileged helper: socket, peer credentials, typed actions, input fuzzing | Planned |
 | M5 | Apply v2: reconciler, last-known-good restore, audit events, service status and journald logs in the UI | Planned |

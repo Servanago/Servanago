@@ -394,6 +394,8 @@ Store gets `GetUIDNS` / `UpsertUIDNS` reusing the `DNSRecord` struct (`RouteID` 
 
 Source: brainstorm of 2026-10-15; modelled on `../gochatserver` (`service/totp.go`, `service/passkeys.go`, `service/turnstile.go`). Single admin, no users table. Everything is inert when `ADMIN_PASSWORD` is unset.
 
+> **Superseded by M2.5 (multi-admin).** There is now a `users` table of equal administrators (bcrypt password, random WebAuthn handle, session epoch). `totp`, `backup_codes` and `passkeys` are keyed by `user_id`; the session cookie carries `expiry:level:uid:epoch` and is checked against the user row on every request, so removing a user, changing a password or resetting a second factor ends that user's sessions. `ADMIN_PASSWORD`/`ADMIN_USER` only create the first administrator and are ignored afterwards; with no administrator the UI is open, as described below. `REQUIRE_2FA` applies per user. Recovery is `servanago 2fa-reset NAME` and `servanago user add|passwd NAME`. An `audit_log` table (newest 10,000 rows) records who did what; the Users and Audit pages manage and show it. The rest of this section describes the mechanisms, which are unchanged apart from being per user.
+
 ### 17.1 Decisions
 | Topic | Decision |
 |---|---|

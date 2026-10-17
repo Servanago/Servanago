@@ -11,7 +11,7 @@ One Go process that lets self-hosters publish web apps behind a real domain they
 | Topic | Decision |
 |---|---|
 | Caddy topology | Embedded in the Go binary (`caddy/v2` + `caddy-dns/cloudflare` as Go imports, `caddy.Load`). No xcaddy, no supervisor, no separate admin-API client. Needs a spike to confirm. |
-| UI auth | Optional `ADMIN_PASSWORD` in `.env`. If unset, UI is open and a loud startup warning is logged. |
+| UI auth | Administrators (equal, no roles) stored in SQLite with bcrypt passwords. `ADMIN_PASSWORD` creates the first one on first start and is ignored afterwards. With no administrator the UI is open and a loud startup warning is logged. |
 | DNS scope | ServanaGo creates/updates/deletes Cloudflare A records per route, using the official `cloudflare-go` SDK. |
 | Upstream entry | Manual entry: scheme, host or IP, port. (Arr presets and opt-in Docker discovery were removed in M0.) |
 | Hostname model | Subdomain per service under managed domains. One wildcard cert per domain. |
@@ -26,7 +26,7 @@ One Go process that lets self-hosters publish web apps behind a real domain they
 - `SERVANAGO_HOST` (required): hostname for the ServanaGo UI itself, e.g. `servanago.example.com`.
 - `SERVANAGO_HOST_IP` (required): the address `SERVANAGO_HOST` resolves to; ServanaGo manages that A record. IPv4 in 10/8, 172.16/12, 192.168/16 or 100.64/10 only. The same rule applies to every domain and route IP: ServanaGo never publishes public addresses. See `docs/DESIGN.md` §16.
 - `SERVANAGO_HOST_ZONE` (optional): Cloudflare zone name for that record; unset means walk up the host's labels.
-- `ADMIN_PASSWORD` (optional): enables UI login.
+- `ADMIN_PASSWORD` (optional), `ADMIN_USER` (optional, default `admin`): create the first administrator when none exists.
 - `ACME_EMAIL` (required): Let's Encrypt account contact (expiry and problem notices). Must parse as a valid address (`net/mail`). Caddy itself treats it as optional, ServanaGo requires it and fails fast at startup naming the variable.
 - `ACME_STAGING` (optional): use the Let's Encrypt staging CA.
 
@@ -43,7 +43,7 @@ One Go process that lets self-hosters publish web apps behind a real domain they
 9. **Apply loop.** Every change writes SQLite, regenerates the full Caddy JSON, and applies it atomically. If Caddy rejects the config, the previous config stays live, the UI shows the error, and the DB change is reverted.
 10. **Status.** Per-route health (upstream reachable), per-domain cert state (issued / pending / error, expiry), per-record DNS state.
 10a. **Logs page.** Caddy log lines (including ACME/issuance errors) captured in an in-memory ring buffer and shown in the UI, filterable by level. Not persisted.
-11. **Auth.** If `ADMIN_PASSWORD` is set: login page, session cookie (HttpOnly, SameSite), rate-limited attempts. Optional second factors (authenticator app, passkeys), optional Turnstile on the password step, `REQUIRE_2FA`, and a `2fa-reset` command: see `docs/DESIGN.md` §17. Separately, a per-route optional **site access gate**: the site asks for a magic link (single-use token emailed via SMTP) before anything is proxied, with per-domain or open enrollment, shared sessions and operator revocation; email delivery is configured on the Settings page in SQLite with a sealed password: see `docs/DESIGN.md` §18.
+11. **Auth.** Once an administrator exists: username + password login, session cookie (HttpOnly, SameSite) tied to the user and a per-user epoch so removal, password change and a second-factor reset end that user's sessions, rate-limited attempts. A Users page manages administrators (add, remove, set password, reset second factor; each re-authenticates the acting admin) and an Audit page lists who did what. Optional second factors (authenticator app, passkeys), optional Turnstile on the password step, `REQUIRE_2FA`, and a `2fa-reset` command: see `docs/DESIGN.md` §17. Separately, a per-route optional **site access gate**: the site asks for a magic link (single-use token emailed via SMTP) before anything is proxied, with per-domain or open enrollment, shared sessions and operator revocation; email delivery is configured on the Settings page in SQLite with a sealed password: see `docs/DESIGN.md` §18.
 12. **Persistence.** All state in one SQLite file plus Caddy's cert storage, both under one data directory (`DATA_DIR`, default `/data` until native packaging in M3). Backup is copying it.
 
 ## Non-functional requirements
@@ -69,7 +69,7 @@ One Go process that lets self-hosters publish web apps behind a real domain they
 
 - Embedded Caddy lifecycle (signal handling, reload from inside the process) is unverified. Spike first.
 - The A-record IP for LAN-only setups may differ from the public IP. Per-domain default IP is required, and dynamic IP/DDNS is out of scope.
-- Open UI with no `ADMIN_PASSWORD` plus a public hostname is a footgun. The startup warning is the only guard in v1.
+- Open UI with no administrator (no `ADMIN_PASSWORD` on first start) plus a public hostname is a footgun. The startup warning is the only guard in v1.
 - Let's Encrypt rate limits. Default staging for first run is worth considering.
 
 ## Open questions
