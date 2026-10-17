@@ -19,23 +19,23 @@ written only from the helper's embedded template as `servanago-<slug>.service`.
 `ping` action for the no-op path; `unit-install` action shell.
 **Success Criteria**: tests dial a real temp socket (no SO_PEERCRED faking: auth fn unit-tested separately).
 **Tests**: `internal/helper/server_test.go`.
-**Status**: Not Started
+**Status**: Complete
 
 ## Stage 3: unit-install with fake systemd/filesystem seam
 **Goal**: helper writes its own template to `/etc/systemd/system/servanago-<slug>.service`,
 `systemd-analyze verify`, `daemon-reload`, `enable` — behind a seam; refuses symlink targets, never writes outside the unit name.
 **Success Criteria**: fake seam tests pass; fuzz proves no slug escapes the fixed name.
-**Status**: Not Started
+**Status**: Complete
 
 ## Stage 4: subcommand + packaging + client
 **Goal**: `servanago helper` wired in main; `internal/helper/client.go` for M5 to call; packaging ships
 `servanago-helper.service` (root, RuntimeDirectory=servanago) and postinst enables it.
 **Tests**: packaging test covers helper unit; client round-trip covered in stage 2 tests.
-**Status**: Not Started
+**Status**: Complete
 
 ## Stage 5: docs + gate
 **Goal**: ROADMAP M4 done, README helper note, plan deleted, `make check`.
-**Status**: Not Started
+**Status**: Complete
 
 ## Notes
 - The unit template body is a placeholder (`Type=oneshot`, `ExecStart=/bin/true`): M6 (Node provider)

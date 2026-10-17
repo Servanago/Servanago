@@ -35,6 +35,8 @@ Or all of it with nothing but this checkout: `sudo packaging/install.sh`.
 
 The unit is enabled but not started: fill in the env file first (`SERVANAGO_HOST`, `ACME_EMAIL`, `ADMIN_PASSWORD`), then `systemctl start servanago`. The env file is a conffile: dpkg keeps your edits across upgrades. Logs go to journald (`journalctl -u servanago`). Removing the package stops and disables the unit; purging it also removes the `servanago` user but keeps `/var/lib/servanago` until you delete it.
 
+The deb also installs `servanago-helper.service`, a root daemon that the control plane asks (over a Unix socket, as the `servanago` user) to do privileged work; later milestones use it to manage per-site systemd units.
+
 ## Run it from source
 
 There is no package or image yet. ServanaGo reads its configuration from the process environment only; it does not load `.env` itself.
