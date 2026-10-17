@@ -56,10 +56,10 @@ func Render(st State, o Options) ([]byte, error) {
 		domains[d.ID] = d
 	}
 
+	// One route per hostname, each with the site's handler chain: the gate pins the host it runs for.
 	type hostSite struct {
-		host   string
-		r      store.Site
-		domain int64
+		host string
+		r    store.Site
 	}
 	var hr []hostSite
 	for _, r := range st.Sites {
@@ -69,24 +69,26 @@ func Render(st State, o Options) ([]byte, error) {
 		if len(r.Hostnames) == 0 {
 			return nil, fmt.Errorf("render: site %d has no hostname", r.ID)
 		}
-		d, ok := store.ResolveDomain(st.Domains, r.Hostnames[0])
-		if !ok { // ponytail: domain-less hostnames (HTTP-01 per host) arrive with the Stage 2 renderer
-			return nil, fmt.Errorf("render: site %d: no domain matches %s", r.ID, r.Hostnames[0])
+		for _, h := range r.Hostnames {
+			hr = append(hr, hostSite{h, r})
 		}
-		hr = append(hr, hostSite{r.Hostnames[0], r, d.ID})
 	}
 	sort.Slice(hr, func(i, j int) bool { return hr[i].host < hr[j].host })
 
 	routes := []any{hostMatch(o.UIHost, m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": o.UIUpstream}}})}
-	perHost := map[int64][]string{}
+	own := map[int64][]string{} // hostnames that need a certificate of their own, by domain
+	var orphans []string        // hostnames under no domain: HTTP-01, one certificate each
 	for _, x := range hr {
 		h, err := siteHandler(x.host, x.r)
 		if err != nil {
 			return nil, err
 		}
 		routes = append(routes, hostMatch(x.host, h))
-		if o.HTTP01 || domains[x.domain].CertMode == "per_host" {
-			perHost[x.domain] = append(perHost[x.domain], x.host)
+		switch d, ok := store.ResolveDomain(st.Domains, x.host); {
+		case !ok:
+			orphans = append(orphans, x.host)
+		case o.HTTP01 || d.CertMode == "per_host" || !coveredByWildcard(x.host, d.Name):
+			own[d.ID] = append(own[d.ID], x.host)
 		}
 	}
 
@@ -94,14 +96,17 @@ func Render(st State, o Options) ([]byte, error) {
 	ds := append([]store.Domain(nil), st.Domains...)
 	sort.Slice(ds, func(i, j int) bool { return ds[i].Name < ds[j].Name })
 	for _, d := range ds {
-		switch {
-		case o.HTTP01 || d.CertMode == "per_host": // a wildcard cannot be validated over HTTP-01
-			if hosts := perHost[d.ID]; len(hosts) > 0 {
-				policies = append(policies, policy(hosts, o))
-			}
-		default:
+		if !o.HTTP01 && d.CertMode != "per_host" { // a wildcard cannot be validated over HTTP-01
 			policies = append(policies, policy([]string{"*." + d.Name}, o))
 		}
+		if hosts := own[d.ID]; len(hosts) > 0 {
+			policies = append(policies, policy(hosts, o))
+		}
+	}
+	if len(orphans) > 0 { // no zone to put a DNS-01 record in
+		http01 := o
+		http01.HTTP01 = true
+		policies = append(policies, policy(orphans, http01))
 	}
 
 	apps := m{
@@ -121,6 +126,13 @@ func Render(st State, o Options) ([]byte, error) {
 			"writer": m{"output": "servanago"}, "encoder": m{"format": "json"}, "level": "INFO"}}},
 		"apps": apps,
 	})
+}
+
+// coveredByWildcard is true for exactly one label below the domain: *.example.com does not cover
+// example.com itself or a.b.example.com.
+func coveredByWildcard(host, domain string) bool {
+	label, ok := strings.CutSuffix(host, "."+domain)
+	return ok && !strings.Contains(label, ".")
 }
 
 func hostMatch(host string, handler any) m {

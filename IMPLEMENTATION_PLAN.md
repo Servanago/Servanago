@@ -26,7 +26,7 @@ Note: the `/sites/new` quick form stays; the full form is `/sites/new/full` and 
 **Goal**: `caddycfg.Render` takes sites and hostnames and dispatches on kind; one Caddy route per site matching all its hostnames; certificate policies per host when the domain is null or HTTP-01.
 **Success Criteria**: proxy goldens unchanged in content; new goldens for multi-hostname and no-domain sites.
 **Tests**: golden JSON, real-Caddy integration for HTTP-01 per host.
-**Status**: Not started
+**Status**: Complete for hostnames and certificates. Deviation: one Caddy route per hostname (same handler chain), not one route matching all of them, because the gate handler pins the host it runs for. A hostname under no domain gets its own HTTP-01 policy even with Cloudflare on; names the wildcard cannot cover (apex, deeper labels) get their own certificate. Dispatch on kind arrives with Stage 3.
 
 ## Stage 3: static kind
 **Goal**: `static` sites served by `file_server` from a validated root, sharing the allowlist, basic auth and gate chain.

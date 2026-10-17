@@ -77,6 +77,14 @@ func TestRenderGolden(t *testing.T) {
 		{"gate_acl", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "acl" })}}},
 		{"gate_open", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "open" })}}},
 		{"gate_acl_allowlist", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode, r.Allowlist = "acl", "192.168.0.0/16" })}}},
+		// Hostnames are free FQDNs. Each gets its own route; a name the wildcard cannot cover (apex, deeper label)
+		// or no domain at all gets its own certificate, and a domain-less one always uses HTTP-01.
+		{"multi_hostname", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Hostnames = []string{"sonarr.example.com", "tv.example.com"} })}}},
+		{"no_domain", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Hostnames = []string{"sonarr.example.org"} })}}},
+		{"no_domain_http01", http01, State{nil, []store.Site{with(site, func(r *store.Site) { r.Hostnames = []string{"sonarr.example.org"} })}}},
+		{"wildcard_uncovered_names", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) {
+			r.Hostnames = []string{"example.com", "a.b.example.com", "sonarr.example.com"}
+		})}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

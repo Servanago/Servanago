@@ -73,6 +73,29 @@ func TestMutateMakesRouteLive(t *testing.T) {
 	}
 }
 
+// A hostname under no domain, and several hostnames on one site, are all served.
+func TestFreeAndMultipleHostnamesAreServed(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.svc.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	host, port := splitHostPort(t, caddytest.Upstream(t, "hello"))
+	err := f.svc.Mutate(ctx, func(tx *store.Store) error {
+		_, err := tx.CreateSite(ctx, store.Site{Hostnames: []string{"app.other.test", "alias.example.com", "example.com"},
+			Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"app.other.test", "alias.example.com", "example.com"} {
+		if code, body := caddytest.Get(t, f.httpsPort, h); code != 200 || body != "hello" {
+			t.Errorf("%s: got %d %q", h, code, body)
+		}
+	}
+}
+
 func TestInvalidMutationRollsBack(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
