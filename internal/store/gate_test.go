@@ -16,11 +16,7 @@ func gateStore(t *testing.T) *Store {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { st.Close() })
-	d, err := st.CreateDomain(context.Background(), Domain{Name: "example.com", DefaultIP: "192.168.1.1", CertMode: "wildcard"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CreateSite(context.Background(), Site{DomainID: d.ID, Subdomain: "st", Scheme: "http",
+	if _, err := st.CreateSite(context.Background(), Site{Hostnames: []string{"st.example.com"}, Scheme: "http",
 		UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true, GateMode: "acl"}); err != nil {
 		t.Fatal(err)
 	}
@@ -71,8 +67,7 @@ func TestReplaceGrantsAndAutoRevoke(t *testing.T) {
 	if err := st.UpsertIdentity(ctx, "alice@example.com", "n2", "h2", now, time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	d2, _ := st.CreateDomain(ctx, Domain{Name: "dev.example", DefaultIP: "192.168.1.1", CertMode: "wildcard"})
-	r2, _ := st.CreateSite(ctx, Site{DomainID: d2.ID, Subdomain: "st", Scheme: "http", UpstreamHost: "1.2.3.4", UpstreamPort: 1, Enabled: true, GateMode: "acl"})
+	r2, _ := st.CreateSite(ctx, Site{Hostnames: []string{"st.dev.example"}, Scheme: "http", UpstreamHost: "1.2.3.4", UpstreamPort: 1, Enabled: true, GateMode: "acl"})
 	if err := st.ReplaceGrants(ctx, r2.ID, []Grant{{Mode: "domain", Value: "dev.example"}}); err != nil {
 		t.Fatal(err)
 	}

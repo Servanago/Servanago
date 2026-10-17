@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -80,7 +79,7 @@ func (s *Server) gateNeedsHelp(ctx context.Context, rt store.Site) error {
 		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs email delivery: set the SMTP host and MAIL FROM under Settings."}
 	}
 	if s.deps.Cfg.SecretKey == "" {
-		return userError{http.StatusUnprocessableEntity, fmt.Sprintf("Magic-link sessions need SERVANAGO_SECRET_KEY (at least 32 characters) in .env to mint session keys for %s.", rt.Subdomain)}
+		return userError{http.StatusUnprocessableEntity, "Magic-link sessions need SERVANAGO_SECRET_KEY (at least 32 characters) in .env to mint session keys."}
 	}
 	return nil
 }

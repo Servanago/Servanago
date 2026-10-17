@@ -138,7 +138,7 @@ func TestDeleteDomain(t *testing.T) {
 	ctx := context.Background()
 	postDomain(s, "example.com", "10.0.0.1", "wildcard")
 	d, _ := s.deps.Store.ListDomains(ctx)
-	r, _ := s.deps.Store.CreateSite(ctx, store.Site{DomainID: d[0].ID, Subdomain: "a", Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
+	r, _ := s.deps.Store.CreateSite(ctx, store.Site{Hostnames: []string{"a." + d[0].Name}, Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
 
 	del := func() *httptest.ResponseRecorder {
 		return s.do(req{method: "DELETE", path: "/domains/" + itoa(d[0].ID), hdr: htmxPost})

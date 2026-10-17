@@ -50,7 +50,7 @@ func TestAddSiteCreatesZoneDomainRouteAndRecord(t *testing.T) {
 		t.Fatalf("domain: %+v", ds)
 	}
 	rs, _ := s.deps.Store.ListSites(ctx)
-	if len(rs) != 1 || rs[0].Subdomain != "oc" || rs[0].UpstreamHost != "192.168.25.165" || rs[0].UpstreamPort != 9200 || rs[0].Scheme != "http" || !rs[0].Enabled {
+	if len(rs) != 1 || rs[0].Hostnames[0] != "oc.example.com" || rs[0].UpstreamHost != "192.168.25.165" || rs[0].UpstreamPort != 9200 || rs[0].Scheme != "http" || !rs[0].Enabled {
 		t.Fatalf("site: %+v", rs)
 	}
 	recs := cf.dns.Records()
@@ -82,7 +82,7 @@ func TestAddSiteReusesExistingDomain(t *testing.T) {
 	}
 	ds, _ := s.deps.Store.ListDomains(ctx)
 	rs, _ := s.deps.Store.ListSites(ctx)
-	if len(ds) != 1 || ds[0].DefaultIP != "10.0.0.9" || ds[0].CertMode != "per_host" || len(rs) != 1 || rs[0].DomainID != d.ID {
+	if len(ds) != 1 || ds[0].DefaultIP != "10.0.0.9" || ds[0].CertMode != "per_host" || len(rs) != 1 || !domainOf(ds, rs[0], d.ID) {
 		t.Fatalf("%+v %+v", ds, rs)
 	}
 	if recs := cf.dns.Records(); len(recs) != 1 || recs[0].Content != "10.0.0.9" {
@@ -96,7 +96,7 @@ func TestAddSiteLongestManagedDomainWins(t *testing.T) {
 	if _, err := s.deps.Store.CreateDomain(ctx, store.Domain{Name: "example.com", ZoneID: "z1", DefaultIP: "10.0.0.1", CertMode: "wildcard"}); err != nil {
 		t.Fatal(err)
 	}
-	lab, err := s.deps.Store.CreateDomain(ctx, store.Domain{Name: "lab.example.com", ZoneID: "z2", DefaultIP: "10.0.0.2", CertMode: "wildcard"})
+	_, err := s.deps.Store.CreateDomain(ctx, store.Domain{Name: "lab.example.com", ZoneID: "z2", DefaultIP: "10.0.0.2", CertMode: "wildcard"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +104,7 @@ func TestAddSiteLongestManagedDomainWins(t *testing.T) {
 		t.Fatalf("%d %q", code, body)
 	}
 	rs, _ := s.deps.Store.ListSites(ctx)
-	if len(rs) != 1 || rs[0].DomainID != lab.ID || rs[0].Subdomain != "oc" {
+	if len(rs) != 1 || rs[0].Hostnames[0] != "oc.lab.example.com" {
 		t.Fatalf("%+v", rs)
 	}
 }
@@ -218,4 +218,10 @@ func fakeNoZoneClient(t *testing.T) *cfdns.Client {
 	}))
 	t.Cleanup(srv.Close)
 	return cfdns.New("tok", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+}
+
+// domainOf reports whether the site's primary hostname resolves to the domain with that id.
+func domainOf(ds []store.Domain, s store.Site, id int64) bool {
+	d, ok := store.ResolveDomain(ds, s.Hostnames[0])
+	return ok && d.ID == id
 }

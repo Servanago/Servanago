@@ -24,7 +24,7 @@ func opts() Options {
 
 var (
 	dom  = store.Domain{ID: 1, Name: "example.com", CertMode: "wildcard"}
-	site = store.Site{ID: 1, DomainID: 1, Subdomain: "sonarr", Scheme: "http", UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true}
+	site = store.Site{ID: 1, Hostnames: []string{"sonarr.example.com"}, Scheme: "http", UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true}
 )
 
 func with(r store.Site, f func(*store.Site)) store.Site { f(&r); return r }
@@ -61,8 +61,8 @@ func TestRenderGolden(t *testing.T) {
 		{"staging", staging, State{}},
 		{"prod_default", opts(), State{[]store.Domain{dom}, nil}},
 		{"propagation_set", timed, State{}},
-		{"per_host", opts(), State{[]store.Domain{perHost}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Subdomain = 2, "radarr" })}}},
-		{"per_host_one_disabled", opts(), State{[]store.Domain{perHost}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Subdomain, r.Enabled = 2, "radarr", false })}}},
+		{"per_host", opts(), State{[]store.Domain{perHost}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Hostnames = 2, []string{"radarr.example.com"} })}}},
+		{"per_host_one_disabled", opts(), State{[]store.Domain{perHost}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Hostnames, r.Enabled = 2, []string{"radarr.example.com"}, false })}}},
 		{"per_host_all_disabled", opts(), State{[]store.Domain{perHost}, []store.Site{with(site, func(r *store.Site) { r.Enabled = false })}}},
 		{"per_host_empty", opts(), State{[]store.Domain{perHost}, nil}},
 		{"internal_issuer", internal, State{[]store.Domain{dom}, []store.Site{site}}},
@@ -71,9 +71,9 @@ func TestRenderGolden(t *testing.T) {
 		})}}},
 		// No Cloudflare: default ACME challenges. A wildcard domain cannot be validated over HTTP-01, so it renders per host.
 		{"http01_bootstrap", http01, State{}},
-		{"http01_wildcard_domain", http01, State{[]store.Domain{dom}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Subdomain = 2, "radarr" }), with(site, func(r *store.Site) { r.ID, r.Subdomain, r.Enabled = 3, "off", false })}}},
+		{"http01_wildcard_domain", http01, State{[]store.Domain{dom}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Hostnames = 2, []string{"radarr.example.com"} }), with(site, func(r *store.Site) { r.ID, r.Hostnames, r.Enabled = 3, []string{"off.example.com"}, false })}}},
 		{"http01_per_host_domain", http01, State{[]store.Domain{perHost}, []store.Site{site}}},
-		{"banking_homelab", opts(), State{[]store.Domain{dom}, []store.Site{{ID: 1, DomainID: 1, Subdomain: "banking", Scheme: "http", UpstreamHost: "192.168.25.165", UpstreamPort: 8766, Enabled: true}}}},
+		{"banking_homelab", opts(), State{[]store.Domain{dom}, []store.Site{{ID: 1, Hostnames: []string{"banking.example.com"}, Scheme: "http", UpstreamHost: "192.168.25.165", UpstreamPort: 8766, Enabled: true}}}},
 		{"gate_acl", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "acl" })}}},
 		{"gate_open", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "open" })}}},
 		{"gate_acl_allowlist", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode, r.Allowlist = "acl", "192.168.0.0/16" })}}},
@@ -149,8 +149,8 @@ func TestEmptyEmailErrors(t *testing.T) {
 
 func TestDeterministic(t *testing.T) {
 	st := State{[]store.Domain{dom, {ID: 2, Name: "b.org", CertMode: "per_host"}}, []store.Site{
-		site, with(site, func(r *store.Site) { r.ID, r.Subdomain = 2, "radarr" }),
-		with(site, func(r *store.Site) { r.ID, r.DomainID = 3, 2 }),
+		site, with(site, func(r *store.Site) { r.ID, r.Hostnames = 2, []string{"radarr.example.com"} }),
+		with(site, func(r *store.Site) { r.ID, r.Hostnames = 3, []string{"sonarr.b.org"} }),
 	}}
 	a, _ := Render(st, opts())
 	for range 20 {

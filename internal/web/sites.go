@@ -41,7 +41,7 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 	v := r.PostForm
 	v.Set("domain_id", "0") // placeholders: parseSite validates the rest; the real values are resolved below
 	v.Set("subdomain", strings.SplitN(hostname, ".", 2)[0])
-	rt, err := parseSite(v)
+	rt, _, err := parseSite(v)
 	if err == nil {
 		err = applyControls(&rt, v)
 	}
@@ -92,8 +92,8 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is a zone itself; use a subdomain such as app.%s", hostname, zoneName))
 		return
 	}
-	rt.Subdomain = strings.TrimSuffix(hostname, "."+zoneName)
-	if strings.Contains(rt.Subdomain, ".") {
+	sub := strings.TrimSuffix(hostname, "."+zoneName)
+	if strings.Contains(sub, ".") {
 		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is more than one label below %s; a wildcard certificate would not cover it. Use name.%s", hostname, zoneName, zoneName))
 		return
 	}
@@ -106,16 +106,17 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 
 	var created store.Site
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
+		addr := siteAddr{Subdomain: sub}
 		if managed != nil {
-			rt.DomainID = managed.ID
+			addr.DomainID = managed.ID
 		} else {
 			d, err := tx.CreateDomain(r.Context(), newDomain)
 			if err != nil {
 				return err
 			}
-			rt.DomainID = d.ID
+			addr.DomainID = d.ID
 		}
-		if err := s.checkSite(r, tx, rt); err != nil {
+		if err := s.checkSite(r, tx, &rt, addr); err != nil {
 			return err
 		}
 		var cerr error

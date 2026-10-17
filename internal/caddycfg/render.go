@@ -57,19 +57,23 @@ func Render(st State, o Options) ([]byte, error) {
 	}
 
 	type hostSite struct {
-		host string
-		r    store.Site
+		host   string
+		r      store.Site
+		domain int64
 	}
 	var hr []hostSite
 	for _, r := range st.Sites {
 		if !r.Enabled { // a disabled site is not in Caddy at all: no handler, no certificate work
 			continue
 		}
-		d, ok := domains[r.DomainID]
-		if !ok {
-			return nil, fmt.Errorf("render: site %d references unknown domain %d", r.ID, r.DomainID)
+		if len(r.Hostnames) == 0 {
+			return nil, fmt.Errorf("render: site %d has no hostname", r.ID)
 		}
-		hr = append(hr, hostSite{r.Subdomain + "." + d.Name, r})
+		d, ok := store.ResolveDomain(st.Domains, r.Hostnames[0])
+		if !ok { // ponytail: domain-less hostnames (HTTP-01 per host) arrive with the Stage 2 renderer
+			return nil, fmt.Errorf("render: site %d: no domain matches %s", r.ID, r.Hostnames[0])
+		}
+		hr = append(hr, hostSite{r.Hostnames[0], r, d.ID})
 	}
 	sort.Slice(hr, func(i, j int) bool { return hr[i].host < hr[j].host })
 
@@ -81,8 +85,8 @@ func Render(st State, o Options) ([]byte, error) {
 			return nil, err
 		}
 		routes = append(routes, hostMatch(x.host, h))
-		if o.HTTP01 || domains[x.r.DomainID].CertMode == "per_host" {
-			perHost[x.r.DomainID] = append(perHost[x.r.DomainID], x.host)
+		if o.HTTP01 || domains[x.domain].CertMode == "per_host" {
+			perHost[x.domain] = append(perHost[x.domain], x.host)
 		}
 	}
 

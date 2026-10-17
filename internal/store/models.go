@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"strings"
 )
 
 type Domain struct {
@@ -17,9 +18,10 @@ type Domain struct {
 
 type Site struct {
 	ID            int64
-	DomainID      int64
-	Subdomain     string
-	Scheme        string // http | https
+	Slug          string   // immutable; derived from the first hostname on create
+	Kind          string   // proxy
+	Hostnames     []string // primary first; each is a free FQDN, unique across sites
+	Scheme        string   // http | https
 	UpstreamHost  string
 	UpstreamPort  int
 	TLSSkipVerify bool
@@ -110,26 +112,41 @@ func (s *Store) DeleteDomain(ctx context.Context, id int64) error {
 	return nil
 }
 
-const siteCols = "id, domain_id, subdomain, scheme, upstream_host, upstream_port, tls_skip_verify, enabled, " +
+const siteCols = "id, slug, kind, scheme, upstream_host, upstream_port, tls_skip_verify, enabled, " +
 	"COALESCE(record_ip,''), COALESCE(record_ip6,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), stream, max_body, gate_mode"
 
 func scanSite(r interface{ Scan(...any) error }) (Site, error) {
 	var x Site
-	err := r.Scan(&x.ID, &x.DomainID, &x.Subdomain, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.TLSSkipVerify,
+	err := r.Scan(&x.ID, &x.Slug, &x.Kind, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.TLSSkipVerify,
 		&x.Enabled, &x.RecordIP, &x.RecordIP6, &x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode)
 	return x, err
 }
 
+// CreateSite inserts the site with a slug derived from its first (primary) hostname.
 func (s *Store) CreateSite(ctx context.Context, r Site) (Site, error) {
-	res, err := s.q.ExecContext(ctx, `INSERT INTO sites (domain_id, subdomain, scheme, upstream_host, upstream_port,
-		tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode)
-		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-		r.DomainID, r.Subdomain, r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled,
-		nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode)
-	if err != nil {
-		return Site{}, fmt.Errorf("create site %s: %w", r.Subdomain, err)
+	if len(r.Hostnames) == 0 {
+		return Site{}, fmt.Errorf("create site: at least one hostname is required")
 	}
-	id, _ := res.LastInsertId()
+	var id int64
+	err := s.Tx(ctx, func(tx *Store) error { // a taken hostname must not leave the site row behind
+		slug, err := tx.newSlug(ctx, r.Hostnames[0])
+		if err != nil {
+			return err
+		}
+		res, err := tx.q.ExecContext(ctx, `INSERT INTO sites (slug, scheme, upstream_host, upstream_port,
+			tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			slug, r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled,
+			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode)
+		if err != nil {
+			return fmt.Errorf("create site %s: %w", r.Hostnames[0], err)
+		}
+		id, _ = res.LastInsertId()
+		return tx.setHostnames(ctx, id, r.Hostnames)
+	})
+	if err != nil {
+		return Site{}, err
+	}
 	return s.GetSite(ctx, id)
 }
 
@@ -138,12 +155,22 @@ func (s *Store) GetSite(ctx context.Context, id int64) (Site, error) {
 	if err != nil {
 		return Site{}, fmt.Errorf("get site %d: %w", id, err)
 	}
+	hs, err := s.hostnames(ctx)
+	if err != nil {
+		return Site{}, err
+	}
+	r.Hostnames = hs[id]
 	return r, nil
 }
 
-// ListSites returns all routes ordered by domain then subdomain.
+// ListSites returns all sites ordered by primary hostname.
 func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
-	rows, err := s.q.QueryContext(ctx, "SELECT "+siteCols+" FROM sites ORDER BY domain_id, subdomain")
+	hs, err := s.hostnames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := s.q.QueryContext(ctx, "SELECT "+siteCols+` FROM sites
+		ORDER BY (SELECT hostname FROM site_hostnames WHERE site_id=sites.id AND is_primary=1)`)
 	if err != nil {
 		return nil, err
 	}
@@ -154,20 +181,72 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 		if err != nil {
 			return nil, err
 		}
+		r.Hostnames = hs[r.ID]
 		out = append(out, r)
 	}
 	return out, rows.Err()
 }
 
+// UpdateSite saves every field except the slug, which never changes, and replaces the hostnames.
 func (s *Store) UpdateSite(ctx context.Context, r Site) error {
-	_, err := s.q.ExecContext(ctx, `UPDATE sites SET subdomain=?, scheme=?, upstream_host=?, upstream_port=?,
-		tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=? WHERE id=?`,
-		r.Subdomain, r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled, nullStr(r.RecordIP), nullStr(r.RecordIP6),
-		r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ID)
+	return s.Tx(ctx, func(tx *Store) error {
+		_, err := tx.q.ExecContext(ctx, `UPDATE sites SET scheme=?, upstream_host=?, upstream_port=?,
+			tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=? WHERE id=?`,
+			r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled, nullStr(r.RecordIP), nullStr(r.RecordIP6),
+			r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ID)
+		if err != nil {
+			return fmt.Errorf("update site %d: %w", r.ID, err)
+		}
+		return tx.setHostnames(ctx, r.ID, r.Hostnames)
+	})
+}
+
+// hostnames returns every site's hostnames keyed by site id, primary first.
+func (s *Store) hostnames(ctx context.Context) (map[int64][]string, error) {
+	rows, err := s.q.QueryContext(ctx, `SELECT site_id, hostname FROM site_hostnames ORDER BY site_id, is_primary DESC, hostname`)
 	if err != nil {
-		return fmt.Errorf("update site %d: %w", r.ID, err)
+		return nil, fmt.Errorf("list hostnames: %w", err)
+	}
+	defer rows.Close()
+	out := map[int64][]string{}
+	for rows.Next() {
+		var id int64
+		var h string
+		if err := rows.Scan(&id, &h); err != nil {
+			return nil, err
+		}
+		out[id] = append(out[id], h)
+	}
+	return out, rows.Err()
+}
+
+// setHostnames replaces a site's hostnames; hs[0] becomes the primary. A hostname already used by another site fails.
+func (s *Store) setHostnames(ctx context.Context, siteID int64, hs []string) error {
+	if len(hs) == 0 {
+		return fmt.Errorf("site %d: at least one hostname is required", siteID)
+	}
+	if _, err := s.q.ExecContext(ctx, `DELETE FROM site_hostnames WHERE site_id=?`, siteID); err != nil {
+		return fmt.Errorf("clear hostnames of site %d: %w", siteID, err)
+	}
+	for i, h := range hs {
+		if _, err := s.q.ExecContext(ctx, `INSERT INTO site_hostnames (site_id, hostname, is_primary) VALUES (?,?,?)`, siteID, h, i == 0); err != nil {
+			return fmt.Errorf("hostname %s: %w", h, err)
+		}
 	}
 	return nil
+}
+
+// ResolveDomain returns the domain whose name is the longest suffix of host (or host itself). ok=false means
+// the hostname has no domain: no Cloudflare zone, no DNS sync, per-host certificates.
+func ResolveDomain(domains []Domain, host string) (Domain, bool) {
+	var best Domain
+	found := false
+	for _, d := range domains {
+		if (host == d.Name || strings.HasSuffix(host, "."+d.Name)) && (!found || len(d.Name) > len(best.Name)) {
+			best, found = d, true
+		}
+	}
+	return best, found
 }
 
 func (s *Store) DeleteSite(ctx context.Context, id int64) error {

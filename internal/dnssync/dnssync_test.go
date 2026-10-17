@@ -33,7 +33,7 @@ func newFx(t *testing.T) *fx {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "sonarr", Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
+	r, err := st.CreateSite(ctx, store.Site{Hostnames: []string{"sonarr." + d.Name}, Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}

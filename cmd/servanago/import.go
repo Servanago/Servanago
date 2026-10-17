@@ -88,10 +88,8 @@ func (im importer) run(ctx context.Context, sites []caddyfile.Site, dry bool, ou
 	}
 	exists := map[string]bool{}
 	for _, r := range routes {
-		for _, d := range domains {
-			if d.ID == r.DomainID {
-				exists[r.Subdomain+"."+d.Name] = true
-			}
+		for _, h := range r.Hostnames {
+			exists[h] = true
 		}
 	}
 	added, skipped := 0, im.parserSkipped
@@ -127,7 +125,7 @@ func (im importer) run(ctx context.Context, sites []caddyfile.Site, dry bool, ou
 			skip(host, fmt.Sprintf("must be exactly one label below %s", dom.Name))
 			continue
 		}
-		rt := store.Site{DomainID: dom.ID, Subdomain: sub, Scheme: s.Scheme, UpstreamHost: s.Host, UpstreamPort: s.Port,
+		rt := store.Site{Hostnames: []string{host}, Scheme: s.Scheme, UpstreamHost: s.Host, UpstreamPort: s.Port,
 			TLSSkipVerify: s.SkipVerify, Enabled: true, Stream: s.Stream, MaxBody: maxBody}
 		if !dry {
 			created, err := im.st.CreateSite(ctx, rt)

@@ -23,7 +23,6 @@ type fixture struct {
 	st        *store.Store
 	httpsPort int
 	loads     int
-	domainID  int64
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -36,11 +35,10 @@ func newFixture(t *testing.T) *fixture {
 	}
 	t.Cleanup(func() { st.Close() })
 	f := &fixture{st: st, httpsPort: caddytest.FreePort(t)}
-	d, err := st.CreateDomain(context.Background(), store.Domain{Name: "example.com", ZoneID: "z", DefaultIP: "10.0.0.1", CertMode: "wildcard"})
+	_, err = st.CreateDomain(context.Background(), store.Domain{Name: "example.com", ZoneID: "z", DefaultIP: "10.0.0.1", CertMode: "wildcard"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.domainID = d.ID
 	f.svc = New(st, caddycfg.Options{
 		UIHost: uiHost, UIUpstream: caddytest.Upstream(t, "ui"), Email: "me@example.com", Issuer: caddycfg.Internal,
 		HTTPPort: caddytest.FreePort(t), HTTPSPort: f.httpsPort, StoragePath: storage,
@@ -53,7 +51,7 @@ func (f *fixture) addRoute(sub, body string, t *testing.T) func(*store.Store) er
 	host, port := splitHostPort(t, caddytest.Upstream(t, body))
 	return func(tx *store.Store) error {
 		_, err := tx.CreateSite(context.Background(), store.Site{
-			DomainID: f.domainID, Subdomain: sub, Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true})
+			Hostnames: []string{sub + ".example.com"}, Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true})
 		return err
 	}
 }
@@ -85,7 +83,7 @@ func TestInvalidMutationRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := f.svc.Mutate(ctx, func(tx *store.Store) error {
-		r, err := tx.CreateSite(ctx, store.Site{DomainID: f.domainID, Subdomain: "bad", Scheme: "http",
+		r, err := tx.CreateSite(ctx, store.Site{Hostnames: []string{"bad.example.com"}, Scheme: "http",
 			UpstreamHost: "127.0.0.1", UpstreamPort: 9, Enabled: true, Allowlist: "not-a-cidr"})
 		_ = r
 		return err
@@ -94,7 +92,7 @@ func TestInvalidMutationRollsBack(t *testing.T) {
 		t.Fatal("Caddy accepted an invalid CIDR")
 	}
 	rs, _ := f.st.ListSites(ctx)
-	if len(rs) != 1 || rs[0].Subdomain != "app" {
+	if len(rs) != 1 || rs[0].Hostnames[0] != "app.example.com" {
 		t.Fatalf("db not rolled back: %+v", rs)
 	}
 	if code, body := caddytest.Get(t, f.httpsPort, "app.example.com"); code != 200 || body != "hello" {
@@ -105,7 +103,7 @@ func TestInvalidMutationRollsBack(t *testing.T) {
 func TestCorruptStateFallsBackToBootstrap(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	if _, err := f.st.CreateSite(ctx, store.Site{DomainID: f.domainID, Subdomain: "bad", Scheme: "http",
+	if _, err := f.st.CreateSite(ctx, store.Site{Hostnames: []string{"bad.example.com"}, Scheme: "http",
 		UpstreamHost: "127.0.0.1", UpstreamPort: 9, Enabled: true, Allowlist: "garbage"}); err != nil {
 		t.Fatal(err)
 	}
@@ -173,7 +171,7 @@ func (f *fixture) routeWith(t *testing.T, tweak func(*store.Site)) {
 	t.Helper()
 	host, port := splitHostPort(t, caddytest.Upstream(t, "secret-content"))
 	err := f.svc.Mutate(context.Background(), func(tx *store.Store) error {
-		r := store.Site{DomainID: f.domainID, Subdomain: "app", Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true}
+		r := store.Site{Hostnames: []string{"app.example.com"}, Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true}
 		tweak(&r)
 		_, err := tx.CreateSite(context.Background(), r)
 		return err

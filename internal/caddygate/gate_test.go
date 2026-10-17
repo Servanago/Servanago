@@ -75,12 +75,12 @@ func gateStore(t *testing.T) (*store.Store, int64, int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	acl, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "acl", Scheme: "https",
+	acl, err := st.CreateSite(ctx, store.Site{Hostnames: []string{"acl." + d.Name}, Scheme: "https",
 		UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true, GateMode: "acl"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	open, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "open", Scheme: "https",
+	open, err := st.CreateSite(ctx, store.Site{Hostnames: []string{"open." + d.Name}, Scheme: "https",
 		UpstreamHost: "192.168.1.21", UpstreamPort: 9000, Enabled: true, GateMode: "open"})
 	if err != nil {
 		t.Fatal(err)

@@ -58,7 +58,7 @@ func TestImportSites(t *testing.T) {
 	}
 	var secure store.Site
 	for _, r := range rs {
-		if r.Subdomain == "secure" {
+		if r.Hostnames[0] == "secure.example.com" {
 			secure = r
 		}
 	}

@@ -190,8 +190,8 @@ type GateIdentity struct {
 // GateIdentities lists identities with the ACL grants they qualify for, joined with host names.
 func (s *Store) GateIdentities(ctx context.Context) ([]GateIdentity, error) {
 	rows, err := s.q.QueryContext(ctx, `SELECT i.email, i.created_at, i.last_seen, i.expire,
-		COALESCE((SELECT GROUP_CONCAT(CASE g.mode WHEN 'email' THEN g.value ELSE '@'||g.value END || ' at ' || (r.subdomain || '.' || d.name))
-			FROM gate_grants g JOIN sites r ON r.id=g.site_id JOIN domains d ON d.id=r.domain_id
+		COALESCE((SELECT GROUP_CONCAT(CASE g.mode WHEN 'email' THEN g.value ELSE '@'||g.value END || ' at ' || h.hostname)
+			FROM gate_grants g JOIN sites r ON r.id=g.site_id JOIN site_hostnames h ON h.site_id=r.id AND h.is_primary=1
 			WHERE r.gate_mode='acl' AND (
 				(g.mode='email' AND g.value=i.email) OR
 				(g.mode='domain' AND SUBSTR(i.email, INSTR(i.email,'@')) = '@'||g.value))), '') AS rules

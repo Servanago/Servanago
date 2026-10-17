@@ -64,7 +64,7 @@ func TestNoDNSAddSiteUnderManagedDomain(t *testing.T) {
 		t.Fatalf("add site: %d %q", code, body)
 	}
 	rs, _ := s.deps.Store.ListSites(context.Background())
-	if len(rs) != 1 || rs[0].Subdomain != "app" {
+	if len(rs) != 1 || rs[0].Hostnames[0] != "app.example.com" {
 		t.Fatalf("%+v", rs)
 	}
 	if all, err := s.deps.Store.ListDNS(context.Background()); err != nil || len(all) != 0 {

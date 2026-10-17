@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -25,8 +26,8 @@ func mustDomain(t *testing.T, s *Store, name string) Domain {
 	return d
 }
 
-func site(domainID int64, sub string) Site {
-	return Site{DomainID: domainID, Subdomain: sub, Scheme: "http", UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true}
+func site(host string) Site {
+	return Site{Hostnames: []string{host}, Scheme: "http", UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true}
 }
 
 func TestMigrationsIdempotent(t *testing.T) {
@@ -84,7 +85,7 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	d := mustDomain(t, s, "example.com")
 
-	r := site(d.ID, "sonarr")
+	r := site("sonarr.example.com")
 	r.RecordIP, r.Allowlist, r.BasicUser, r.BasicHash = "10.9.9.9", "192.168.0.0/16", "u", "h"
 	r.Stream, r.MaxBody = true, 2<<30
 	r, err := s.CreateSite(ctx, r)
@@ -92,21 +93,21 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 		t.Fatal(err)
 	}
 	got, err := s.GetSite(ctx, r.ID)
-	if err != nil || got != r {
+	if err != nil || !reflect.DeepEqual(got, r) {
 		t.Fatalf("round trip: %+v vs %+v (%v)", got, r, err)
 	}
 
-	if _, err := s.CreateSite(ctx, site(d.ID, "sonarr")); err == nil {
-		t.Error("duplicate (domain, subdomain) accepted")
+	if _, err := s.CreateSite(ctx, site("sonarr.example.com")); err == nil {
+		t.Error("duplicate hostname accepted")
 	}
 	for _, p := range []int{0, 65536} {
-		bad := site(d.ID, "p")
+		bad := site("p.example.com")
 		bad.UpstreamPort = p
 		if _, err := s.CreateSite(ctx, bad); err == nil {
 			t.Errorf("port %d accepted", p)
 		}
 	}
-	bad := site(d.ID, "s")
+	bad := site("s.example.com")
 	bad.Scheme = "ftp"
 	if _, err := s.CreateSite(ctx, bad); err == nil {
 		t.Error("bad scheme accepted")
@@ -121,16 +122,17 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 		t.Errorf("update/NULL round trip: %+v", after)
 	}
 
-	if _, err := s.CreateSite(ctx, site(d.ID, "radarr")); err != nil {
+	if _, err := s.CreateSite(ctx, site("radarr.example.com")); err != nil {
 		t.Fatal(err)
 	}
 	rs, err := s.ListSites(ctx)
-	if err != nil || len(rs) != 2 || rs[0].Subdomain != "radarr" {
-		t.Fatalf("list (ordered by domain, subdomain): %+v %v", rs, err)
+	if err != nil || len(rs) != 2 || rs[0].Hostnames[0] != "radarr.example.com" {
+		t.Fatalf("list (ordered by primary hostname): %+v %v", rs, err)
 	}
 
-	if err := s.DeleteDomain(ctx, d.ID); err == nil {
-		t.Error("domain with routes deleted (FK restrict)")
+	// A hostname's domain is optional: deleting the domain leaves the site (the web layer guards the UI path).
+	if err := s.DeleteDomain(ctx, d.ID); err != nil {
+		t.Fatal(err)
 	}
 	if err := s.DeleteSite(ctx, r.ID); err != nil {
 		t.Fatal(err)
@@ -139,8 +141,8 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 
 func TestDNSRecordCascade(t *testing.T) {
 	s, ctx := open(t), context.Background()
-	d := mustDomain(t, s, "example.com")
-	r, _ := s.CreateSite(ctx, site(d.ID, "sonarr"))
+	mustDomain(t, s, "example.com")
+	r, _ := s.CreateSite(ctx, site("sonarr.example.com"))
 	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err == nil {
 		t.Error("want not found before upsert")
 	}
@@ -185,9 +187,9 @@ func TestTxRollback(t *testing.T) {
 
 func TestListAndDeleteDNS(t *testing.T) {
 	s, ctx := open(t), context.Background()
-	d := mustDomain(t, s, "example.com")
-	a, _ := s.CreateSite(ctx, site(d.ID, "a"))
-	b, _ := s.CreateSite(ctx, site(d.ID, "b"))
+	mustDomain(t, s, "example.com")
+	a, _ := s.CreateSite(ctx, site("a.example.com"))
+	b, _ := s.CreateSite(ctx, site("b.example.com"))
 	for _, r := range []Site{a, b} {
 		if err := s.UpsertDNS(ctx, DNSRecord{SiteID: r.ID, State: "synced", Owned: true}); err != nil {
 			t.Fatal(err)
@@ -319,8 +321,8 @@ func TestPasskeysAndResetAuth(t *testing.T) {
 
 func TestDNSRecordsPerFamily(t *testing.T) {
 	s, ctx := open(t), context.Background()
-	d := mustDomain(t, s, "example.com")
-	r, _ := s.CreateSite(ctx, site(d.ID, "app"))
+	mustDomain(t, s, "example.com")
+	r, _ := s.CreateSite(ctx, site("app.example.com"))
 	a := DNSRecord{SiteID: r.ID, Family: FamilyA, CFRecordID: "a1", Content: "203.0.113.5", Owned: true, State: "synced"}
 	aaaa := DNSRecord{SiteID: r.ID, Family: FamilyAAAA, CFRecordID: "q1", Content: "2001:db8::5", Owned: false, State: "conflict", Error: "x"}
 	for _, rec := range []DNSRecord{a, aaaa} {
@@ -402,7 +404,7 @@ func TestIPv6FieldsRoundTrip(t *testing.T) {
 	if got, _ := s.GetDomain(ctx, d.ID); got.DefaultIP6 != "" {
 		t.Errorf("default_ip6 not cleared: %+v", got)
 	}
-	r := site(d.ID, "app")
+	r := site("app.example.com")
 	r.RecordIP6 = "2001:db8::77"
 	r, err = s.CreateSite(ctx, r)
 	if err != nil || r.RecordIP6 != "2001:db8::77" {

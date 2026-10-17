@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"net/url"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -20,40 +21,59 @@ import (
 
 var hostnameRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`)
 
-// parseSite validates the site fields shared by create and edit.
-func parseSite(v url.Values) (store.Site, error) {
-	var r store.Site
-	var err error
-	if r.DomainID, err = strconv.ParseInt(v.Get("domain_id"), 10, 64); err != nil {
-		return r, errors.New("choose a domain")
+// siteAddr is the full form's address: a managed domain and one label below it. The hostname is their join.
+type siteAddr struct {
+	DomainID  int64
+	Subdomain string
+}
+
+// addrOf splits a site's primary hostname back into the full form's domain and subdomain.
+func addrOf(domains []store.Domain, rt store.Site) siteAddr {
+	if len(rt.Hostnames) == 0 {
+		return siteAddr{}
 	}
-	r.Subdomain = strings.TrimSpace(v.Get("subdomain"))
-	if err := config.ValidateLabel(r.Subdomain); err != nil {
-		return r, fmt.Errorf("subdomain: %w", err)
+	d, ok := store.ResolveDomain(domains, rt.Hostnames[0])
+	if !ok {
+		return siteAddr{Subdomain: rt.Hostnames[0]}
+	}
+	return siteAddr{DomainID: d.ID, Subdomain: strings.TrimSuffix(rt.Hostnames[0], "."+d.Name)}
+}
+
+// parseSite validates the site fields shared by create and edit. The hostname is set later from the address.
+func parseSite(v url.Values) (store.Site, siteAddr, error) {
+	var r store.Site
+	var a siteAddr
+	var err error
+	if a.DomainID, err = strconv.ParseInt(v.Get("domain_id"), 10, 64); err != nil {
+		return r, a, errors.New("choose a domain")
+	}
+	a.Subdomain = strings.TrimSpace(v.Get("subdomain"))
+	if err := config.ValidateLabel(a.Subdomain); err != nil {
+		return r, a, fmt.Errorf("subdomain: %w", err)
 	}
 	if r.Scheme = v.Get("scheme"); r.Scheme != "http" && r.Scheme != "https" {
-		return r, fmt.Errorf("scheme %q must be http or https", r.Scheme)
+		return r, a, fmt.Errorf("scheme %q must be http or https", r.Scheme)
 	}
 	r.UpstreamHost = strings.TrimSpace(v.Get("upstream_host"))
 	if _, ipErr := netip.ParseAddr(r.UpstreamHost); ipErr != nil && !hostnameRE.MatchString(r.UpstreamHost) {
-		return r, fmt.Errorf("upstream host %q must be an IP address or a hostname", r.UpstreamHost)
+		return r, a, fmt.Errorf("upstream host %q must be an IP address or a hostname", r.UpstreamHost)
 	}
 	if r.UpstreamPort, err = strconv.Atoi(strings.TrimSpace(v.Get("upstream_port"))); err != nil || r.UpstreamPort < 1 || r.UpstreamPort > 65535 {
-		return r, fmt.Errorf("port %q must be 1-65535", v.Get("upstream_port"))
+		return r, a, fmt.Errorf("port %q must be 1-65535", v.Get("upstream_port"))
 	}
 	if r.RecordIP = strings.TrimSpace(v.Get("record_ip")); r.RecordIP != "" {
 		if _, err := config.ValidateIP(r.RecordIP); err != nil {
-			return r, fmt.Errorf("record IP: %w", err)
+			return r, a, fmt.Errorf("record IP: %w", err)
 		}
 	}
 	if r.RecordIP6 = strings.TrimSpace(v.Get("record_ip6")); r.RecordIP6 != "" {
 		if _, err := config.ValidateIP6(r.RecordIP6); err != nil {
-			return r, fmt.Errorf("record IPv6: %w", err)
+			return r, a, fmt.Errorf("record IPv6: %w", err)
 		}
 	}
 	r.TLSSkipVerify = v.Get("tls_skip_verify") != ""
 	r.Enabled = v.Get("enabled") != ""
-	return r, nil
+	return r, a, nil
 }
 
 type siteRow struct {
@@ -82,14 +102,6 @@ func (r siteRow) OwnsRecord() bool { return len(ownedRecords(r.DNS)) > 0 }
 func (r siteRow) OwnedSummary() string { return recordSummary(ownedRecords(r.DNS)) }
 
 func (s *Server) siteRows(r *http.Request) ([]siteRow, error) {
-	ds, err := s.deps.Store.ListDomains(r.Context())
-	if err != nil {
-		return nil, err
-	}
-	names := map[int64]string{}
-	for _, d := range ds {
-		names[d.ID] = d.Name
-	}
 	rs, err := s.deps.Store.ListSites(r.Context())
 	if err != nil {
 		return nil, err
@@ -104,7 +116,7 @@ func (s *Server) siteRows(r *http.Request) ([]siteRow, error) {
 	}
 	rows := make([]siteRow, len(rs))
 	for i, x := range rs {
-		rows[i] = siteRow{Site: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: bySite[x.ID], DNSOn: s.dnsOn()}
+		rows[i] = siteRow{Site: x, Host: x.Hostnames[0], DNS: bySite[x.ID], DNSOn: s.dnsOn()}
 		rows[i].Probed = x.Enabled && s.deps.Probe != nil
 	}
 	// Probes wait on the network, so run them side by side; each goroutine writes only its own row.
@@ -129,6 +141,7 @@ func (s *Server) siteRows(r *http.Request) ([]siteRow, error) {
 
 type siteEditForm struct {
 	Site          store.Site
+	Addr          siteAddr // the form's domain and subdomain, split from the primary hostname
 	Edit          bool
 	Domains       []store.Domain
 	DeleteConfirm string
@@ -171,7 +184,7 @@ func deleteConfirm(t dnsTarget) string {
 	return msg
 }
 
-func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.Site, edit bool) {
+func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.Site, addr siteAddr, edit bool) {
 	ds, err := s.deps.Store.ListDomains(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -186,7 +199,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 		t, _ := dnsTargetOf(r, s.deps.Store, rt)
 		confirm = deleteConfirm(t)
 	}
-	form := siteEditForm{Site: rt, Edit: edit, Domains: ds, DeleteConfirm: confirm, DNSOn: s.dnsOn(),
+	form := siteEditForm{Site: rt, Addr: addr, Edit: edit, Domains: ds, DeleteConfirm: confirm, DNSOn: s.dnsOn(),
 		MailOK: s.gateUsable(r.Context())}
 	if edit {
 		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {
@@ -200,7 +213,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 func (s *Server) newSiteFullPage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	port, _ := strconv.Atoi(q.Get("port"))
-	s.siteEditPage(w, r, store.Site{Scheme: "http", Enabled: true, Subdomain: q.Get("sub"), UpstreamHost: q.Get("host"), UpstreamPort: port}, false)
+	s.siteEditPage(w, r, store.Site{Scheme: "http", Enabled: true, UpstreamHost: q.Get("host"), UpstreamPort: port}, siteAddr{Subdomain: q.Get("sub")}, false)
 }
 
 func (s *Server) editSitePage(w http.ResponseWriter, r *http.Request) {
@@ -214,16 +227,23 @@ func (s *Server) editSitePage(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
-	s.siteEditPage(w, r, rt, true)
+	ds, err := s.deps.Store.ListDomains(r.Context())
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	s.siteEditPage(w, r, rt, addrOf(ds, rt), true)
 }
 
-// checkSite enforces domain existence and (domain, subdomain) uniqueness inside the apply transaction.
-func (s *Server) checkSite(r *http.Request, tx *store.Store, rt store.Site) error {
-	d, err := tx.GetDomain(r.Context(), rt.DomainID)
+// checkSite enforces domain existence and hostname uniqueness inside the apply transaction, then makes
+// the address's hostname the site's primary one (other hostnames are kept).
+func (s *Server) checkSite(r *http.Request, tx *store.Store, rt *store.Site, a siteAddr) error {
+	d, err := tx.GetDomain(r.Context(), a.DomainID)
 	if err != nil {
 		return errors.New("unknown domain")
 	}
-	if host := rt.Subdomain + "." + d.Name; host == s.deps.Cfg.Host {
+	host := a.Subdomain + "." + d.Name
+	if host == s.deps.Cfg.Host {
 		return fmt.Errorf("%s is the ServanaGo UI host; choose another subdomain", host)
 	}
 	all, err := tx.ListSites(r.Context())
@@ -231,10 +251,15 @@ func (s *Server) checkSite(r *http.Request, tx *store.Store, rt store.Site) erro
 		return err
 	}
 	for _, x := range all {
-		if x.DomainID == rt.DomainID && x.Subdomain == rt.Subdomain && x.ID != rt.ID {
-			return userError{http.StatusConflict, fmt.Sprintf("Subdomain %q already exists on that domain.", rt.Subdomain)}
+		if x.ID != rt.ID && slices.Contains(x.Hostnames, host) {
+			return userError{http.StatusConflict, fmt.Sprintf("Subdomain %q already exists on that domain.", a.Subdomain)}
 		}
 	}
+	rest := rt.Hostnames
+	if len(rest) > 0 {
+		rest = rest[1:]
+	}
+	rt.Hostnames = append([]string{host}, rest...)
 	return nil
 }
 
@@ -243,7 +268,7 @@ func (s *Server) createSiteFull(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	rt, err := parseSite(r.PostForm)
+	rt, addr, err := parseSite(r.PostForm)
 	if err != nil {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -259,7 +284,7 @@ func (s *Server) createSiteFull(w http.ResponseWriter, r *http.Request) {
 	}
 	var created store.Site
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		if err := s.checkSite(r, tx, rt); err != nil {
+		if err := s.checkSite(r, tx, &rt, addr); err != nil {
 			return err
 		}
 		var err error
@@ -288,7 +313,7 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	in, err := parseSite(r.PostForm)
+	in, addr, err := parseSite(r.PostForm)
 	if err != nil {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -306,14 +331,14 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 		}
 		old, _ = dnsTargetOf(r, tx, cur)
 		// Overlay only the fields this form owns.
-		cur.DomainID, cur.Subdomain, cur.Scheme = in.DomainID, in.Subdomain, in.Scheme
+		cur.Scheme = in.Scheme
 		cur.UpstreamHost, cur.UpstreamPort = in.UpstreamHost, in.UpstreamPort
 		cur.TLSSkipVerify, cur.Enabled, cur.RecordIP, cur.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
 		cur.GateMode = in.GateMode
 		if err := applyControls(&cur, r.PostForm); err != nil {
 			return err
 		}
-		if err := s.checkSite(r, tx, cur); err != nil {
+		if err := s.checkSite(r, tx, &cur, addr); err != nil {
 			return err
 		}
 		if err := tx.UpdateSite(r.Context(), cur); err != nil {
@@ -375,11 +400,15 @@ type dnsTarget struct {
 }
 
 func dnsTargetOf(r *http.Request, q *store.Store, rt store.Site) (dnsTarget, error) {
-	d, err := q.GetDomain(r.Context(), rt.DomainID)
+	ds, err := q.ListDomains(r.Context())
 	if err != nil {
 		return dnsTarget{}, err
 	}
-	t := dnsTarget{name: rt.Subdomain + "." + d.Name, zone: d.ZoneID}
+	d, ok := store.ResolveDomain(ds, rt.Hostnames[0])
+	if !ok {
+		return dnsTarget{}, errors.New("no domain matches " + rt.Hostnames[0])
+	}
+	t := dnsTarget{name: rt.Hostnames[0], zone: d.ZoneID}
 	for _, fam := range []string{store.FamilyA, store.FamilyAAAA} {
 		if row, err := q.GetDNS(r.Context(), rt.ID, fam); err == nil {
 			t.rows = append(t.rows, row)

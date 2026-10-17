@@ -52,7 +52,9 @@ func (s *Server) domainRows(r *http.Request) ([]domainRow, error) {
 	}
 	counts := map[int64]int{}
 	for _, x := range rs {
-		counts[x.DomainID]++
+		if d, ok := store.ResolveDomain(ds, x.Hostnames[0]); ok {
+			counts[d.ID]++
+		}
 	}
 	rows := make([]domainRow, len(ds))
 	for i, d := range ds {
@@ -139,9 +141,13 @@ func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			return err
 		}
+		ds, err := tx.ListDomains(r.Context())
+		if err != nil {
+			return err
+		}
 		n := 0
 		for _, x := range rs {
-			if x.DomainID == id {
+			if d, ok := store.ResolveDomain(ds, x.Hostnames[0]); ok && d.ID == id {
 				n++
 			}
 		}

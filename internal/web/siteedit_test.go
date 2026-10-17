@@ -49,9 +49,9 @@ func TestParseRoute(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, err := parseSite(tt.v)
+			r, addr, err := parseSite(tt.v)
 			if tt.errHas == "" {
-				if err != nil || r.Subdomain == "" {
+				if err != nil || addr.Subdomain == "" {
 					t.Fatalf("%+v %v", r, err)
 				}
 				return
@@ -64,21 +64,21 @@ func TestParseRoute(t *testing.T) {
 }
 
 func TestParseRouteRecordIP(t *testing.T) {
-	r, _ := parseSite(form("record_ip", " 192.168.1.9 "))
+	r, _, _ := parseSite(form("record_ip", " 192.168.1.9 "))
 	if r.RecordIP != "192.168.1.9" {
 		t.Errorf("%q", r.RecordIP)
 	}
-	if r, _ := parseSite(form()); r.RecordIP != "" {
+	if r, _, _ := parseSite(form()); r.RecordIP != "" {
 		t.Errorf("blank must stay blank (domain default): %q", r.RecordIP)
 	}
 }
 
 func TestParseRouteFlags(t *testing.T) {
-	r, err := parseSite(form("tls_skip_verify", "on", "enabled", "on"))
+	r, _, err := parseSite(form("tls_skip_verify", "on", "enabled", "on"))
 	if err != nil || !r.TLSSkipVerify || !r.Enabled {
 		t.Fatalf("%+v %v", r, err)
 	}
-	r, _ = parseSite(form())
+	r, _, _ = parseSite(form())
 	if r.TLSSkipVerify || r.Enabled {
 		t.Fatalf("unchecked boxes must be false: %+v", r)
 	}
@@ -104,7 +104,7 @@ func TestRouteLifecycle(t *testing.T) {
 		t.Fatalf("create: %d %q", w.Code, w.Body.String())
 	}
 	rs, _ := s.deps.Store.ListSites(ctx)
-	if len(rs) != 1 || rs[0].Subdomain != "sonarr" || rs[0].UpstreamPort != 8989 || !rs[0].Enabled {
+	if len(rs) != 1 || rs[0].Hostnames[0] != "sonarr.example.com" || rs[0].UpstreamPort != 8989 || !rs[0].Enabled {
 		t.Fatalf("%+v", rs)
 	}
 

@@ -36,7 +36,7 @@ func TestGateBehindRealCaddy(t *testing.T) {
 	upstream := caddytest.Upstream(t, "SECRET PAGE")
 	upHost, upPort, _ := net.SplitHostPort(upstream)
 	upN, _ := strconv.Atoi(upPort)
-	acl, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "acl", Scheme: "http",
+	acl, err := st.CreateSite(ctx, store.Site{Hostnames: []string{"acl." + d.Name}, Scheme: "http",
 		UpstreamHost: upHost, UpstreamPort: upN, Enabled: true, GateMode: "acl"})
 	if err != nil {
 		t.Fatal(err)

@@ -48,11 +48,15 @@ func (s *Syncer) run(ctx context.Context, siteID int64, takeOver bool) error {
 	if err != nil {
 		return err
 	}
-	dom, err := s.st.GetDomain(ctx, rt.DomainID)
+	domains, err := s.st.ListDomains(ctx)
 	if err != nil {
 		return err
 	}
-	name := rt.Subdomain + "." + dom.Name
+	name := rt.Hostnames[0]
+	dom, ok := store.ResolveDomain(domains, name)
+	if !ok { // no domain, no zone: nothing to sync
+		return nil
+	}
 	want := map[string]string{
 		store.FamilyA:    first(rt.RecordIP, dom.DefaultIP),
 		store.FamilyAAAA: first(rt.RecordIP6, dom.DefaultIP6),

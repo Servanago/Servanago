@@ -20,7 +20,7 @@ Note: the `/sites/new` quick form stays; the full form is `/sites/new/full` and 
 **Goal**: `site_hostnames(site_id, hostname UNIQUE, is_primary)`; `domain_id` and `subdomain` leave `sites`; `store` resolves a hostname's domain by longest suffix; `config.ValidateHostname` accepts any multi-label FQDN.
 **Success Criteria**: a site can have several hostnames; a hostname with no matching domain is valid; co.uk style names work.
 **Tests**: store (suffix match, uniqueness, primary), config validator table (rejects `.local`, `.internal`, `.home.arpa`, IP literals).
-**Status**: Not started
+**Status**: Complete. Also adds immutable `slug` (derived from the first hostname, unique) and `kind` (`proxy`). `config.ValidateDomain` already accepts any multi-label FQDN, so there is no separate `ValidateHostname`. The renderer, DNS sync, import and handlers read the primary hostname and resolve its domain by suffix; a hostname with no domain still errors in the renderer (Stage 2 lifts that) and is skipped by DNS sync. The full form still takes domain + subdomain and joins them (Stage 4 replaces that).
 
 ## Stage 2: renderer rewrite
 **Goal**: `caddycfg.Render` takes sites and hostnames and dispatches on kind; one Caddy route per site matching all its hostnames; certificate policies per host when the domain is null or HTTP-01.
@@ -35,7 +35,7 @@ Note: the `/sites/new` quick form stays; the full form is `/sites/new/full` and 
 **Status**: Not started
 
 ## Stage 4: UI
-**Goal**: site page with kind, hostnames add/remove/primary, static root field; domains editable (zone, IPs, cert mode); Add site accepts a free hostname.
+**Goal**: site page with kind, hostnames add/remove/primary, static root field; domains editable (zone, IPs, cert mode); Add site accepts a free hostname. The site page also takes Caretakarr's edit-form redesign (commit `913c22d`): h1 naming the site with its cert/DNS/backend chips; fieldsets Address, Backend, "Who can open this site" (magic link + allowlist + basic auth), Advanced in a `<details>`; "Saved and applied" inline on edit (documented exception to 204 + `HX-Redirect`); rename notice about the old DNS record; shared `deletedlg.html` for dashboard rows and the edit page; hint ids with `aria-describedby`.
 **Success Criteria**: single-label restriction and no-zone-lookup gap gone; help text defined for every new hint.
 **Tests**: web handler tests, `help_test`, Playwright specs in both projects.
 **Status**: Not started

@@ -6,10 +6,10 @@
 <form {{if .Edit}}hx-put="/sites/{{.Site.ID}}"{{else}}hx-post="/sites/full"{{end}} hx-target="#msg">
 <label>Domain
 <select name="domain_id" required>
-{{range .Domains}}<option value="{{.ID}}"{{if eq .ID $.Data.Site.DomainID}} selected{{end}}>{{.Name}}</option>{{end}}
+{{range .Domains}}<option value="{{.ID}}"{{if eq .ID $.Data.Addr.DomainID}} selected{{end}}>{{.Name}}</option>{{end}}
 </select></label>
 {{if .DNSOn}}{{hint "domain"}}{{else}}{{hint "domain_nodns"}}{{end}}
-<label>Subdomain <input name="subdomain" id="subdomain" value="{{.Site.Subdomain}}" placeholder="app" required></label>
+<label>Subdomain <input name="subdomain" id="subdomain" value="{{.Addr.Subdomain}}" placeholder="app" required></label>
 {{hint "subdomain"}}
 <label>Upstream scheme
 <select name="scheme">

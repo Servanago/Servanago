@@ -13,9 +13,9 @@ CREATE TABLE domains (
 
 CREATE TABLE sites (
   id              INTEGER PRIMARY KEY,
-  domain_id       INTEGER NOT NULL REFERENCES domains(id) ON DELETE RESTRICT,
-  subdomain       TEXT NOT NULL,
-  scheme          TEXT NOT NULL DEFAULT 'http' CHECK (scheme IN ('http','https')),
+  slug            TEXT NOT NULL UNIQUE,       -- immutable, derived once from the first hostname: ^[a-z][a-z0-9-]{1,31}$
+  kind            TEXT NOT NULL DEFAULT 'proxy' CHECK (kind IN ('proxy')),
+  scheme         TEXT NOT NULL DEFAULT 'http' CHECK (scheme IN ('http','https')),
   upstream_host   TEXT NOT NULL,
   upstream_port   INTEGER NOT NULL CHECK (upstream_port BETWEEN 1 AND 65535),
   tls_skip_verify INTEGER NOT NULL DEFAULT 0,
@@ -27,9 +27,17 @@ CREATE TABLE sites (
   basic_hash      TEXT,
   stream          INTEGER NOT NULL DEFAULT 0, -- flush_interval -1
   max_body        INTEGER NOT NULL DEFAULT 0 CHECK (max_body >= 0), -- request_body max_size in bytes; 0 = Caddy default
-  gate_mode       TEXT NOT NULL DEFAULT '',   -- magic-link gate (DESIGN.md §18): '' = ungated, 'acl' = email allowlist, 'open' = any email
-  UNIQUE (domain_id, subdomain)
+  gate_mode       TEXT NOT NULL DEFAULT ''    -- magic-link gate (DESIGN.md §18): '' = ungated, 'acl' = email allowlist, 'open' = any email
 );
+
+-- A site answers on one or more free FQDNs. Its domain (Cloudflare zone, default IPs, cert mode) is the
+-- longest-suffix match in domains and may not exist. Exactly one hostname per site is primary.
+CREATE TABLE site_hostnames (
+  site_id    INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  hostname   TEXT NOT NULL UNIQUE,
+  is_primary INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX site_hostnames_one_primary ON site_hostnames (site_id) WHERE is_primary = 1;
 
 -- One Cloudflare record per site and family (A or AAAA).
 CREATE TABLE dns_records (
