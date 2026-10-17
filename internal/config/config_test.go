@@ -70,7 +70,7 @@ func TestLoadDefaults(t *testing.T) {
 	if c.HTTPPort != 80 || c.HTTPSPort != 443 {
 		t.Errorf("ports: %d %d", c.HTTPPort, c.HTTPSPort)
 	}
-	if c.UIListen != "127.0.0.1:8080" || c.DataDir != "/data" || c.Staging || c.AdminPassword != "" {
+	if c.UIListen != "127.0.0.1:8080" || c.DataDir != "/var/lib/servanago" || c.Staging || c.AdminPassword != "" {
 		t.Errorf("defaults: %+v", c)
 	}
 	if got := strings.Join(c.Resolvers, ","); got != "1.1.1.1,8.8.8.8" {

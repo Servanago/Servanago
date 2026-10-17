@@ -106,7 +106,7 @@ func Load(getenv func(string) string) (Config, error) {
 		PropagationDelay:   dur("ACME_PROPAGATION_DELAY"),
 		PropagationTimeout: dur("ACME_PROPAGATION_TIMEOUT"),
 		UIListen:           opt("UI_LISTEN", "127.0.0.1:8080"),
-		DataDir:            opt("DATA_DIR", "/data"),
+		DataDir:            opt("DATA_DIR", "/var/lib/servanago"),
 	}
 	for _, r := range strings.Split(opt("ACME_RESOLVERS", "1.1.1.1,8.8.8.8"), ",") {
 		if r = strings.TrimSpace(r); r != "" {

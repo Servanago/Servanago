@@ -57,6 +57,5 @@ Multi-tenant isolation claims, deployment releases and rollback, Git integration
 
 - IPv6 is dual-stack only: an AAAA record needs the IPv4 A record beside it, so an IPv6-only site is not supported. `CLOUDFLARE_API_TOKEN` is optional: without it a domain is added by hand and certificates are per host over HTTP-01.
 - Hostnames are free FQDNs (M2). Without Cloudflare there is no zone lookup, so a hostname that matches no domain added by hand simply has none: it is served with its own HTTP-01 certificate and gets no DNS record.
-- `DATA_DIR` defaults to `/data`, a container path (changed in M3).
 - The mark is shipped as processed PNGs; a traced vector replaces them later (`docs/brand/README.md`).
 - Form field borders are about 1.7:1 against the page; WCAG 1.4.11 asks for 3:1.
