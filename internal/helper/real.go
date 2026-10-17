@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -40,6 +41,26 @@ func (RealSeam) Enable(name string) error {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil
+}
+
+func (RealSeam) UnitStatus(name string) (StatusData, error) {
+	out, err := exec.Command("systemctl", "show", "-p", "ActiveState", "-p", "SubState", "-p", "ExecMainPID", "--value", name).Output()
+	if err != nil {
+		return StatusData{}, fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n") // three --value lines, in order
+	if len(lines) != 3 {
+		return StatusData{}, fmt.Errorf("systemctl show: got %d value lines, want 3", len(lines))
+	}
+	return StatusData{ActiveState: lines[0], SubState: lines[1], PID: lines[2]}, nil
+}
+
+func (RealSeam) UnitLogs(name string, lines int) ([]string, error) {
+	out, err := exec.Command("journalctl", "-u", name, "-n", strconv.Itoa(lines), "--no-pager").Output()
+	if err != nil {
+		return nil, fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	return strings.Split(strings.TrimRight(string(out), "\n"), "\n"), nil
 }
 
 // firstLines keeps command diagnostics readable in journal error entries.

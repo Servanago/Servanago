@@ -18,6 +18,12 @@ type fakeSeam struct {
 	verify, reload, enable         error
 	verifiedWith, enabled, removed string
 	reloadCalls                    int
+	status                         StatusData
+	statusErr                      error
+	statusName                     string
+	logs                           []string
+	logsErr                        error
+	logLines                       int
 }
 
 func newFakeSeam() *fakeSeam { return &fakeSeam{written: map[string][]byte{}} }
@@ -49,6 +55,18 @@ func (s *fakeSeam) Remove(path string) error {
 func (s *fakeSeam) VerifyUnit(path string) error { s.verifiedWith = path; return s.verify }
 func (s *fakeSeam) DaemonReload() error          { s.reloadCalls++; return s.reload }
 func (s *fakeSeam) Enable(name string) error     { s.enabled = name; return s.enable }
+func (s *fakeSeam) UnitStatus(name string) (StatusData, error) {
+	s.statusName = name
+	return s.status, s.statusErr
+}
+func (s *fakeSeam) UnitLogs(name string, lines int) ([]string, error) {
+	s.statusName = name
+	s.logLines = lines
+	if s.logsErr != nil {
+		return nil, s.logsErr
+	}
+	return s.logs, nil
+}
 
 // Minimal fs.FileInfo fakes: one plain regular file, one symlink.
 type plainFI struct{ fs.FileInfo }

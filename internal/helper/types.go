@@ -14,6 +14,8 @@ import (
 const (
 	ActionPing        = "ping"
 	ActionUnitInstall = "unit-install"
+	ActionUnitStatus  = "unit-status"
+	ActionUnitLogs    = "unit-logs"
 )
 
 // MaxRequestSize bounds one request; larger input is refused before parsing.
@@ -39,8 +41,10 @@ func unitName(slug string) (string, error) {
 }
 
 // Spec carries the validated fields of one action; unknown fields are refused at decode.
+// Lines is the unit-logs tail size; unit-install ignores it.
 type Spec struct {
-	Slug string `json:"slug,omitempty"`
+	Slug  string `json:"slug,omitempty"`
+	Lines int    `json:"lines,omitempty"`
 }
 
 // Request is one newline-delimited action from the control plane. Spec is mandatory, even
@@ -62,7 +66,7 @@ func DecodeRequest(b []byte) (Request, error) {
 		return Request{}, fmt.Errorf("decode request: %w", err)
 	}
 	switch r.Action {
-	case ActionPing, ActionUnitInstall:
+	case ActionPing, ActionUnitInstall, ActionUnitStatus, ActionUnitLogs:
 	default:
 		return Request{}, fmt.Errorf("unknown action %q", r.Action)
 	}
@@ -85,14 +89,30 @@ func (r Request) Slug() (string, error) {
 	return s.Slug, nil
 }
 
+// SpecLines returns the log tail size the spec asks for; 0 means the action default.
+func (r Request) SpecLines() int {
+	var s Spec
+	_ = json.Unmarshal(r.Spec, &s) // the shape was validated by DecodeRequest already
+	return s.Lines
+}
+
 func strict(r *bytes.Reader) *json.Decoder {
 	d := json.NewDecoder(r)
 	d.DisallowUnknownFields()
 	return d
 }
 
-// Response answers one request. Data fields arrive with the actions that need them (M5+).
+// Response answers one request. Only the fields the action produces are set.
 type Response struct {
-	OK    bool   `json:"ok"`
-	Error string `json:"error,omitempty"`
+	OK     bool        `json:"ok"`
+	Error  string      `json:"error,omitempty"`
+	Status *StatusData `json:"status,omitempty"`
+	Logs   []string    `json:"logs,omitempty"`
+}
+
+// StatusData is one unit's systemd state.
+type StatusData struct {
+	ActiveState string `json:"active_state"`
+	SubState    string `json:"sub_state"`
+	PID         string `json:"pid,omitempty"`
 }
