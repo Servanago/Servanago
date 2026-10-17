@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"html/template"
 	"log/slog"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -285,14 +286,14 @@ func grantsToRules(gs []store.Grant) []gatelogic.Rule {
 	return out
 }
 
-// clientIP mirrors the UI's rule for behind-Caddy requests: forwarded addresses only matter
-// because Caddy hands real ones to gated routes too (pinned by the web proxy test).
+// clientIP is the TCP peer. The gate runs before reverse_proxy rewrites X-Forwarded-For and
+// no proxy sits in front of Caddy, so the header is attacker-controlled here.
 func clientIP(r *http.Request) string {
-	ip := strings.TrimSpace(strings.Split(r.Header.Get("X-Forwarded-For"), ",")[0])
-	if ip == "" {
-		ip, _, _ = strings.Cut(r.RemoteAddr, ":")
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return r.RemoteAddr
 	}
-	return ip
+	return host
 }
 
 // limiter is the in-memory bucket: per key, timestamped hits inside a sliding window.

@@ -362,3 +362,20 @@ func TestIssuanceRefusedWithoutConfig(t *testing.T) {
 		t.Fatalf("issuance with no config: %d", w.Code)
 	}
 }
+
+func TestClientIPIgnoresForwardedHeaderAndHandlesIPv6(t *testing.T) {
+	for _, tc := range []struct{ remote, xff, want string }{
+		{"203.0.113.9:34567", "198.51.100.1", "203.0.113.9"}, // spoofed header must not pick the bucket
+		{"[2001:db8::1]:443", "", "2001:db8::1"},
+		{"[2001:db8::2]:443", "", "2001:db8::2"}, // distinct v6 clients get distinct buckets
+	} {
+		r := httptest.NewRequest("GET", "/", nil)
+		r.RemoteAddr = tc.remote
+		if tc.xff != "" {
+			r.Header.Set("X-Forwarded-For", tc.xff)
+		}
+		if got := clientIP(r); got != tc.want {
+			t.Errorf("clientIP(%q, xff %q) = %q, want %q", tc.remote, tc.xff, got, tc.want)
+		}
+	}
+}
