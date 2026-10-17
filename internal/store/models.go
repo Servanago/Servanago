@@ -42,6 +42,10 @@ type Site struct {
 	GateMode       string // "" | acl | open: the magic-link gate (gate.go)
 }
 
+// HasUpstream is true for kinds Caddy reaches over TCP (proxy, node): the ones whose upstream can be
+// dialed and shown as up or down. Static and php sites have none.
+func (s Site) HasUpstream() bool { return s.Kind == "" || s.Kind == "proxy" || s.Kind == "node" }
+
 // Record families: one DNS row per site (and one for the UI host) per family.
 const (
 	FamilyA    = "A"

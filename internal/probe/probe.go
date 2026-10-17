@@ -107,7 +107,7 @@ func (m *Monitor) Sweep(ctx context.Context) {
 	}
 	var enabled []store.Site
 	for _, r := range routes {
-		if r.Enabled && r.Kind != "static" { // a static site has no upstream to dial
+		if r.Enabled && r.HasUpstream() { // static and php sites have no upstream to dial
 			enabled = append(enabled, r)
 		}
 	}

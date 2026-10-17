@@ -69,7 +69,7 @@ func (s *Server) buildRows(r *http.Request, rs []store.Site) ([]siteRow, error) 
 		if !row.Probed {
 			return
 		}
-		if row.Kind != "static" { // a static site has no upstream to check
+		if row.HasUpstream() { // static and php sites have no upstream to check
 			u, known := s.deps.Probe.Upstream(row.Site)
 			if !known {
 				ctx, cancel := detached(r)
@@ -93,10 +93,12 @@ func (s *Server) deleteSite(w http.ResponseWriter, r *http.Request) {
 	}
 	var target dnsTarget
 	host := ""
+	var deleted store.Site
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		if cur, err := tx.GetSite(r.Context(), id); err == nil {
 			target, _ = dnsTargetOf(r, tx, cur)
 			host = cur.Hostnames[0]
+			deleted = cur // runtime artifacts are torn down after the commit
 		}
 		return tx.DeleteSite(r.Context(), id)
 	})
@@ -105,6 +107,9 @@ func (s *Server) deleteSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.deleted", host)
+	if deleted.Kind == "node" || deleted.Kind == "php" {
+		s.runtimeRemove(r, deleted)
+	}
 	if r.FormValue("delete_dns") != "" { // the A record is kept unless the user asked; Remove skips adopted records
 		s.removeRecord(r, target)
 	}

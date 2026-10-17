@@ -17,6 +17,12 @@ type PHPVersion struct {
 	Path    string // the executable; the pool's binary when a site picks this version
 }
 
+// Opt is a pick-list entry: one version, marked when it is the stored one.
+type Opt struct {
+	Version  string
+	Selected bool
+}
+
 // Report is what the UI shows.
 type Report struct {
 	Node       NodeReport
@@ -37,13 +43,14 @@ type RunExec interface {
 	Glob(pattern string) ([]string, error)
 }
 
-type osExec struct{}
+// OsExec is the real seam: lookups through PATH, subprocesses, filesystem globs.
+type OsExec struct{}
 
-func (osExec) LookupPath(bin string) (string, error) { return exec.LookPath(bin) }
-func (osExec) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
+func (OsExec) LookupPath(bin string) (string, error) { return exec.LookPath(bin) }
+func (OsExec) Run(ctx context.Context, name string, args ...string) ([]byte, error) {
 	return exec.CommandContext(ctx, name, args...).Output()
 }
-func (osExec) Glob(pattern string) ([]string, error) { return filepath.Glob(pattern) }
+func (OsExec) Glob(pattern string) ([]string, error) { return filepath.Glob(pattern) }
 
 // Detect reports node and every php-fpm binary found in the usual Debian/Ubuntu paths.
 // A missing node is a Report with Installed=false, never an error: detection is best-effort.

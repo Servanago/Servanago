@@ -58,6 +58,14 @@
 <p id="host-msg" role="alert"></p>
 </article>
 {{end}}
+<article id="runtimes">
+<header>Runtimes {{helplink "runtimes"}}</header>
+<p><strong>Node.js</strong>
+{{if .Runtimes.Node.Installed}}{{.Runtimes.Node.Version}}{{else}}not installed — <code>{{.Runtimes.Node.Install}}</code>{{end}}<br>
+<strong>PHP-FPM</strong>
+{{if .Runtimes.PHP}}{{range $i, $v := .Runtimes.PHP}}{{if $i}}, {{end}}{{$v.Version}}{{end}}{{else}}not installed — <code>sudo apt install php-fpm</code>{{end}}</p>
+<small>ServanaGo detects these and never installs them.</small>
+</article>
 <h2>Sites</h2>
 <article>
 <div id="sites" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "sites" .Sites}}</div>

@@ -18,6 +18,7 @@ import (
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/dnssync"
 	"github.com/servanago/servanago/internal/probe"
+	"github.com/servanago/servanago/internal/runtimes"
 	"github.com/servanago/servanago/internal/store"
 )
 
@@ -38,6 +39,10 @@ type Deps struct {
 	DNS   *dnssync.Syncer
 	Probe *probe.Monitor
 	Logs  *caddylog.Ring
+	// HelperSocket and Exec are test seams for node/php sites: the helper's socket (empty = helper.SocketPath)
+	// and the runtime detector (nil = the real host).
+	HelperSocket string
+	Exec         runtimes.RunExec
 }
 
 type Server struct {
@@ -254,5 +259,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		Checklist []checkItem
 		SetupDone bool
 		DNSOn     bool
-	}{domains, routes, host, items, setupDone(items), s.dnsOn()}})
+		Runtimes  runtimes.Report
+	}{domains, routes, host, items, setupDone(items), s.dnsOn(), s.detect(r.Context())}})
 }

@@ -119,6 +119,39 @@ func TestSweepSkipsStaticSites(t *testing.T) {
 	}
 }
 
+// A php site is served over its pool socket: nothing to dial at an empty host and port 0.
+// A node site is dialed at its loopback port, like a proxy.
+func TestSweepSkipsPHPDialsNode(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := context.Background()
+	php, err := st.CreateSite(ctx, store.Site{Kind: "php", StaticRoot: "/srv/www/blog", FPMVersion: "8.2", Hostnames: []string{"blog.example.com"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	node, err := st.CreateSite(ctx, store.Site{Kind: "node", StaticRoot: "/srv/www/app", UpstreamHost: "127.0.0.1", UpstreamPort: 3000,
+		StartCommand: "node server.js", Hostnames: []string{"app.example.com"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dialed []string
+	m := NewMonitor(st, "127.0.0.1:1")
+	m.Dial = func(_ context.Context, addr string, _ time.Duration) error { dialed = append(dialed, addr); return nil }
+	m.Sweep(ctx)
+	if len(dialed) != 1 || dialed[0] != "127.0.0.1:3000" {
+		t.Errorf("dialed %v, want only the node app", dialed)
+	}
+	if _, ok := m.Upstream(php); ok {
+		t.Error("php site has upstream state")
+	}
+	if _, ok := m.Upstream(node); !ok {
+		t.Error("node site has no upstream state")
+	}
+}
+
 func TestCertProbeAgainstRealCaddy(t *testing.T) {
 	storage := t.TempDir()
 	caddytest.Cleanup(t)

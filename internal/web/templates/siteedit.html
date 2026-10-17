@@ -21,11 +21,13 @@
 <legend>What it serves</legend>
 <label>Kind
 <select name="kind" id="kind" aria-describedby="hint-kind">
-<option value="proxy"{{if not .IsStatic}} selected{{end}}>Proxy: forward to an app</option>
-<option value="static"{{if .IsStatic}} selected{{end}}>Static: serve a folder</option>
+<option value="proxy"{{if eq .Site.Kind "proxy"}} selected{{end}}>Proxy: forward to an app</option>
+<option value="static"{{if eq .Site.Kind "static"}} selected{{end}}>Static: serve a folder</option>
+<option value="node"{{if eq .Site.Kind "node"}} selected{{end}}>Node.js: an app ServanaGo supervises</option>
+<option value="php"{{if eq .Site.Kind "php"}} selected{{end}}>PHP: a folder with php-fpm</option>
 </select></label>
 {{hintid "kind"}}
-<div data-for="proxy"{{if .IsStatic}} hidden{{end}}>
+<div data-for="proxy"{{if ne .Site.Kind "proxy"}} hidden{{end}}>
 <div class="grid">
 <label>Upstream scheme
 <select name="scheme" aria-describedby="hint-scheme">
@@ -39,11 +41,35 @@
 </div>
 {{hintid "scheme"}} {{hintid "upstream_host"}} {{hintid "upstream_port"}}
 </div>
-<div data-for="static"{{if not .IsStatic}} hidden{{end}}>
+<div data-for="static node php"{{if eq .Site.Kind "proxy"}} hidden{{end}}>
 <label>Folder
 <input name="static_root" id="static_root" value="{{.Site.StaticRoot}}" placeholder="/srv/www/blog" autocomplete="off" required aria-describedby="hint-static_root"></label>
 {{hintid "static_root"}}
 {{if .RootNote}}<p class="explain" role="alert">ServanaGo cannot read this folder: {{.RootNote}}</p>{{end}}
+</div>
+<div data-for="node"{{if ne .Site.Kind "node"}} hidden{{end}}>
+<label>Port the app listens on (1024-65535)
+<input name="port" type="number" min="1024" max="65535" value="{{if .Site.UpstreamPort}}{{.Site.UpstreamPort}}{{end}}" placeholder="3000" required aria-describedby="hint-node_port"></label>
+{{hintid "node_port"}}
+<label>Start command (what systemd runs, e.g. <code>node server.js</code>)
+<input name="start_command" value="{{.Site.StartCommand}}" placeholder="node server.js" required aria-describedby="hint-start">
+{{hintid "start"}}
+<label>Install command (optional; you run it on the server as the site user)
+<input name="install_command" value="{{.Site.InstallCommand}}" placeholder="npm ci" aria-describedby="hint-installcmd">
+{{hintid "installcmd"}}
+<label>Build command (optional; same deal)
+<input name="build_command" value="{{.Site.BuildCommand}}" placeholder="npm run build" aria-describedby="hint-buildcmd">
+{{hintid "buildcmd"}}
+</div>
+<div data-for="php"{{if ne .Site.Kind "php"}} hidden{{end}}>
+{{if .PHPVersions}}<label>php-fpm version
+<select name="fpm_version" aria-describedby="hint-fpm_version">
+{{range .PHPVersions}}<option value="{{.Version}}"{{if .Selected}} selected{{end}}>{{.Version}}</option>
+{{end}}</select></label>
+{{else}}<p>No php-fpm found on this host. Install one, then reload this form:
+<code>{{.PHPInstall}}</code>.</p>{{end}}
+{{hintid "fpm_version"}}
+<p class="explain">You set the folder above to the webroot; <code>index.php</code> is the router. The pool and socket are created for you.</p>
 </div>
 </fieldset>
 <fieldset>
@@ -104,27 +130,30 @@
   function field(n) { return document.querySelector('[name=' + n + ']'); }
   function first() { return ($('hostnames').value.split(/[\s,]+/)[0] || '').toLowerCase(); }
   function sync() {
-    var st = $('kind').value === 'static';
+    var kind = $('kind').value;
     document.querySelectorAll('[data-for]').forEach(function (el) {
-      var on = el.dataset.for === (st ? 'static' : 'proxy');
+      var on = el.dataset.for.split(' ').indexOf(kind) !== -1;
       el.hidden = !on;
       el.querySelectorAll('input,select,textarea').forEach(function (i) { i.disabled = !on; });
     });
     preview();
   }
   function preview() {
-    var h = first(), out = $('preview'), st = $('kind').value === 'static', dnsOn = out.dataset.dns === '1';
-    var backend = st ? field('static_root').value.trim()
-      : (field('upstream_host').value.trim() && $('upstream_port').value.trim() ? field('scheme').value + '://' + field('upstream_host').value.trim() + ':' + $('upstream_port').value.trim() : '');
-    if (!h || !backend) { out.textContent = 'Fill in the hostnames and the ' + (st ? 'folder' : 'backend') + ' to see what will be created.'; return; }
-    out.textContent = 'Visitors open https://' + h + '. ' + (st ? 'Caddy serves the files in ' : 'Caddy forwards to ') + backend +
+    var h = first(), out = $('preview'), kind = $('kind').value, dnsOn = out.dataset.dns === '1';
+    var backend = '', what = '';
+    if (kind === 'static') { backend = field('static_root').value.trim(); what = 'Caddy serves the files in '; }
+    else if (kind === 'node') { backend = 'the app on 127.0.0.1:' + $('port').value.trim() + ' (' + (field('start_command').value.trim() || 'start command') + ')'; what = 'Caddy forwards to '; }
+    else if (kind === 'php') { backend = 'php-fpm ' + field('fpm_version').value + ' via its own socket (' + field('static_root').value.trim() + ')'; what = 'Caddy forwards PHP to '; }
+    else { backend = field('upstream_host').value.trim() && $('upstream_port').value.trim() ? field('scheme').value + '://' + field('upstream_host').value.trim() + ':' + $('upstream_port').value.trim() : ''; what = 'Caddy forwards to '; }
+    if (!h || !backend) { out.textContent = 'Fill in the hostnames and the ' + (kind === 'proxy' ? 'backend' : 'folder') + ' to see what will be created.'; return; }
+    out.textContent = 'Visitors open https://' + h + '. ' + what + backend +
       (dnsOn ? '. ServanaGo creates (or keeps) a DNS record ' + h + ' pointing to ' + (out.dataset.serverIp || 'this server') + ' if the name is in your Cloudflare account, and gets a certificate for it.'
              : '. ServanaGo gets a certificate for it. Point ' + h + ' at this server in your DNS yourself.');
     var note = $('rename-note');
     if (note) note.hidden = first() === $('hostnames').dataset.initial;
   }
-  ['hostnames', 'upstream_port', 'static_root'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('input', preview); });
-  ['upstream_host', 'scheme'].forEach(function (n) { field(n).addEventListener('input', preview); });
+  ['hostnames', 'upstream_port', 'static_root', 'port'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('input', preview); });
+  ['upstream_host', 'scheme', 'fpm_version'].forEach(function (n) { if (field(n)) field(n).addEventListener('input', preview); });
   $('kind').addEventListener('change', sync);
   sync();
 })();

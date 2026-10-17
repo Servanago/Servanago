@@ -2,6 +2,7 @@ package web
 
 import (
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -82,6 +83,7 @@ func (s *Server) toggleSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	host := ""
+	var toggled store.Site
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		cur, err := tx.GetSite(r.Context(), id)
 		if err != nil {
@@ -89,6 +91,7 @@ func (s *Server) toggleSite(w http.ResponseWriter, r *http.Request) {
 		}
 		host = cur.Hostnames[0]
 		cur.Enabled = !cur.Enabled
+		toggled = cur
 		return tx.UpdateSite(r.Context(), cur)
 	})
 	if err != nil {
@@ -96,6 +99,9 @@ func (s *Server) toggleSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.toggled", host)
+	if err := s.runtimeApply(r, toggled); err != nil { // starts or stops the site's unit
+		slog.Error("runtime site toggle", "slug", toggled.Slug, "error", err)
+	}
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)
 }

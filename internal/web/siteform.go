@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/runtimes"
 	"github.com/servanago/servanago/internal/store"
 )
 
@@ -39,26 +41,56 @@ func parseHostnames(text string) ([]string, error) {
 	return out, nil
 }
 
-// parseSite validates the fields shared by create and edit. A proxy site needs an upstream; a static site
-// needs a folder that passes config.ValidateStaticRoot (stored symlink-resolved).
+// parseSite validates the fields shared by create and edit. A proxy site needs an upstream; a static,
+// node or php site needs a folder that passes config.ValidateStaticRoot (stored symlink-resolved).
 func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 	var r store.Site
 	var err error
 	if r.Kind = v.Get("kind"); r.Kind == "" {
 		r.Kind = "proxy"
 	}
-	if r.Kind != "proxy" && r.Kind != "static" {
-		return r, fmt.Errorf("kind %q must be proxy or static", r.Kind)
+	switch r.Kind {
+	case "proxy", "static", "node", "php":
+	default:
+		return r, fmt.Errorf("kind %q must be proxy, static, node or php", r.Kind)
 	}
 	if r.Hostnames, err = parseHostnames(v.Get("hostnames")); err != nil {
 		return r, err
 	}
-	if r.Kind == "static" {
+	switch r.Kind {
+	case "static":
 		if r.StaticRoot, err = config.ValidateStaticRoot(strings.TrimSpace(v.Get("static_root")), cfg.DataDir, cfg.StaticRoots); err != nil {
 			return r, fmt.Errorf("static folder: %w", err)
 		}
-		r.Scheme = "http" // unused for static; the column is NOT NULL
-	} else {
+		r.Scheme = "http" // unused outside proxy; the column is NOT NULL
+	case "node":
+		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+			return r, err
+		}
+		r.Scheme = "http"
+		r.UpstreamHost = "127.0.0.1"
+		if r.UpstreamPort, err = strconv.Atoi(strings.TrimSpace(v.Get("port"))); err != nil || r.UpstreamPort < 1024 || r.UpstreamPort > 65535 {
+			return r, fmt.Errorf("port %q must be 1024-65535", v.Get("port"))
+		}
+		if r.StartCommand, err = parseCommand(v.Get("start_command"), true); err != nil {
+			return r, err
+		}
+		if r.InstallCommand, err = parseCommand(v.Get("install_command"), false); err != nil {
+			return r, err
+		}
+		if r.BuildCommand, err = parseCommand(v.Get("build_command"), false); err != nil {
+			return r, err
+		}
+	case "php":
+		r.FPMVersion = strings.TrimSpace(v.Get("fpm_version"))
+		if r.FPMVersion == "" {
+			return r, errors.New("kind php: pick a php-fpm version from the detected list")
+		}
+		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+			return r, err
+		}
+		r.Scheme = "http"
+	default: // proxy
 		if r.Scheme = v.Get("scheme"); r.Scheme != "http" && r.Scheme != "https" {
 			return r, fmt.Errorf("scheme %q must be http or https", r.Scheme)
 		}
@@ -85,6 +117,28 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 	return r, nil
 }
 
+// rootOrErr validates the folder for node/php sites, same rules as a static site.
+func rootOrErr(v url.Values, cfg config.Config) (string, error) {
+	root, err := config.ValidateStaticRoot(strings.TrimSpace(v.Get("static_root")), cfg.DataDir, cfg.StaticRoots)
+	if err != nil {
+		return "", fmt.Errorf("app folder: %w", err)
+	}
+	return root, nil
+}
+
+// parseCommand bounds a command the admin supplies: 1-2000 characters (optional accepts ""),
+// no NUL bytes. It runs as the site's unprivileged user, never root.
+func parseCommand(text string, required bool) (string, error) {
+	c := strings.TrimSpace(text)
+	if c != "" && (strings.ContainsRune(c, 0) || len(c) > 2000) {
+		return "", errors.New("command: at most 2000 characters, no NUL bytes")
+	}
+	if c == "" && required {
+		return "", errors.New("command: required")
+	}
+	return c, nil
+}
+
 // readSiteForm parses the posted form into a site plus its gate grants: parseSite, then the access controls,
 // then the gate (which needs the controls' gate mode). Static sites carry none of the proxy-only tuning.
 func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []store.Grant, error) {
@@ -92,14 +146,31 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	if err != nil {
 		return in, nil, userError{http.StatusUnprocessableEntity, err.Error()}
 	}
+	// A php site's version must be one the host actually has: the picker lists detected binaries.
+	if in.Kind == "php" {
+		php := s.detect(r.Context())
+		ok := false
+		for _, v := range php.PHP {
+			if v.Version == in.FPMVersion {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return in, nil, userError{http.StatusUnprocessableEntity, "php-fpm " + in.FPMVersion + " is not installed on this host; pick a detected version"}
+		}
+	}
 	// Overlay only the fields this form owns onto the stored site (base is the zero Site on create).
 	base.Kind, base.Hostnames, base.Scheme = in.Kind, in.Hostnames, in.Scheme
 	base.UpstreamHost, base.UpstreamPort, base.StaticRoot = in.UpstreamHost, in.UpstreamPort, in.StaticRoot
+	base.StartCommand = in.StartCommand
+	base.InstallCommand, base.BuildCommand = in.InstallCommand, in.BuildCommand
 	base.TLSSkipVerify, base.Enabled, base.RecordIP, base.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
+	base.FPMVersion = in.FPMVersion
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
 	}
-	if base.Kind == "static" {
+	if base.Kind == "static" || base.Kind == "php" {
 		base.Stream, base.MaxBody = false, 0
 	}
 	grants, err := s.parseGate(r.Context(), base, r.PostForm)
@@ -203,6 +274,10 @@ func (s *Server) createSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.created", created.Hostnames[0])
+	if err := s.runtimeApply(r, created); err != nil {
+		slog.Error("runtime site apply", "slug", created.Slug, "error", err)
+		s.flash(fmt.Sprintf("Site saved, but the runtime setup failed: %v", err))
+	}
 	s.reconcile(r, created.ID)
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)
@@ -255,30 +330,47 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.updated", in.Hostnames[0])
+	if err := s.runtimeApply(r, in); err != nil {
+		slog.Error("runtime site apply", "slug", in.Slug, "error", err)
+		s.flash(fmt.Sprintf("Saved, but the runtime setup failed: %v", err))
+	}
 	s.reconcile(r, id) // adds records for new hostnames and removes the owned ones of hostnames that went
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprint(w, "Saved and applied.")
 }
 
 type siteEditForm struct {
-	Site      store.Site
-	Edit      bool
-	HostLines string // the Hostnames box: one per line, primary first
-	DNSOn     bool   // Cloudflare is configured; otherwise the DNS record fields are hidden
-	GateACL   string // textarea content for an existing ACL
-	MailOK    bool   // email delivery and the session key work; otherwise the gate section is shown disabled
-	ServerIP  string // where new A records point; shown in the live preview
-	Row       *siteRow
-	RootNote  string // static: why the folder cannot be read, or ""
+	Site        store.Site
+	Edit        bool
+	HostLines   string // the Hostnames box: one per line, primary first
+	DNSOn       bool   // Cloudflare is configured; otherwise the DNS record fields are hidden
+	GateACL     string // textarea content for an existing ACL
+	MailOK      bool   // email delivery and the session key work; otherwise the gate section is shown disabled
+	ServerIP    string // where new A records point; shown in the live preview
+	Row         *siteRow
+	RootNote    string         // any foldered site: why the folder cannot be read, or ""
+	PHPVersions []runtimes.Opt // detected php-fpm versions for the pick list
+	PHPInstall  string         // install command to show when none is installed
+	Node        runtimes.NodeReport
 }
 
-// IsStatic picks which half of the form is shown.
+// IsStatic picks which half of the form is shown. (Kinds node/php have their own data-for blocks.)
 func (f siteEditForm) IsStatic() bool { return f.Site.Kind == "static" }
+
+// phpVersionOpts labels each detected version and which one is currently selected.
+func phpVersionOpts(versions []runtimes.PHPVersion, selected string) []runtimes.Opt {
+	var out []runtimes.Opt
+	for _, v := range versions {
+		out = append(out, runtimes.Opt{Version: v.Version, Selected: v.Version == selected})
+	}
+	return out
+}
 
 func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.Site, edit bool) {
 	title := "Add site"
+	rep := s.detect(r.Context())
 	form := siteEditForm{Site: rt, Edit: edit, HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
-		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP}
+		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPInstall: rep.PHPInstall, Node: rep.Node}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
 	}
@@ -290,7 +382,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 		if rows, err := s.buildRows(r, []store.Site{rt}); err == nil && len(rows) == 1 {
 			form.Row = &rows[0]
 		}
-		if rt.Kind == "static" {
+		if rt.Kind != "proxy" {
 			if err := config.StaticRootReadable(rt.StaticRoot); err != nil {
 				form.RootNote = err.Error()
 			}
