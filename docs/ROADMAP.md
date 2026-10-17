@@ -43,7 +43,7 @@ validate spec (runtime provider) -> write SQLite in a transaction -> helper writ
 | M2.5 | Multi-admin: users table, per-user TOTP, backup codes and passkeys, `reset` per user, audit actor | Done |
 | M3 | Native packaging: systemd unit for the control plane, `.deb`, install script, directory layout above, `DATA_DIR` default | Done |
 | M4 | Privileged helper: socket, peer credentials, typed actions, input fuzzing | Done |
-| M5 | Apply v2: reconciler, last-known-good restore, audit events, service status and journald logs in the UI | Planned |
+| M5 | Apply v2: reconciler, last-known-good restore, audit events, service status and journald logs in the UI | Done (LKG + audit events live; the status panel lands with M6, when sites have units) |
 | M6 | Node.js provider: dedicated user, sandboxed unit, port or socket allocation, explicit install/build/start commands, health check | Planned |
 | M7 | PHP-FPM provider: per-site pool and socket, `php_fastcgi` JSON expansion, multiple installed versions | Planned |
 | M8 | Hardening: privilege boundaries, paths, sockets, secrets, crash and interrupted-update tests, backup and restore docs | Planned |
