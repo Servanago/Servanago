@@ -73,6 +73,37 @@ func (s *Server) runtimeApply(r *http.Request, rt store.Site) error {
 	return nil
 }
 
+// unitPanel is what the edit page shows for a node or php site: the unit's state and its journal tail.
+type unitPanel struct {
+	State string   // "active (running)"
+	PID   string   // main process id, "" when none
+	Logs  []string // newest last; the app's own output, so it is only ever rendered escaped
+	Err   string   // why the panel is empty: helper unreachable or unit unknown
+}
+
+// unitPanelFor asks the helper for the unit's status and journal tail. Any failure becomes a note in the
+// panel: the edit page must render even when the helper is down.
+func (s *Server) unitPanelFor(r *http.Request, rt store.Site) *unitPanel {
+	if rt.Kind != "node" && rt.Kind != "php" {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	hc := s.helperClient()
+	st, err := hc.Call(ctx, helper.ActionUnitStatus, helper.Spec{Slug: rt.Slug})
+	if err != nil || st.Status == nil {
+		return &unitPanel{Err: fmt.Sprintf("The ServanaGo helper could not report this unit's state (%v). Check `systemctl status servanago-helper`.", err)}
+	}
+	p := &unitPanel{State: st.Status.ActiveState + " (" + st.Status.SubState + ")"}
+	if st.Status.PID != "" && st.Status.PID != "0" {
+		p.PID = st.Status.PID
+	}
+	if lg, err := hc.Call(ctx, helper.ActionUnitLogs, helper.Spec{Slug: rt.Slug, Lines: 30}); err == nil {
+		p.Logs = lg.Logs
+	}
+	return p
+}
+
 // runtimeRemove tears down a runtime site's unit and user; missing files are fine.
 func (s *Server) runtimeRemove(r *http.Request, rt store.Site) {
 	if rt.Kind != "node" && rt.Kind != "php" {

@@ -70,6 +70,12 @@ func runtimeServer(t *testing.T) (*Server, *fakeHost) {
 		helper.ActionUnitRemove:  host.record("unit-remove"),
 		helper.ActionUnitStart:   host.record("unit-start"),
 		helper.ActionUnitStop:    host.record("unit-stop"),
+		helper.ActionUnitStatus: func(helper.Request) helper.Response {
+			return helper.Response{OK: true, Status: &helper.StatusData{ActiveState: "active", SubState: "running", PID: "4242"}}
+		},
+		helper.ActionUnitLogs: func(helper.Request) helper.Response {
+			return helper.Response{OK: true, Logs: []string{"listening on 3000", `<script>alert("x")</script>`}}
+		},
 	})
 	cfg := config.Config{DataDir: t.TempDir(), Host: "panel.example.com"}
 	s := New(Deps{Cfg: cfg, Store: st, Apply: txApplier{st}, HelperSocket: ln.Addr().String(), Exec: runtimeExec{}})
@@ -157,6 +163,44 @@ func TestRuntimeSiteRejections(t *testing.T) {
 	}
 }
 
+// Two node apps cannot listen on the same loopback port: the second would fail to bind and its hostname
+// would quietly serve the first app. Other kinds on that port number are unaffected.
+func TestNodePortMustBeUnique(t *testing.T) {
+	s, _ := runtimeServer(t)
+	root := t.TempDir()
+	if w := s.do(req{method: "POST", path: "/sites", body: form(nodeForm(root)...).Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("first node site: %d %q", w.Code, w.Body.String())
+	}
+	second := nodeForm(root, "hostnames", "other.example.com") // same port 3000
+	w := s.do(req{method: "POST", path: "/sites", body: form(second...).Encode(), hdr: htmxPost})
+	if w.Code != 409 || !strings.Contains(w.Body.String(), "3000") {
+		t.Fatalf("duplicate port: %d %q", w.Code, w.Body.String())
+	}
+	if rs, _ := s.deps.Store.ListSites(context.Background()); len(rs) != 1 {
+		t.Fatalf("duplicate-port site was saved: %+v", rs)
+	}
+	// A different port is fine; so is a proxy site that points at port 3000 elsewhere.
+	if w := s.do(req{method: "POST", path: "/sites", body: form(nodeForm(root, "hostnames", "other.example.com", "port", "3001")...).Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("second node site on 3001: %d %q", w.Code, w.Body.String())
+	}
+	proxy := []string{"hostnames", "proxy.example.com", "scheme", "http", "upstream_host", "192.168.1.20", "upstream_port", "3000", "enabled", "on"}
+	if w := s.do(req{method: "POST", path: "/sites", body: form(proxy...).Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("proxy site on port 3000: %d %q", w.Code, w.Body.String())
+	}
+	// Editing a node site keeps its own port without tripping the check against itself.
+	rs, _ := s.deps.Store.ListSites(context.Background())
+	var first store.Site
+	for _, x := range rs {
+		if x.Kind == "node" && x.UpstreamPort == 3000 {
+			first = x
+		}
+	}
+	edit := nodeForm(root, "hostnames", first.Hostnames[0], "start_command", "node app.js")
+	if w := s.do(req{method: "PUT", path: "/sites/" + strconv.FormatInt(first.ID, 10), body: form(edit...).Encode(), hdr: htmxPost}); w.Code != 200 {
+		t.Fatalf("edit keeping its own port: %d %q", w.Code, w.Body.String())
+	}
+}
+
 func TestRuntimeSiteLifecycle(t *testing.T) {
 	s, host := runtimeServer(t)
 	w := s.do(req{method: "POST", path: "/sites", body: form(nodeForm(t.TempDir())...).Encode(), hdr: htmxPost})
@@ -186,6 +230,41 @@ func TestRuntimeSiteLifecycle(t *testing.T) {
 	}
 	if want := "unit-remove " + site.Slug + " |user-remove " + site.Slug + " "; host.log() != want {
 		t.Errorf("delete helper calls\n got %q\nwant %q", host.log(), want)
+	}
+}
+
+// The edit page of a node or php site shows the unit's state and the tail of its journal. The journal is
+// the app's own output, so it must be escaped; a proxy or static site shows no service panel at all.
+func TestServicePanel(t *testing.T) {
+	s, _ := runtimeServer(t)
+	if w := s.do(req{method: "POST", path: "/sites", body: form(nodeForm(t.TempDir())...).Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("create: %d %q", w.Code, w.Body.String())
+	}
+	rs, _ := s.deps.Store.ListSites(context.Background())
+	page := s.do(req{path: "/sites/" + strconv.FormatInt(rs[0].ID, 10)}).Body.String()
+	for _, want := range []string{`id="service"`, "active (running)", "4242", "listening on 3000", "&lt;script&gt;alert(&#34;x&#34;)&lt;/script&gt;"} {
+		if !strings.Contains(page, want) {
+			t.Errorf("service panel missing %q", want)
+		}
+	}
+	if strings.Contains(page, `<script>alert("x")`) {
+		t.Error("journal text was not escaped")
+	}
+
+	// A dead helper: the page still renders, with a note instead of the panel body.
+	s.deps.HelperSocket = filepath.Join(t.TempDir(), "absent.sock")
+	page = s.do(req{path: "/sites/" + strconv.FormatInt(rs[0].ID, 10)}).Body.String()
+	if !strings.Contains(page, `id="service"`) || !strings.Contains(page, "helper") {
+		t.Errorf("no helper-unavailable note:\n%s", page)
+	}
+
+	// Proxy sites have no unit.
+	s2, _ := runtimeServer(t)
+	proxy := []string{"hostnames", "p.example.com", "scheme", "http", "upstream_host", "192.168.1.20", "upstream_port", "9000", "enabled", "on"}
+	s2.do(req{method: "POST", path: "/sites", body: form(proxy...).Encode(), hdr: htmxPost})
+	prs, _ := s2.deps.Store.ListSites(context.Background())
+	if page := s2.do(req{path: "/sites/" + strconv.FormatInt(prs[0].ID, 10)}).Body.String(); strings.Contains(page, `id="service"`) {
+		t.Error("proxy site shows a service panel")
 	}
 }
 

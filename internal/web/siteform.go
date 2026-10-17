@@ -185,11 +185,19 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	return base, grants, err
 }
 
-// checkHostnames refuses the UI host and any name another site already answers on, inside the apply transaction.
+// checkHostnames refuses the UI host, any name another site already answers on, and a loopback port another
+// node app already listens on, inside the apply transaction.
 func (s *Server) checkHostnames(r *http.Request, tx *store.Store, rt store.Site) error {
 	all, err := tx.ListSites(r.Context())
 	if err != nil {
 		return err
+	}
+	if rt.Kind == "node" {
+		for _, x := range all {
+			if x.ID != rt.ID && x.Kind == "node" && x.UpstreamPort == rt.UpstreamPort {
+				return userError{http.StatusConflict, fmt.Sprintf("Port %d is already used by the Node.js app for %s; choose another port.", rt.UpstreamPort, x.Hostnames[0])}
+			}
+		}
 	}
 	for _, h := range rt.Hostnames {
 		if h == s.deps.Cfg.Host {
@@ -360,6 +368,7 @@ type siteEditForm struct {
 	PHPVersions []runtimes.Opt // detected php-fpm versions for the pick list
 	PHPInstall  string         // install command to show when none is installed
 	Node        runtimes.NodeReport
+	Unit        *unitPanel // node and php sites: state and journal tail; nil otherwise
 }
 
 // IsStatic picks which half of the form is shown. (Kinds node/php have their own data-for blocks.)
@@ -395,6 +404,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 				form.RootNote = err.Error()
 			}
 		}
+		form.Unit = s.unitPanelFor(r, rt)
 	}
 	s.render(w, "siteedit", http.StatusOK, page{Title: title, Data: form})
 }

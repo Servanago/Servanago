@@ -101,15 +101,37 @@ func (RealSeam) Enable(name string) error {
 }
 
 func (RealSeam) UnitStatus(name string) (StatusData, error) {
-	out, err := exec.Command("systemctl", "show", "-p", "ActiveState", "-p", "SubState", "-p", "ExecMainPID", "--value", name).Output()
+	out, err := exec.Command("systemctl", "show", "-p", "ActiveState", "-p", "SubState", "-p", "ExecMainPID", name).Output()
 	if err != nil {
 		return StatusData{}, fmt.Errorf("%w: %s", err, firstLines(out))
 	}
-	lines := strings.Split(strings.TrimRight(string(out), "\n"), "\n") // three --value lines, in order
-	if len(lines) != 3 {
-		return StatusData{}, fmt.Errorf("systemctl show: got %d value lines, want 3", len(lines))
+	return parseShow(out)
+}
+
+// parseShow reads `systemctl show` output by key: systemd prints properties in its own order, not the
+// order of -p. A PID of 0 (no main process) is reported as empty.
+func parseShow(out []byte) (StatusData, error) {
+	var st StatusData
+	for _, line := range strings.Split(string(out), "\n") {
+		k, v, ok := strings.Cut(line, "=")
+		if !ok {
+			continue
+		}
+		switch k {
+		case "ActiveState":
+			st.ActiveState = v
+		case "SubState":
+			st.SubState = v
+		case "ExecMainPID":
+			if v != "0" {
+				st.PID = v
+			}
+		}
 	}
-	return StatusData{ActiveState: lines[0], SubState: lines[1], PID: lines[2]}, nil
+	if st.ActiveState == "" {
+		return StatusData{}, fmt.Errorf("systemctl show: no ActiveState in %q", firstLines(out))
+	}
+	return st, nil
 }
 
 func (RealSeam) UnitLogs(name string, lines int) ([]string, error) {

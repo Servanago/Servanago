@@ -6,12 +6,13 @@
 
 A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an embedded [Caddy](https://caddyserver.com), SQLite and (planned) systemd integration. Caddy's configuration is generated from SQLite and applied atomically.
 
-> **Status: early.** Static sites, Node.js and PHP-FPM runtimes and systemd supervision of managed applications are on the [roadmap](docs/ROADMAP.md), not shipped. Nothing below describes planned features as working.
+> **Status: early.** Reverse-proxy, static, Node.js and PHP-FPM sites work. FrankenPHP, CGI/FastCGI, an MCP server and hardening are on the [roadmap](docs/ROADMAP.md), not shipped. Nothing below describes planned features as working.
 
 ## What works today
 
 - Certificates over HTTP-01/TLS-ALPN by default, one per host, with no DNS provider at all (ports 80 and 443 must be reachable from the internet).
 - Optional Cloudflare: with an API token, certificates use ACME DNS-01 (no inbound ports needed for issuance, LAN-only upstreams work), a domain can have one wildcard certificate, and ServanaGo creates and removes the matching A records (DNS-only, never proxied), including the record for the UI host itself.
+- **Node.js and PHP sites** on a native Debian/Ubuntu host (installed from the `.deb`, with its helper service): a Node app gets its own system user and a sandboxed systemd unit running your start command, behind a loopback port Caddy forwards to; a PHP site gets its own php-fpm pool and socket, with the version picked from the php-fpm binaries found on the host. The edit page shows the unit's state and recent journal lines. ServanaGo detects Node.js and php-fpm and shows the install command; it never installs a runtime, never runs your install or build commands, and never changes the ownership of your files (give `sg-NAME` access yourself; the Help page has the commands). Users on the same host are separated by Unix permissions only: do not host mutually untrusted sites.
 - Per-route enable/disable, CIDR allowlist, basic auth, streaming and upload limits, and an optional magic-link site gate.
 - Admin login with optional authenticator app, backup codes, passkeys and Cloudflare Turnstile.
 - Upstream health, certificate expiry, DNS state and a live Caddy/ACME log in the UI.

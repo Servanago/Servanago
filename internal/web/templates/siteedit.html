@@ -121,6 +121,12 @@
 <button type="submit">{{if .Edit}}Save{{else}}Add site{{end}}</button>
 <p id="msg" role="alert"></p>
 </form>
+{{with .Unit}}<section id="service" aria-labelledby="service-h">
+<h2 id="service-h">Service</h2>
+{{if .Err}}<p class="explain" role="alert">{{.Err}}</p>{{else}}<p><strong>{{.State}}</strong>{{if .PID}} · pid {{.PID}}{{end}}</p>
+{{if .Logs}}<pre id="unit-logs" tabindex="0" aria-label="Recent log lines">{{range .Logs}}{{.}}
+{{end}}</pre>{{else}}<p>No log lines yet.</p>{{end}}{{end}}
+</section>{{end}}
 {{if .Edit}}<button type="button" class="outline danger delete-site" data-id="{{.Site.ID}}" data-host="{{index .Site.Hostnames 0}}" data-dns-ip="{{with .Row}}{{.OwnedSummary}}{{end}}">Delete site</button>{{end}}
 </article>
 {{template "deletedlg" .DNSOn}}
