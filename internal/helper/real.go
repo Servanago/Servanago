@@ -23,21 +23,21 @@ func (RealSeam) Remove(path string) error { return os.Remove(path) }
 func (RealSeam) VerifyUnit(path string) error {
 	out, err := exec.Command("systemd-analyze", "verify", path).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, firstLines(out))
+		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil
 }
 func (RealSeam) DaemonReload() error {
 	out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, firstLines(out))
+		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil
 }
 func (RealSeam) Enable(name string) error {
 	out, err := exec.Command("systemctl", "enable", name).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%v: %s", err, firstLines(out))
+		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil
 }

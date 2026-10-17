@@ -3,6 +3,7 @@ package helper
 import (
 	"fmt"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 )
@@ -74,10 +75,13 @@ func (a Actions) UnitInstall(r Request) Response {
 		return Response{Error: fmt.Sprintf("write %s: %v", name, err)}
 	}
 	if err := a.s.VerifyUnit(path); err != nil {
+		// Leave the host exactly as it was: restore the previous unit or remove the new file.
 		if hasPrev {
-			a.s.WriteFile(path, prev, 0o644)
-		} else {
-			a.s.Remove(path)
+			if werr := a.s.WriteFile(path, prev, 0o644); werr != nil {
+				slog.Error("helper restore previous unit", "path", path, "error", werr)
+			}
+		} else if rerr := a.s.Remove(path); rerr != nil {
+			slog.Error("helper remove failed unit", "path", path, "error", rerr)
 		}
 		return Response{Error: fmt.Sprintf("systemd-analyze verify failed: %v", err)}
 	}

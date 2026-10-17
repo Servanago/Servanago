@@ -37,7 +37,9 @@ func (c *Client) Call(ctx context.Context, action string, spec Spec) (Response, 
 	if _, err := conn.Write(append(b, '\n')); err != nil {
 		return Response{}, fmt.Errorf("write helper: %w", err)
 	}
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	if err := conn.SetReadDeadline(time.Now().Add(30 * time.Second)); err != nil {
+		return Response{}, fmt.Errorf("set helper read deadline: %w", err)
+	}
 	line, err := bufio.NewReader(conn).ReadString('\n')
 	if err != nil {
 		return Response{}, fmt.Errorf("read helper reply: %w", err)

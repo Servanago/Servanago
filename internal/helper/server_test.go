@@ -49,7 +49,7 @@ func mustCall(t *testing.T, socket, send string) Response {
 	// the reply can already be in our receive buffer.
 	_, err = c.Write([]byte(send + "\n"))
 	_ = err
-	c.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
 	line, err := bufio.NewReader(c).ReadString('\n')
 	if err != nil {
 		t.Fatalf("read reply for %q: %v", send, err)
