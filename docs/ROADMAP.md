@@ -46,9 +46,11 @@ validate spec (runtime provider) -> write SQLite in a transaction -> helper writ
 | M5 | Apply v2: reconciler, last-known-good restore, audit events, service status and journald logs in the UI | Done (LKG + audit events live; the status panel lands with M6, when sites have units) |
 | M6 | Node.js provider: dedicated user, sandboxed unit, port or socket allocation, explicit install/build/start commands, health check | Planned |
 | M7 | PHP-FPM provider: per-site pool and socket, `php_fastcgi` JSON expansion, multiple installed versions | Planned |
-| M8 | MCP Server | New |
-| M9 | Hardening: privilege boundaries, paths, sockets, secrets, crash and interrupted-update tests, backup and restore docs | Planned |
-| M10+ | Gate re-keyed to sites; FrankenPHP; CGI/FastCGI; Ruby, Python, Go services | Deferred |
+| M8 | FrankenPHP: per-site pool and socket | New |
+| M9 | CGI/FastCGI: per-site pool and socket | New |
+| M10 | MCP Server | New |
+| M11 | Hardening: privilege boundaries, paths, sockets, secrets, crash and interrupted-update tests, backup and restore docs | Planned |
+| M12+ | Gate re-keyed to sites; Ruby, Python, Go services | Deferred |
 
 ## Explicitly deferred
 
