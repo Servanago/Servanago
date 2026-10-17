@@ -19,11 +19,12 @@ type Domain struct {
 type Site struct {
 	ID            int64
 	Slug          string   // immutable; derived from the first hostname on create
-	Kind          string   // proxy
+	Kind          string   // proxy | static; "" means proxy on create
 	Hostnames     []string // primary first; each is a free FQDN, unique across sites
-	Scheme        string   // http | https
-	UpstreamHost  string
-	UpstreamPort  int
+	Scheme        string   // http | https (proxy)
+	UpstreamHost  string   // proxy only
+	UpstreamPort  int      // proxy only
+	StaticRoot    string   // static only: absolute directory served with file_server
 	TLSSkipVerify bool
 	Enabled       bool
 	RecordIP      string // "" = domain default
@@ -112,12 +113,12 @@ func (s *Store) DeleteDomain(ctx context.Context, id int64) error {
 	return nil
 }
 
-const siteCols = "id, slug, kind, scheme, upstream_host, upstream_port, tls_skip_verify, enabled, " +
+const siteCols = "id, slug, kind, scheme, COALESCE(upstream_host,''), COALESCE(upstream_port,0), COALESCE(static_root,''), tls_skip_verify, enabled, " +
 	"COALESCE(record_ip,''), COALESCE(record_ip6,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), stream, max_body, gate_mode"
 
 func scanSite(r interface{ Scan(...any) error }) (Site, error) {
 	var x Site
-	err := r.Scan(&x.ID, &x.Slug, &x.Kind, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.TLSSkipVerify,
+	err := r.Scan(&x.ID, &x.Slug, &x.Kind, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.StaticRoot, &x.TLSSkipVerify,
 		&x.Enabled, &x.RecordIP, &x.RecordIP6, &x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode)
 	return x, err
 }
@@ -133,10 +134,16 @@ func (s *Store) CreateSite(ctx context.Context, r Site) (Site, error) {
 		if err != nil {
 			return err
 		}
-		res, err := tx.q.ExecContext(ctx, `INSERT INTO sites (slug, scheme, upstream_host, upstream_port,
+		if r.Kind == "" {
+			r.Kind = "proxy"
+		}
+		if r.Scheme == "" && r.Kind == "static" { // meaningless for static; the column is NOT NULL
+			r.Scheme = "http"
+		}
+		res, err := tx.q.ExecContext(ctx, `INSERT INTO sites (slug, kind, scheme, upstream_host, upstream_port, static_root,
 			tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			slug, r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled,
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			slug, r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot), r.TLSSkipVerify, r.Enabled,
 			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode)
 		if err != nil {
 			return fmt.Errorf("create site %s: %w", r.Hostnames[0], err)
@@ -190,9 +197,9 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 // UpdateSite saves every field except the slug, which never changes, and replaces the hostnames.
 func (s *Store) UpdateSite(ctx context.Context, r Site) error {
 	return s.Tx(ctx, func(tx *Store) error {
-		_, err := tx.q.ExecContext(ctx, `UPDATE sites SET scheme=?, upstream_host=?, upstream_port=?,
+		_, err := tx.q.ExecContext(ctx, `UPDATE sites SET kind=?, scheme=?, upstream_host=?, upstream_port=?, static_root=?,
 			tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=? WHERE id=?`,
-			r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled, nullStr(r.RecordIP), nullStr(r.RecordIP6),
+			r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot), r.TLSSkipVerify, r.Enabled, nullStr(r.RecordIP), nullStr(r.RecordIP6),
 			r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ID)
 		if err != nil {
 			return fmt.Errorf("update site %d: %w", r.ID, err)

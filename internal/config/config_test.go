@@ -165,6 +165,20 @@ func TestLoadUsesServanagoEnvNames(t *testing.T) {
 	}
 }
 
+func TestLoadStaticRoots(t *testing.T) {
+	with := func(v string) map[string]string { m := valid(); m["SERVANAGO_STATIC_ROOTS"] = v; return m }
+	c, err := Load(env(with("/srv/www: /home/me/public_html ::")))
+	if err != nil || len(c.StaticRoots) != 2 || c.StaticRoots[0] != "/srv/www" || c.StaticRoots[1] != "/home/me/public_html" {
+		t.Fatalf("parsed %v, %v", c.StaticRoots, err)
+	}
+	if c, err := Load(env(valid())); err != nil || len(c.StaticRoots) != 0 {
+		t.Fatalf("unset must mean unrestricted: %v %v", c.StaticRoots, err)
+	}
+	if _, err := Load(env(with("/srv/www:relative"))); err == nil || !strings.Contains(err.Error(), "SERVANAGO_STATIC_ROOTS") {
+		t.Fatalf("relative entry: %v", err)
+	}
+}
+
 // Cloudflare is optional: without a token ServanaGo serves sites with the default ACME challenges and manages no DNS.
 func TestLoadWithoutCloudflare(t *testing.T) {
 	c, err := Load(env(map[string]string{"SERVANAGO_HOST": "panel.example.com", "ACME_EMAIL": "me@example.com"}))

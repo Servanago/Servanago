@@ -125,13 +125,15 @@ func (s *Server) siteRows(r *http.Request) ([]siteRow, error) {
 		if !row.Probed {
 			return
 		}
-		u, known := s.deps.Probe.Upstream(row.Site)
-		if !known {
-			ctx, cancel := detached(r)
-			u = s.deps.Probe.Check(ctx, row.Site)
-			cancel()
+		if row.Kind != "static" { // a static site has no upstream to check
+			u, known := s.deps.Probe.Upstream(row.Site)
+			if !known {
+				ctx, cancel := detached(r)
+				u = s.deps.Probe.Check(ctx, row.Site)
+				cancel()
+			}
+			row.Upstream = map[bool]string{true: "up", false: "down"}[u.Up]
 		}
-		row.Upstream = map[bool]string{true: "up", false: "down"}[u.Up]
 		row.Cert = s.deps.Probe.Cert(r.Context(), row.Host)
 		row.CertSoon = certExpiringSoon(row.Cert, time.Now())
 		row.CertWait = certWait(s.deps.Cfg.PropagationDelay, s.deps.Cfg.PropagationTimeout)

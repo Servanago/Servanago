@@ -32,7 +32,7 @@ Note: the `/sites/new` quick form stays; the full form is `/sites/new/full` and 
 **Goal**: `static` sites served by `file_server` from a validated root, sharing the allowlist, basic auth and gate chain.
 **Success Criteria**: root validator enforces the rules above; listing off; unreadable root reported, not crashed on.
 **Tests**: validator table plus fuzz (traversal, symlink escape, NUL), golden, integration against a temp directory including a 0750 parent.
-**Status**: Not started
+**Status**: Complete at the config, store, renderer and dashboard-row level; the form and handlers that create a static site arrive in Stage 4. `kind` takes `proxy|static`; `static_root` and nullable upstream columns with a CHECK keeping the two shapes apart. `config.ValidateStaticRoot` resolves symlinks first, denies the trees above, and applies `SERVANAGO_STATIC_ROOTS`; `config.StaticRootReadable` is for the site page. Dotfiles are blocked by request path (`(^|/)\.` returns 404) rather than file_server's `hide`, which also matched a dot-directory in the root's own location. Static sites are never dialed by the upstream sweep.
 
 ## Stage 4: UI
 **Goal**: site page with kind, hostnames add/remove/primary, static root field; domains editable (zone, IPs, cert mode); Add site accepts a free hostname. The site page also takes Caretakarr's edit-form redesign (commit `913c22d`): h1 naming the site with its cert/DNS/backend chips; fieldsets Address, Backend, "Who can open this site" (magic link + allowlist + basic auth), Advanced in a `<details>`; "Saved and applied" inline on edit (documented exception to 204 + `HX-Redirect`); rename notice about the old DNS record; shared `deletedlg.html` for dashboard rows and the edit page; hint ids with `aria-describedby`.

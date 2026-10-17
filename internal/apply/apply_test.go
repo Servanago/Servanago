@@ -5,7 +5,10 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net"
+	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -92,6 +95,55 @@ func TestFreeAndMultipleHostnamesAreServed(t *testing.T) {
 	for _, h := range []string{"app.other.test", "alias.example.com", "example.com"} {
 		if code, body := caddytest.Get(t, f.httpsPort, h); code != 200 || body != "hello" {
 			t.Errorf("%s: got %d %q", h, code, body)
+		}
+	}
+}
+
+// A static site serves its root: index and files, no directory listing, no dotfiles at any depth, and it
+// works when the root sits under a dot-directory and a 0750 parent.
+func TestStaticSiteServesRootWithoutListingOrDotfiles(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if err := f.svc.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	parent := filepath.Join(t.TempDir(), ".sites") // a dot-directory above the root must not hide the site
+	root := filepath.Join(parent, "blog")
+	write := func(rel, body string) {
+		p := filepath.Join(root, rel)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("index.html", "INDEX")
+	write("a.txt", "A")
+	write(".env", "SECRET")
+	write("sub/.hidden", "SECRET")
+	write("sub/other.txt", "OTHER")
+	write("empty/keep", "x") // a directory with no index
+	if err := os.Chmod(parent, 0o750); err != nil {
+		t.Fatal(err)
+	}
+	err := f.svc.Mutate(ctx, func(tx *store.Store) error {
+		_, err := tx.CreateSite(ctx, store.Site{Kind: "static", StaticRoot: root, Hostnames: []string{"blog.example.com"}, Enabled: true})
+		return err
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, want := range map[string]struct {
+		code int
+		body string
+	}{
+		"/": {200, "INDEX"}, "/a.txt": {200, "A"}, "/sub/other.txt": {200, "OTHER"},
+		"/.env": {404, ""}, "/sub/.hidden": {404, ""}, "/empty/": {404, ""}, "/nope": {404, ""},
+	} {
+		code, body := caddytest.GetPath(t, f.httpsPort, "blog.example.com", path)
+		if code != want.code || (want.body != "" && body != want.body) || strings.Contains(body, "SECRET") || strings.Contains(body, "keep") {
+			t.Errorf("%s: got %d %q, want %d %q", path, code, body, want.code, want.body)
 		}
 	}
 }

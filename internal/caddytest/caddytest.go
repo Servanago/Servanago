@@ -71,6 +71,12 @@ func WaitCert(t testing.TB, httpsPort int, host string) {
 // Get requests https://host/ through the local HTTPS port, waiting for the cert first.
 func Get(t testing.TB, httpsPort int, host string) (int, string) {
 	t.Helper()
+	return GetPath(t, httpsPort, host, "/")
+}
+
+// GetPath is Get for an arbitrary path on the host.
+func GetPath(t testing.TB, httpsPort int, host, path string) (int, string) {
+	t.Helper()
 	WaitCert(t, httpsPort, host)
 	c := &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: host},
@@ -78,7 +84,7 @@ func Get(t testing.TB, httpsPort int, host string) (int, string) {
 			return (&net.Dialer{}).DialContext(ctx, network, fmt.Sprintf("127.0.0.1:%d", httpsPort))
 		},
 	}}
-	resp, err := c.Get("https://" + host + "/")
+	resp, err := c.Get("https://" + host + path)
 	if err != nil {
 		t.Fatal(err)
 	}

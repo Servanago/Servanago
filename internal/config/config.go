@@ -26,6 +26,7 @@ type Config struct {
 	PropagationDelay   time.Duration // 0 = unset
 	PropagationTimeout time.Duration // 0 = unset
 	Resolvers          []string
+	StaticRoots        []string // optional allowlist of prefixes a static site root must sit under; empty = any outside the denied trees
 	UIListen           string
 	DataDir            string
 	CFBaseURL          string // test hook: point cloudflare-go at a mock (e2e); empty = real API
@@ -116,6 +117,16 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("ACME_STAGING: %q is not a boolean", v))
 		}
 		c.Staging = b
+	}
+	for _, r := range strings.Split(getenv("SERVANAGO_STATIC_ROOTS"), ":") { // colon-separated, like PATH
+		if r = strings.TrimSpace(r); r == "" {
+			continue
+		}
+		if !strings.HasPrefix(r, "/") {
+			errs = append(errs, fmt.Errorf("SERVANAGO_STATIC_ROOTS: %q is not an absolute path", r))
+			continue
+		}
+		c.StaticRoots = append(c.StaticRoots, r)
 	}
 	c.SecretKey = getenv("SERVANAGO_SECRET_KEY")
 	c.TurnstileSiteKey = strings.TrimSpace(getenv("TURNSTILE_SITE_KEY"))

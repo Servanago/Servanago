@@ -14,10 +14,11 @@ CREATE TABLE domains (
 CREATE TABLE sites (
   id              INTEGER PRIMARY KEY,
   slug            TEXT NOT NULL UNIQUE,       -- immutable, derived once from the first hostname: ^[a-z][a-z0-9-]{1,31}$
-  kind            TEXT NOT NULL DEFAULT 'proxy' CHECK (kind IN ('proxy')),
-  scheme         TEXT NOT NULL DEFAULT 'http' CHECK (scheme IN ('http','https')),
-  upstream_host   TEXT NOT NULL,
-  upstream_port   INTEGER NOT NULL CHECK (upstream_port BETWEEN 1 AND 65535),
+  kind            TEXT NOT NULL DEFAULT 'proxy' CHECK (kind IN ('proxy','static')),
+  scheme          TEXT NOT NULL DEFAULT 'http' CHECK (scheme IN ('http','https')),
+  upstream_host   TEXT,                       -- proxy only
+  upstream_port   INTEGER CHECK (upstream_port BETWEEN 1 AND 65535), -- proxy only
+  static_root     TEXT,                       -- static only: symlink-resolved absolute directory (config.ValidateStaticRoot)
   tls_skip_verify INTEGER NOT NULL DEFAULT 0,
   enabled         INTEGER NOT NULL DEFAULT 1,
   record_ip       TEXT,                       -- IPv4 override for this site's A record; NULL = domain default
@@ -27,7 +28,9 @@ CREATE TABLE sites (
   basic_hash      TEXT,
   stream          INTEGER NOT NULL DEFAULT 0, -- flush_interval -1
   max_body        INTEGER NOT NULL DEFAULT 0 CHECK (max_body >= 0), -- request_body max_size in bytes; 0 = Caddy default
-  gate_mode       TEXT NOT NULL DEFAULT ''    -- magic-link gate (DESIGN.md §18): '' = ungated, 'acl' = email allowlist, 'open' = any email
+  gate_mode       TEXT NOT NULL DEFAULT '',   -- magic-link gate (DESIGN.md §18): '' = ungated, 'acl' = email allowlist, 'open' = any email
+  CHECK ((kind = 'proxy' AND upstream_host IS NOT NULL AND upstream_port IS NOT NULL AND static_root IS NULL)
+      OR (kind = 'static' AND static_root IS NOT NULL AND upstream_host IS NULL AND upstream_port IS NULL))
 );
 
 -- A site answers on one or more free FQDNs. Its domain (Cloudflare zone, default IPs, cert mode) is the

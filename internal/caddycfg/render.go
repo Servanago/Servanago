@@ -170,24 +170,36 @@ func issuer(o Options) m {
 	return i
 }
 
+// siteHandler is the site's terminal handler (reverse_proxy or file_server) wrapped in the shared
+// gate, allowlist and basic-auth chain when any of them is set.
 func siteHandler(host string, r store.Site) (any, error) {
-	proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
-	if r.Scheme == "https" {
-		tls := m{}
-		if r.TLSSkipVerify {
-			tls["insecure_skip_verify"] = true
+	var handlers []any
+	if r.Kind == "static" {
+		// file_server lists no directories unless asked. Dotfiles and dot-directories get a 404 by request path;
+		// file_server's own "hide" would also match dot-directories in the root's location.
+		handlers = []any{m{"handler": "subroute", "routes": []any{
+			m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true},
+			m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
+		}}}
+	} else {
+		proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
+		if r.Scheme == "https" {
+			tls := m{}
+			if r.TLSSkipVerify {
+				tls["insecure_skip_verify"] = true
+			}
+			proxy["transport"] = m{"protocol": "http", "tls": tls}
 		}
-		proxy["transport"] = m{"protocol": "http", "tls": tls}
-	}
-	if r.Stream {
-		proxy["flush_interval"] = -1
-	}
-	handlers := []any{proxy}
-	if r.MaxBody > 0 {
-		handlers = []any{m{"handler": "request_body", "max_size": r.MaxBody}, proxy}
+		if r.Stream {
+			proxy["flush_interval"] = -1
+		}
+		handlers = []any{proxy}
+		if r.MaxBody > 0 {
+			handlers = []any{m{"handler": "request_body", "max_size": r.MaxBody}, proxy}
+		}
 	}
 	if r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(handlers) == 1 {
-		return proxy, nil
+		return handlers[0], nil
 	}
 
 	var sub []any

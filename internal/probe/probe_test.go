@@ -99,6 +99,26 @@ func TestSweep(t *testing.T) {
 	}
 }
 
+// A static site has no upstream: the sweep must not dial anything for it.
+func TestSweepSkipsStaticSites(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := context.Background()
+	r, err := st.CreateSite(ctx, store.Site{Kind: "static", StaticRoot: "/srv/www/blog", Hostnames: []string{"blog.example.com"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	m := NewMonitor(st, "127.0.0.1:1")
+	m.Dial = func(context.Context, string, time.Duration) error { t.Error("dialed for a static site"); return nil }
+	m.Sweep(ctx)
+	if _, ok := m.Upstream(r); ok {
+		t.Error("static site has upstream state")
+	}
+}
+
 func TestCertProbeAgainstRealCaddy(t *testing.T) {
 	storage := t.TempDir()
 	caddytest.Cleanup(t)

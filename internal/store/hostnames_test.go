@@ -98,3 +98,36 @@ func TestSlugDerivedUniqueAndImmutable(t *testing.T) {
 		t.Fatalf("after rename: slug %q kind %q", got.Slug, got.Kind)
 	}
 }
+
+func TestStaticSiteRoundTripAndConstraints(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	st, err := s.CreateSite(ctx, Site{Kind: "static", StaticRoot: "/srv/www/blog", Hostnames: []string{"blog.example.com"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetSite(ctx, st.ID)
+	if got.Kind != "static" || got.StaticRoot != "/srv/www/blog" || got.UpstreamHost != "" || got.UpstreamPort != 0 {
+		t.Fatalf("static round trip: %+v", got)
+	}
+	p, err := s.CreateSite(ctx, site("app.example.com"))
+	if err != nil || p.Kind != "proxy" || p.StaticRoot != "" {
+		t.Fatalf("proxy default: %+v %v", p, err)
+	}
+	for name, bad := range map[string]Site{
+		"static without a root":     {Kind: "static", Hostnames: []string{"a.example.com"}},
+		"proxy with a root":         {Kind: "proxy", StaticRoot: "/x", Hostnames: []string{"b.example.com"}, Scheme: "http", UpstreamHost: "h", UpstreamPort: 1},
+		"proxy without an upstream": {Kind: "proxy", Hostnames: []string{"c.example.com"}, Scheme: "http"},
+		"unknown kind":              {Kind: "php", StaticRoot: "/x", Hostnames: []string{"d.example.com"}},
+	} {
+		if _, err := s.CreateSite(ctx, bad); err == nil {
+			t.Errorf("%s accepted", name)
+		}
+	}
+	got.StaticRoot = "/srv/www/blog2"
+	if err := s.UpdateSite(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if again, _ := s.GetSite(ctx, st.ID); again.StaticRoot != "/srv/www/blog2" {
+		t.Fatalf("update: %+v", again)
+	}
+}

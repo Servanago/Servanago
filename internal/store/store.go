@@ -113,6 +113,13 @@ func (s *Store) Tx(ctx context.Context, fn func(*Store) error) error {
 	return tx.Commit()
 }
 
+func nullInt(n int) any {
+	if n == 0 {
+		return nil
+	}
+	return n
+}
+
 func nullStr(s string) any {
 	if s == "" {
 		return nil

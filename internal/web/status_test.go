@@ -25,6 +25,24 @@ func openPort(t *testing.T) int {
 	return l.Addr().(*net.TCPAddr).Port
 }
 
+// A static site's row shows its folder and a certificate, but no upstream status and no dial.
+func TestStatusFragmentStaticSite(t *testing.T) {
+	s, _, d := newDNSServer(t)
+	ctx := context.Background()
+	if _, err := s.deps.Store.CreateSite(ctx, store.Site{Kind: "static", StaticRoot: "/srv/www/blog", Hostnames: []string{"blog." + d.Name}, Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	tlsSrv := httptest.NewTLSServer(nil)
+	t.Cleanup(tlsSrv.Close)
+	m := probe.NewMonitor(s.deps.Store, strings.TrimPrefix(tlsSrv.URL, "https://"))
+	m.Dial = func(context.Context, string, time.Duration) error { t.Error("dialed for a static site"); return nil }
+	s.deps.Probe = m
+	body := s.do(req{path: "/status", hdr: map[string]string{"HX-Request": "true"}}).Body.String()
+	if !strings.Contains(body, "/srv/www/blog") || strings.Contains(body, "up-up") || strings.Contains(body, "up-down") || strings.Contains(body, ":0") {
+		t.Fatalf("static row: %s", body)
+	}
+}
+
 func TestStatusFragment(t *testing.T) {
 	s, _, d := newDNSServer(t)
 	ctx := context.Background()

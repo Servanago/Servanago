@@ -29,6 +29,12 @@ var (
 
 func with(r store.Site, f func(*store.Site)) store.Site { f(&r); return r }
 
+// asStatic turns a proxy site into a static one serving root.
+func asStatic(r store.Site, root string) store.Site {
+	r.Kind, r.StaticRoot, r.Scheme, r.UpstreamHost, r.UpstreamPort = "static", root, "", "", 0
+	return r
+}
+
 func TestRenderGolden(t *testing.T) {
 	staging := opts()
 	staging.Staging = true
@@ -82,6 +88,11 @@ func TestRenderGolden(t *testing.T) {
 		{"multi_hostname", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Hostnames = []string{"sonarr.example.com", "tv.example.com"} })}}},
 		{"no_domain", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Hostnames = []string{"sonarr.example.org"} })}}},
 		{"no_domain_http01", http01, State{nil, []store.Site{with(site, func(r *store.Site) { r.Hostnames = []string{"sonarr.example.org"} })}}},
+		// Static sites: file_server from the root (no listing, dotfiles hidden), same allowlist/auth/gate chain as a proxy.
+		{"static", opts(), State{[]store.Domain{dom}, []store.Site{asStatic(site, "/srv/www/blog")}}},
+		{"static_gate_basic_allowlist", opts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/srv/www/blog"), func(r *store.Site) {
+			r.GateMode, r.Allowlist, r.BasicUser, r.BasicHash = "acl", "192.168.0.0/16", "u", "$2a$14$abc"
+		})}}},
 		{"wildcard_uncovered_names", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) {
 			r.Hostnames = []string{"example.com", "a.b.example.com", "sonarr.example.com"}
 		})}}},

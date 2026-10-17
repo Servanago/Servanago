@@ -21,6 +21,7 @@ Environment variables (secrets are read from the environment only, never stored 
 
 - `SERVANAGO_HOST`, `ACME_EMAIL`: required.
 - `CLOUDFLARE_API_TOKEN` (optional), `SERVANAGO_HOST_IP` (required with a token), `SERVANAGO_HOST_IP6` (optional AAAA target for the host).
+- `SERVANAGO_STATIC_ROOTS`: optional colon-separated prefixes a static site's folder must sit under (default: any folder outside `DATA_DIR`, `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/`).
 - `SERVANAGO_HOST_ZONE`: Cloudflare zone of the host; set it if zone auto-detection fails.
 - `ADMIN_PASSWORD`: enables login. `SERVANAGO_SECRET_KEY` (32+ chars) enables the authenticator app; `REQUIRE_2FA` enforces it; `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` add Turnstile to the password form.
 - Email for the optional magic-link site gate is set on the Settings page (SMTP host, port, user, password, MAIL FROM), not in env. The password is stored sealed with `SERVANAGO_SECRET_KEY`.
