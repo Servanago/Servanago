@@ -1,0 +1,10 @@
+Package: servanago
+Version: 0.1.0
+Architecture: @ARCH@
+Maintainer: Brian Tafoya <btafoya@briantafoya.com>
+Depends: systemd
+Section: admin
+Priority: optional
+Description: Lightweight self-hosted web runtime manager
+ Go control plane with a web UI, one embedded Caddy ingress, SQLite state:
+ static sites and reverse-proxy sites under systemd supervision.

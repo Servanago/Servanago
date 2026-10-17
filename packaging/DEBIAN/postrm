@@ -1,0 +1,10 @@
+#!/bin/bash
+set -euo pipefail
+
+if [ "${1:-}" = purge ]; then
+    systemctl daemon-reload || true
+    if id servanago >/dev/null 2>&1; then
+        userdel servanago || true
+    fi
+    # /var/lib/servanago keeps the database and certificates until deleted by hand.
+fi

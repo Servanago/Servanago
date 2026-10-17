@@ -1,0 +1,17 @@
+#!/bin/bash
+# Package install: system user, directories, ownership, unit registration.
+# The unit is enabled but not started: the env file is a template the admin edits first.
+set -euo pipefail
+
+if ! id servanago >/dev/null 2>&1; then
+    useradd --system --home-dir /var/lib/servanago --no-create-home --shell /usr/sbin/nologin servanago
+fi
+install -d -m 0750 -o servanago -g servanago /var/lib/servanago /var/log/servanago
+chown root:servanago /etc/servanago/servanago.env
+chmod 0640 /etc/servanago/servanago.env
+
+if [ "${1:-}" = configure ]; then
+    systemctl daemon-reload
+    systemctl enable servanago.service
+    echo "Edit /etc/servanago/servanago.env, then: systemctl start servanago"
+fi

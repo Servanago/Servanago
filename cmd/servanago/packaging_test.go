@@ -1,7 +1,10 @@
 package main
 
 import (
+	"bytes"
 	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -47,5 +50,43 @@ func TestEnvTemplateMatchesExample(t *testing.T) {
 	}
 	if string(ex) != string(tpl) {
 		t.Error("packaging/servanago.env must be a copy of .env.example")
+	}
+}
+
+// TestBuildDeb assembles and builds the deb with a stub binary, then checks its contents
+// with dpkg-deb. Skip: a non-debian build host has no dpkg-deb.
+func TestBuildDeb(t *testing.T) {
+	if _, err := exec.LookPath("dpkg-deb"); err != nil {
+		t.Skip("no dpkg-deb on this host")
+	}
+	// The script runs with the repo root as its working directory.
+	stub := filepath.Join(t.TempDir(), "servanago")
+	if err := os.WriteFile(stub, []byte("#!/bin/sh\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(t.TempDir(), "servanago.deb")
+	var stdout, stderr bytes.Buffer
+	cmd := exec.Command("../../packaging/build-deb.sh", stub, out)
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		t.Fatalf("build-deb.sh: %v\n%s%s", err, stdout.String(), stderr.String())
+	}
+	info, err := exec.Command("dpkg-deb", "--info", out).Output()
+	if err != nil {
+		t.Fatalf("dpkg-deb --info: %v", err)
+	}
+	for _, want := range []string{"Package: servanago", "Version: 0.1.0", "conffiles"} {
+		if !strings.Contains(string(info), want) {
+			t.Errorf("deb info missing %q:\n%s", want, info)
+		}
+	}
+	list, err := exec.Command("dpkg-deb", "-c", out).Output()
+	if err != nil {
+		t.Fatalf("dpkg-deb -c: %v", err)
+	}
+	for _, want := range []string{"usr/bin/servanago", "lib/systemd/system/servanago.service", "etc/servanago/servanago.env"} {
+		if !strings.Contains(string(list), want) {
+			t.Errorf("deb missing %q:\n%s", want, list)
+		}
 	}
 }

@@ -1,4 +1,4 @@
-.PHONY: test lint e2e check build
+.PHONY: test lint e2e check build deb
 
 # Scoped to cmd/ and internal/ (not ./...): a local ./data directory owned by another user is unreadable to Go tooling.
 PKGS = ./cmd/... ./internal/...
@@ -17,3 +17,6 @@ check: lint test e2e
 
 build:
 	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/servanago ./cmd/servanago
+
+deb: build
+	packaging/build-deb.sh bin/servanago
