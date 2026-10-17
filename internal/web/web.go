@@ -65,8 +65,8 @@ func (s *Server) takeFlashes() []string {
 
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "settings", "domains", "siteedit", "site", "logs", "help"} {
-		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/"+p+".html"))
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "settings", "domains", "siteedit", "logs", "help"} {
+		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
 		s.startupErr = d.Apply.StartupError
@@ -126,11 +126,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /logs/rows", s.protected(s.logRows))
 	mux.Handle("GET /domains", s.protected(s.domainsPage))
 	mux.Handle("POST /domains", s.protected(s.addDomain))
+	mux.Handle("PUT /domains/{id}", s.protected(s.updateDomain))
 	mux.Handle("DELETE /domains/{id}", s.protected(s.deleteDomain))
 	mux.Handle("GET /sites/new", s.protected(s.newSitePage))
-	mux.Handle("POST /sites", s.protected(s.addSite))
-	mux.Handle("GET /sites/new/full", s.protected(s.newSiteFullPage))
-	mux.Handle("POST /sites/full", s.protected(s.createSiteFull))
+	mux.Handle("POST /sites", s.protected(s.createSite))
 	mux.Handle("GET /sites/{id}", s.protected(s.editSitePage))
 	mux.Handle("PUT /sites/{id}", s.protected(s.updateSite))
 	mux.Handle("DELETE /sites/{id}", s.protected(s.deleteSite))

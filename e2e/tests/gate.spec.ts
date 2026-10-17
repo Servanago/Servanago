@@ -29,9 +29,8 @@ test('gated site: magic link in, revoke out', async ({ page }) => {
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'gate.example.test' })).toBeVisible();
 
-  await page.goto('/sites/new/full');
-  await page.locator('select[name=domain_id]').selectOption('gate.example.test');
-  await page.getByLabel('Subdomain').fill('st');
+  await page.goto('/sites/new');
+  await page.getByLabel('Hostnames').fill('st.gate.example.test');
   await page.getByLabel('Upstream host or IP').fill('127.0.0.1');
   await page.getByLabel('Upstream port').fill('29111');
   await page.locator('select[name=gate_mode]').selectOption('open');

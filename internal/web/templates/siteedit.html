@@ -1,68 +1,133 @@
 {{define "content"}}
 {{with .Data}}
-<h1>{{if .Edit}}Edit site{{else}}New site{{end}} {{helplink "sites"}}</h1>
-{{if not .Domains}}<p>No domains yet. <a href="/sites/new">Add a site</a>: its domain is added for you.</p>{{else}}
+<h1>{{if .Edit}}{{index .Site.Hostnames 0}}{{else}}Add site{{end}} {{helplink "sites"}}</h1>
+{{if .Row}}<p class="chips">
+{{if not .Row.Enabled}}<span class="chip">disabled</span>{{else if .Row.Probed}}
+{{if .Row.Upstream}}<span class="chip up-{{.Row.Upstream}}">backend {{.Row.Upstream}}</span>{{else}}<span class="chip">static files</span>{{end}}
+<span class="chip cert-{{.Row.Cert.State}}">certificate {{.Row.Cert.State}}</span>
+{{if and .DNSOn .Row.DNSState}}<span class="chip dns-{{.Row.DNSState}}">DNS {{.Row.DNSState}}</span>{{end}}
+{{end}}
+</p>{{end}}
 <article>
-<form {{if .Edit}}hx-put="/sites/{{.Site.ID}}"{{else}}hx-post="/sites/full"{{end}} hx-target="#msg">
-<label>Domain
-<select name="domain_id" required>
-{{range .Domains}}<option value="{{.ID}}"{{if eq .ID $.Data.Addr.DomainID}} selected{{end}}>{{.Name}}</option>{{end}}
+<form {{if .Edit}}hx-put="/sites/{{.Site.ID}}"{{else}}hx-post="/sites"{{end}} hx-target="#msg">
+<fieldset>
+<legend>Address</legend>
+<label>Hostnames (one per line; the first is the main address)
+<textarea name="hostnames" id="hostnames" rows="2" placeholder="app.example.com" autocomplete="off" required aria-describedby="hint-{{if .DNSOn}}hostnames{{else}}hostnames_nodns{{end}}"{{if .Edit}} data-initial="{{index .Site.Hostnames 0}}"{{end}}>{{.HostLines}}</textarea></label>
+{{if .DNSOn}}{{hintid "hostnames"}}{{else}}{{hintid "hostnames_nodns"}}{{end}}
+{{if and .Edit .DNSOn}}<p id="rename-note" class="notice" hidden>The main address changed. ServanaGo removes the old DNS record if it created it, and creates one for the new name.</p>{{end}}
+</fieldset>
+<fieldset>
+<legend>What it serves</legend>
+<label>Kind
+<select name="kind" id="kind" aria-describedby="hint-kind">
+<option value="proxy"{{if not .IsStatic}} selected{{end}}>Proxy: forward to an app</option>
+<option value="static"{{if .IsStatic}} selected{{end}}>Static: serve a folder</option>
 </select></label>
-{{if .DNSOn}}{{hint "domain"}}{{else}}{{hint "domain_nodns"}}{{end}}
-<label>Subdomain <input name="subdomain" id="subdomain" value="{{.Addr.Subdomain}}" placeholder="app" required></label>
-{{hint "subdomain"}}
+{{hintid "kind"}}
+<div data-for="proxy"{{if .IsStatic}} hidden{{end}}>
+<div class="grid">
 <label>Upstream scheme
-<select name="scheme">
+<select name="scheme" aria-describedby="hint-scheme">
 <option value="http"{{if eq .Site.Scheme "http"}} selected{{end}}>http</option>
 <option value="https"{{if eq .Site.Scheme "https"}} selected{{end}}>https</option>
 </select></label>
-{{hint "scheme"}}
-<label>Upstream host or IP <input name="upstream_host" value="{{.Site.UpstreamHost}}" placeholder="192.168.1.20" required></label>
-{{hint "upstream_host"}}
-<label>Upstream port <input name="upstream_port" id="upstream_port" type="number" min="1" max="65535" value="{{if .Site.UpstreamPort}}{{.Site.UpstreamPort}}{{end}}" required></label>
-{{hint "upstream_port"}}
-{{if .DNSOn}}<label>DNS record IP (blank = the domain's default IP) <input name="record_ip" value="{{.Site.RecordIP}}" placeholder="192.168.1.20"></label>
-{{hint "record_ip"}} {{helplink "addresses"}}
-<label>AAAA record IPv6 (blank = the domain's IPv6) <input name="record_ip6" value="{{.Site.RecordIP6}}" placeholder="2001:db8::20"></label>
-{{hint "record_ip6"}}{{end}}
-<label><input type="checkbox" name="tls_skip_verify"{{if .Site.TLSSkipVerify}} checked{{end}}> Skip TLS verification (self-signed https upstream)</label>
-{{hint "skip_verify"}}
-<label><input type="checkbox" name="stream"{{if .Site.Stream}} checked{{end}}> Send responses as they arrive (streaming)</label>
-{{hint "stream"}}
-<label>Upload limit (blank = no limit) <input name="max_body" value="{{size .Site.MaxBody}}" placeholder="2GB"></label>
-{{hint "max_body"}}
+<label>Upstream host or IP
+<input name="upstream_host" value="{{.Site.UpstreamHost}}" placeholder="192.168.1.20" required aria-describedby="hint-upstream_host"></label>
+<label>Upstream port
+<input name="upstream_port" id="upstream_port" type="number" min="1" max="65535" value="{{if .Site.UpstreamPort}}{{.Site.UpstreamPort}}{{end}}" placeholder="9200" required aria-describedby="hint-upstream_port"></label>
+</div>
+{{hintid "scheme"}} {{hintid "upstream_host"}} {{hintid "upstream_port"}}
+</div>
+<div data-for="static"{{if not .IsStatic}} hidden{{end}}>
+<label>Folder
+<input name="static_root" id="static_root" value="{{.Site.StaticRoot}}" placeholder="/srv/www/blog" autocomplete="off" required aria-describedby="hint-static_root"></label>
+{{hintid "static_root"}}
+{{if .RootNote}}<p class="explain" role="alert">ServanaGo cannot read this folder: {{.RootNote}}</p>{{end}}
+</div>
+</fieldset>
+<fieldset>
+<legend>Who can open this site</legend>
 <fieldset>
 <legend>Magic-link access (optional)</legend>
 {{if .MailOK}}<label>Require a magic link before the site is served?
-<select name="gate_mode">
+<select name="gate_mode" aria-describedby="hint-gate_mode">
 <option value=""{{if not .Site.GateMode}} selected{{end}}>No</option>
 <option value="acl"{{if eq .Site.GateMode "acl"}} selected{{end}}>Yes, with an allowlist</option>
 <option value="open"{{if eq .Site.GateMode "open"}} selected{{end}}>Yes, but any email address</option>
 </select></label>
-{{hint "gate_mode"}}
+{{hintid "gate_mode"}}
 <label>Allowlist (one per line; addresses starting with @ cover a whole domain)
-<textarea name="gate_acl" rows="3" placeholder="alice@example.com&#10;@contractor.example">{{.GateACL}}</textarea></label>
-{{hint "gate_acl"}}
+<textarea name="gate_acl" rows="3" placeholder="alice@example.com&#10;@contractor.example" aria-describedby="hint-gate_acl">{{.GateACL}}</textarea></label>
+{{hintid "gate_acl"}}
 {{else}}<p>Set up email delivery under <a href="/settings">Settings</a> first; the picker and allowlist unlock afterwards.</p>
-{{hint "smtp_setup"}}
+{{hintid "smtp_setup"}}
 {{end}}
 </fieldset>
 <label>Allowed sources (CIDR ranges, one per line; empty = anyone)
-<textarea name="allowlist" rows="3" placeholder="192.168.0.0/16">{{.Site.Allowlist}}</textarea></label>
-{{hint "allowlist"}} {{helplink "access"}}
+<textarea name="allowlist" rows="3" placeholder="192.168.0.0/16" aria-describedby="hint-allowlist">{{.Site.Allowlist}}</textarea></label>
+{{hintid "allowlist"}} {{helplink "access"}}
 <fieldset>
 <legend>Basic authentication (optional)</legend>
 <label>User <input name="basic_user" value="{{.Site.BasicUser}}" autocomplete="off"></label>
-<label>Password <input type="password" name="basic_password" autocomplete="new-password" placeholder="{{if .Site.BasicHash}}leave blank to keep the current password{{end}}"></label>
-{{hint "basic_auth"}}
+<label>Password <input type="password" name="basic_password" autocomplete="new-password" aria-describedby="hint-basic_auth" placeholder="{{if .Site.BasicHash}}leave blank to keep the current password{{end}}"></label>
+{{hintid "basic_auth"}}
 </fieldset>
-<label><input type="checkbox" name="enabled"{{if .Site.Enabled}} checked{{end}}> Enabled</label>
-{{hint "enabled"}}
+</fieldset>
+<details>
+<summary>Advanced</summary>
+{{if .DNSOn}}<label>DNS record IP (blank = the domain's default IP) <input name="record_ip" value="{{.Site.RecordIP}}" placeholder="192.168.1.20" aria-describedby="hint-record_ip"></label>
+{{hintid "record_ip"}} {{helplink "addresses"}}
+<label>AAAA record IPv6 (blank = the domain's IPv6) <input name="record_ip6" value="{{.Site.RecordIP6}}" placeholder="2001:db8::20" aria-describedby="hint-record_ip6"></label>
+{{hintid "record_ip6"}}{{end}}
+<div data-for="proxy"{{if .IsStatic}} hidden{{end}}>
+<label><input type="checkbox" name="tls_skip_verify"{{if .Site.TLSSkipVerify}} checked{{end}} aria-describedby="hint-skip_verify"> Skip TLS verification (self-signed https upstream)</label>
+{{hintid "skip_verify"}}
+<label><input type="checkbox" name="stream"{{if .Site.Stream}} checked{{end}} aria-describedby="hint-stream"> Send responses as they arrive (streaming)</label>
+{{hintid "stream"}}
+<label>Upload limit (blank = no limit) <input name="max_body" value="{{size .Site.MaxBody}}" placeholder="2GB" aria-describedby="hint-max_body"></label>
+{{hintid "max_body"}}
+</div>
+</details>
+<label><input type="checkbox" name="enabled"{{if .Site.Enabled}} checked{{end}} aria-describedby="hint-enabled"> Enabled</label>
+{{hintid "enabled"}}
+<p id="preview" class="preview" aria-live="polite" data-server-ip="{{.ServerIP}}" data-dns="{{if .DNSOn}}1{{end}}"></p>
 <button type="submit">{{if .Edit}}Save{{else}}Add site{{end}}</button>
 <p id="msg" role="alert"></p>
 </form>
-{{if .Edit}}<button class="outline danger" hx-delete="/sites/{{.Site.ID}}?delete_dns=on" hx-target="#msg" hx-confirm="{{.DeleteConfirm}}">Delete site</button>{{end}}
+{{if .Edit}}<button type="button" class="outline danger delete-site" data-id="{{.Site.ID}}" data-host="{{index .Site.Hostnames 0}}" data-dns-ip="{{with .Row}}{{.OwnedSummary}}{{end}}">Delete site</button>{{end}}
 </article>
-{{end}}
+{{template "deletedlg" .DNSOn}}
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  function field(n) { return document.querySelector('[name=' + n + ']'); }
+  function first() { return ($('hostnames').value.split(/[\s,]+/)[0] || '').toLowerCase(); }
+  function sync() {
+    var st = $('kind').value === 'static';
+    document.querySelectorAll('[data-for]').forEach(function (el) {
+      var on = el.dataset.for === (st ? 'static' : 'proxy');
+      el.hidden = !on;
+      el.querySelectorAll('input,select,textarea').forEach(function (i) { i.disabled = !on; });
+    });
+    preview();
+  }
+  function preview() {
+    var h = first(), out = $('preview'), st = $('kind').value === 'static', dnsOn = out.dataset.dns === '1';
+    var backend = st ? field('static_root').value.trim()
+      : (field('upstream_host').value.trim() && $('upstream_port').value.trim() ? field('scheme').value + '://' + field('upstream_host').value.trim() + ':' + $('upstream_port').value.trim() : '');
+    if (!h || !backend) { out.textContent = 'Fill in the hostnames and the ' + (st ? 'folder' : 'backend') + ' to see what will be created.'; return; }
+    out.textContent = 'Visitors open https://' + h + '. ' + (st ? 'Caddy serves the files in ' : 'Caddy forwards to ') + backend +
+      (dnsOn ? '. ServanaGo creates (or keeps) a DNS record ' + h + ' pointing to ' + (out.dataset.serverIp || 'this server') + ' if the name is in your Cloudflare account, and gets a certificate for it.'
+             : '. ServanaGo gets a certificate for it. Point ' + h + ' at this server in your DNS yourself.');
+    var note = $('rename-note');
+    if (note) note.hidden = first() === $('hostnames').dataset.initial;
+  }
+  ['hostnames', 'upstream_port', 'static_root'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('input', preview); });
+  ['upstream_host', 'scheme'].forEach(function (n) { field(n).addEventListener('input', preview); });
+  $('kind').addEventListener('change', sync);
+  sync();
+})();
+</script>
 {{end}}
 {{end}}

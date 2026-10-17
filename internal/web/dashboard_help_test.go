@@ -185,8 +185,9 @@ func TestHelpRequiresLogin(t *testing.T) {
 
 func TestErrorsReachTheUserExplained(t *testing.T) {
 	s, _ := siteServer(t)
-	_, body := postSite(s, siteForm("hostname", "example.com"))
-	if !strings.Contains(body, "Use a subdomain, not the domain itself") || !strings.Contains(body, "is a zone itself") {
+	s.deps.Cfg.Host = "oc.example.com"
+	_, body := postSite(s, siteForm("hostnames", "oc.example.com"))
+	if !strings.Contains(body, "own address") || !strings.Contains(body, "UI host") {
 		t.Errorf("explanation plus raw error expected: %s", body)
 	}
 }

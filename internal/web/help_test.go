@@ -9,7 +9,7 @@ import (
 
 // Every hint "x" and helplink "y" used in a template must exist, so help text cannot silently go missing.
 func TestTemplatesOnlyUseDefinedHelp(t *testing.T) {
-	hintRE := regexp.MustCompile(`\{\{\s*hint "([a-z_]+)"`)
+	hintRE := regexp.MustCompile(`\{\{\s*hint(?:id)? "([a-z_0-9]+)"`)
 	linkRE := regexp.MustCompile(`helplink "([a-z-]+)"`)
 	anchors := map[string]bool{}
 	for _, s := range helpSections {
@@ -61,12 +61,11 @@ func TestExplain(t *testing.T) {
 		{"verify Cloudflare token: GET ...: 401 Unauthorized", "token"},
 		{`default IP: "127.0.0.1" must be a usable IPv4 address (loopback, link-local, multicast and reserved are not)`, "cannot be used"},
 		{"oc.x.com is the ServanaGo UI host; choose another subdomain", "own address"},
-		{"x.com is a zone itself; use a subdomain such as app.x.com", "subdomain"},
-		{"a.b.x.com is more than one label below x.com; a wildcard certificate would not cover it", "one level"},
 		{"caddy rejected config: loading new config: invalid CIDR", "Caddy rejected"},
 		{"urn:ietf:params:acme:error:rateLimited: too many certificates already issued", "rate limit"},
 		{"obtaining certificate: context canceled", "interrupted"},
-		{`Subdomain "oc" already exists on that domain.`, "already exists"},
+		{`Hostname "oc.x.com" is already used by another site.`, "already belongs"},
+		{"oc.x.com is the ServanaGo UI host; choose another hostname", "own address"},
 	}
 	for _, tt := range tests {
 		e, ok := explain(tt.in)

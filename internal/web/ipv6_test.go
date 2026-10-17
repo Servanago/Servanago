@@ -102,8 +102,8 @@ func TestRouteRecordIP6Override(t *testing.T) {
 
 func TestRouteRejectsBadRecordIP6(t *testing.T) {
 	for _, bad := range []string{"::1", "10.0.0.1", "fe80::1", "nope"} {
-		s, _, d := newDNSServer(t)
-		w := s.do(req{method: "POST", path: "/sites/full", body: form("domain_id", itoa(d.ID), "enabled", "on", "record_ip6", bad).Encode(), hdr: htmxPost})
+		s, _, _ := newDNSServer(t)
+		w := s.do(req{method: "POST", path: "/sites", body: form("enabled", "on", "record_ip6", bad).Encode(), hdr: htmxPost})
 		if w.Code != 422 || !strings.Contains(w.Body.String(), "record IPv6") {
 			t.Errorf("%q: %d %q", bad, w.Code, w.Body.String())
 		}
@@ -116,8 +116,8 @@ func TestEditingRouteClearsAAAA(t *testing.T) {
 	if len(cf.dns.Records()) != 2 {
 		t.Fatalf("setup: %+v", typesOf(cf))
 	}
-	e := form("domain_id", itoa(d.ID), "upstream_host", "192.168.1.20", "upstream_port", "8989", "enabled", "on")
-	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 204 {
+	e := form("upstream_host", "192.168.1.20", "upstream_port", "8989", "enabled", "on")
+	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 200 {
 		t.Fatalf("%d %q", w.Code, w.Body.String())
 	}
 	got := typesOf(cf)
@@ -159,12 +159,12 @@ func TestFormsOfferIPv6OnlyWithCloudflare(t *testing.T) {
 	if body := s.do(req{path: "/domains"}).Body.String(); !strings.Contains(body, `name="default_ip6"`) {
 		t.Error("domain form lacks the IPv6 field")
 	}
-	if body := s.do(req{path: "/sites/new/full"}).Body.String(); !strings.Contains(body, `name="record_ip6"`) {
+	if body := s.do(req{path: "/sites/new"}).Body.String(); !strings.Contains(body, `name="record_ip6"`) {
 		t.Error("site form lacks the IPv6 field")
 	}
 	n := noCFServer(t)
 	_, _ = addDomainNoDNS(n)
-	for _, path := range []string{"/domains", "/sites/new/full"} {
+	for _, path := range []string{"/domains", "/sites/new"} {
 		if body := n.do(req{path: path}).Body.String(); strings.Contains(body, "ip6") {
 			t.Errorf("%s offers IPv6 fields with no Cloudflare", path)
 		}

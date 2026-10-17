@@ -5,7 +5,7 @@
 <tbody>
 {{range .}}
 <tr>
-<td>{{.Host}}</td>
+<td>{{.Host}}{{range .Aliases}}<br><small class="alias">{{.}}</small>{{end}}</td>
 <td>{{if eq .Kind "static"}}<span title="Static files served from this folder">{{.StaticRoot}}</span>{{else}}{{.UpstreamHost}}:{{.UpstreamPort}}{{end}}{{if or .Stream .MaxBody}}<br>{{if .Stream}}<span class="tune" title="Responses are sent as they arrive">stream</span>{{end}}{{if .MaxBody}} <span class="tune" title="Largest accepted upload">max {{size .MaxBody}}</span>{{end}}{{end}}{{if and .Probed .Upstream}}{{$u := status "up" .Upstream}}<br><small class="up-{{.Upstream}}" title="{{$u.Meaning}}">{{.Upstream}}</small>{{if $u.Next}}<small class="next">{{$u.Next}}</small>{{end}}{{end}}</td>
 <td>{{if .Enabled}}enabled{{else}}disabled{{end}}{{if .GateMode}}<br><small class="tune" title="A magic link is required before the site is served">{{if eq .GateMode "open"}}gated (any email){{else}}gated (allowlist){{end}}</small>{{end}}</td>
 <td>{{if .Probed}}{{$c := status "cert" .Cert.State}}{{if .CertSoon}}{{$c = status "cert" "expiring"}}<span class="cert-expiring" title="{{$c.Meaning}}">expiring soon</span>{{else}}<span class="cert-{{.Cert.State}}" title="{{$c.Meaning}}">{{.Cert.State}}</span>{{end}}
@@ -64,37 +64,6 @@
 <p id="msg" role="alert"></p>
 </article>
 <a role="button" href="/sites/new">Add site</a>
-{{/* One dialog for every row, outside #sites: the 10s refresh replaces #sites and would close a dialog inside it. */}}
-<dialog id="delete-dialog">
-<article>
-<h3>Delete <span class="dlg-host"></span>?</h3>
-<p>The site stops being served and the site is removed. This cannot be undone.</p>
-<form hx-delete="/sites/0" hx-target="find .dlg-msg">
-{{if .DNSOn}}<label class="dlg-owned" hidden><input type="checkbox" name="delete_dns"> Also delete the DNS record <span class="dlg-record"></span> in Cloudflare</label>
-<p class="dlg-kept" hidden>The DNS record is left in place: ServanaGo did not create it, or there is none.</p>{{end}}
-<p class="dlg-msg" role="alert"></p>
-<footer>
-<button type="button" class="outline secondary" onclick="document.getElementById('delete-dialog').close()">Cancel</button>
-<button type="submit" class="danger">Delete</button>
-</footer>
-</form>
-</article>
-</dialog>
-<script>
-document.addEventListener('click', function (e) {
-  var b = e.target.closest('.delete-site');
-  if (!b) return;
-  var d = document.getElementById('delete-dialog'), f = d.querySelector('form'), ip = b.dataset.dnsIp;
-  f.setAttribute('hx-delete', '/sites/' + b.dataset.id);
-  htmx.process(f); // htmx captures the URL when it binds the form, so re-bind after changing it
-  f.reset();
-  d.querySelector('.dlg-host').textContent = b.dataset.host;
-  {{if .DNSOn}}d.querySelector('.dlg-record').textContent = b.dataset.host + ' → ' + ip;
-  d.querySelector('.dlg-owned').hidden = !ip;
-  d.querySelector('.dlg-kept').hidden = !!ip;
-  {{end}}d.querySelector('.dlg-msg').textContent = '';
-  d.showModal();
-});
-</script>
+{{template "deletedlg" .DNSOn}}
 {{end}}
 {{end}}

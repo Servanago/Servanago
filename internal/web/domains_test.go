@@ -133,6 +133,73 @@ func TestAddDomainZoneNotFound(t *testing.T) {
 	}
 }
 
+func putDomain(s *Server, id int64, kv ...string) *httptest.ResponseRecorder {
+	return s.do(req{method: "PUT", path: "/domains/" + itoa(id), body: form(kv...).Encode(), hdr: htmxPost})
+}
+
+func TestUpdateDomain(t *testing.T) {
+	cf := &cfFake{zones: zonesOK}
+	s := domainServer(t, cf)
+	ctx := context.Background()
+	postDomain(s, "example.com", "192.168.1.10", "wildcard")
+	ds, _ := s.deps.Store.ListDomains(ctx)
+	id := ds[0].ID
+
+	w := putDomain(s, id, "default_ip", "192.168.1.20", "default_ip6", "2001:db8::1", "cert_mode", "per_host")
+	if w.Code != 204 || w.Header().Get("HX-Redirect") != "/domains" {
+		t.Fatalf("update: %d %s", w.Code, w.Body.String())
+	}
+	got, _ := s.deps.Store.GetDomain(ctx, id)
+	if got.Name != "example.com" || got.ZoneID != "zone123" || got.DefaultIP != "192.168.1.20" || got.DefaultIP6 != "2001:db8::1" || got.CertMode != "per_host" {
+		t.Fatalf("after update: %+v", got)
+	}
+
+	// A zone name is looked up and replaces the stored zone id; an unknown one changes nothing.
+	if w := putDomain(s, id, "default_ip", "192.168.1.20", "cert_mode", "per_host", "zone", "example.com"); w.Code != 204 {
+		t.Fatalf("zone update: %d %s", w.Code, w.Body.String())
+	}
+	got, _ = s.deps.Store.GetDomain(ctx, id) // the form replaces every field, so omitting default_ip6 cleared it
+	if got.DefaultIP6 != "" {
+		t.Fatalf("default_ip6 not cleared: %+v", got)
+	}
+	cf.zones = `{"success":true,"errors":[],"messages":[],"result":[],"result_info":{"page":1,"per_page":20,"count":0,"total_count":0}}`
+	if w := putDomain(s, id, "default_ip", "192.168.1.30", "cert_mode", "wildcard", "zone", "nope.example.net"); w.Code != 422 || !strings.Contains(w.Body.String(), "not found") {
+		t.Fatalf("unknown zone: %d %s", w.Code, w.Body.String())
+	}
+	for name, kv := range map[string][]string{
+		"bad ip":   {"default_ip", "999.1.1.1", "cert_mode", "wildcard"},
+		"bad ipv6": {"default_ip", "192.168.1.30", "default_ip6", "::1", "cert_mode", "wildcard"},
+		"bad mode": {"default_ip", "192.168.1.30", "cert_mode", "banana"},
+	} {
+		if w := putDomain(s, id, kv...); w.Code != 422 {
+			t.Errorf("%s: %d", name, w.Code)
+		}
+	}
+	if again, _ := s.deps.Store.GetDomain(ctx, id); again != got {
+		t.Fatalf("a rejected update changed the domain: %+v", again)
+	}
+	if w := putDomain(s, 999, "default_ip", "192.168.1.30", "cert_mode", "wildcard"); w.Code != 404 {
+		t.Errorf("unknown domain: %d", w.Code)
+	}
+}
+
+func TestUpdateDomainWithoutCloudflare(t *testing.T) {
+	s := noCFServer(t)
+	if code, body := addDomainNoDNS(s); code != 204 {
+		t.Fatalf("%d %q", code, body)
+	}
+	ds, _ := s.deps.Store.ListDomains(context.Background())
+	if w := putDomain(s, ds[0].ID, "cert_mode", "wildcard"); w.Code != 422 {
+		t.Fatalf("wildcard needs Cloudflare: %d %s", w.Code, w.Body.String())
+	}
+	if w := putDomain(s, ds[0].ID, "cert_mode", "per_host", "default_ip", "10.0.0.1"); w.Code != 204 {
+		t.Fatalf("per_host: %d %s", w.Code, w.Body.String())
+	}
+	if got, _ := s.deps.Store.GetDomain(context.Background(), ds[0].ID); got.DefaultIP != "" || got.ZoneID != "" {
+		t.Fatalf("no-Cloudflare domains carry no IPs or zone: %+v", got)
+	}
+}
+
 func TestDeleteDomain(t *testing.T) {
 	s := domainServer(t, &cfFake{zones: zonesOK})
 	ctx := context.Background()

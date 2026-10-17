@@ -130,7 +130,7 @@ func TestRouteFormShowsGateSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := sessionCookie(t, login(s, "pw", nil, ""))
-	w := s.do(req{path: "/sites/new/full", cookies: []*http.Cookie{c}})
+	w := s.do(req{path: "/sites/new", cookies: []*http.Cookie{c}})
 	if !strings.Contains(w.Body.String(), "gate_mode") || !strings.Contains(w.Body.String(), "Magic-link access") {
 		t.Fatalf("gate section missing from the site form:\n%s", w.Body.String())
 	}
@@ -140,7 +140,7 @@ func TestRouteFormShowsGateSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	c2 := sessionCookie(t, login(s2, "pw", nil, ""))
-	for _, path := range []string{"/sites/new/full", "/sites/new"} {
+	for _, path := range []string{"/sites/new", "/sites/new"} {
 		w2 := s2.do(req{path: path, cookies: []*http.Cookie{c2}})
 		if strings.Contains(w2.Body.String(), "gate_mode") {
 			t.Fatalf("%s: controls rendered while mail is unconfigured", path)
@@ -161,7 +161,7 @@ func TestCreateGatedRouteAndSecurityListing(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := sessionCookie(t, login(s, "pw", nil, ""))
-	w := s.do(req{method: "POST", path: "/sites/full",
+	w := s.do(req{method: "POST", path: "/sites",
 		body: form("enabled", "on", "gate_mode", "acl", "gate_acl", "alice@example.com\n@dev.example").Encode(),
 		hdr:  htmxPost, cookies: []*http.Cookie{c}})
 	if w.Code != 204 {

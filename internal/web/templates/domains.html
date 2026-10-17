@@ -11,7 +11,24 @@
 {{range .Rows}}
 <tr>
 <td>{{.Name}}</td>{{if $.Data.DNSOn}}<td>{{.DefaultIP}}{{if .DefaultIP6}}<br>{{.DefaultIP6}}{{end}}</td>{{end}}<td>{{.CertMode}}</td><td>{{.Sites}}</td>
-<td><button class="outline danger" hx-delete="/domains/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}? {{if $.Data.DNSOn}}Its DNS records and certificates are not touched.{{else}}Its certificates are not touched.{{end}}">Remove</button></td>
+<td>{{if $.Data.DNSOn}}<details class="edit-domain"><summary>Edit</summary>
+<form hx-put="/domains/{{.ID}}" hx-target="#msg">
+<label>Zone (blank = keep the current one) <input name="zone" placeholder="example.com" autocomplete="off"></label>
+{{hint "zone"}}
+<label>A record IP <input name="default_ip" value="{{.DefaultIP}}" required></label>
+{{hint "default_ip"}}
+<label>AAAA record IP (optional) <input name="default_ip6" value="{{.DefaultIP6}}"></label>
+{{hint "default_ip6"}}
+<label>Certificate mode
+<select name="cert_mode">
+<option value="wildcard"{{if eq .CertMode "wildcard"}} selected{{end}}>Wildcard (one *.domain certificate)</option>
+<option value="per_host"{{if eq .CertMode "per_host"}} selected{{end}}>Per host (one certificate per site)</option>
+</select></label>
+{{hint "cert_mode"}}
+<p><small>Existing DNS records are not changed; use Resync on a site to move its record.</small></p>
+<button type="submit">Save</button>
+</form></details>{{end}}
+<button class="outline danger" hx-delete="/domains/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}? {{if $.Data.DNSOn}}Its DNS records and certificates are not touched.{{else}}Its certificates are not touched.{{end}}">Remove</button></td>
 </tr>
 {{end}}
 </tbody>

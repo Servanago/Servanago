@@ -9,9 +9,8 @@ test('list row delete panel: cancel keeps the site, delete asks about the DNS re
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'delrow.example.net' })).toBeVisible();
 
-  await page.goto('/sites/new/full');
-  await page.locator('select[name=domain_id]').selectOption('delrow.example.net');
-  await page.getByLabel('Subdomain').fill('lidarr');
+  await page.goto('/sites/new');
+  await page.getByLabel('Hostnames').fill('lidarr.delrow.example.net');
   await page.getByLabel('Upstream port').fill('8686');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.24');
   await page.getByRole('button', { name: 'Add site' }).click();
@@ -42,9 +41,8 @@ test('row actions share one line and show a tooltip', async ({ page }) => {
   await page.getByLabel('Default IP').fill('192.168.1.10');
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'icons.example.net' })).toBeVisible();
-  await page.goto('/sites/new/full');
-  await page.locator('select[name=domain_id]').selectOption('icons.example.net');
-  await page.getByLabel('Subdomain').fill('readarr');
+  await page.goto('/sites/new');
+  await page.getByLabel('Hostnames').fill('readarr.icons.example.net');
   await page.getByLabel('Upstream port').fill('8787');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.25');
   await page.getByRole('button', { name: 'Add site' }).click();

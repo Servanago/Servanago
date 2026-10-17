@@ -4,11 +4,11 @@ import { login } from './helpers';
 test('Add site asks for hostname and a separate backend port, and creates domain, site and record', async ({ page }) => {
   await login(page);
   await page.getByRole('link', { name: 'Add site' }).first().click();
-  await expect(page.getByLabel('Backend port')).toBeVisible();
+  await expect(page.getByLabel('Upstream port')).toBeVisible();
 
-  await page.getByLabel('Hostname').fill('oc.sitesflow.example.net');
-  await page.getByLabel('Backend host or IP').fill('192.168.25.165');
-  await page.getByLabel('Backend port').fill('9200');
+  await page.getByLabel('Hostnames').fill('oc.sitesflow.example.net');
+  await page.getByLabel('Upstream host or IP').fill('192.168.25.165');
+  await page.getByLabel('Upstream port').fill('9200');
   await page.getByRole('button', { name: 'Add site' }).click();
 
   const row = page.getByRole('row', { name: /oc\.sitesflow\.example\.net/ });
@@ -22,9 +22,9 @@ test('Add site asks for hostname and a separate backend port, and creates domain
 test('Add site will not submit without a valid port and creates nothing', async ({ page }) => {
   await login(page);
   await page.goto('/sites/new');
-  await page.getByLabel('Hostname').fill('nope.sitesflow2.example.net');
-  await page.getByLabel('Backend host or IP').fill('192.168.25.165');
-  const port = page.getByLabel('Backend port');
+  await page.getByLabel('Hostnames').fill('nope.sitesflow2.example.net');
+  await page.getByLabel('Upstream host or IP').fill('192.168.25.165');
+  const port = page.getByLabel('Upstream port');
   await port.fill('70000'); // above max=65535: the browser blocks the request
   await page.getByRole('button', { name: 'Add site' }).click();
   expect(await port.evaluate((el: HTMLInputElement) => el.validity.valid)).toBe(false);

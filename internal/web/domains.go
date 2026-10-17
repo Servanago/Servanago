@@ -130,6 +130,69 @@ func (s *Server) addDomain(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// updateDomain edits everything but the name: zone (looked up by name; blank keeps the stored one), default IPs
+// and certificate mode. Existing DNS records are not touched; the site rows offer Resync.
+func (s *Server) updateDomain(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		fail(w, http.StatusBadRequest, "bad domain id")
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	mode := r.PostFormValue("cert_mode")
+	if mode != "wildcard" && mode != "per_host" {
+		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("cert_mode %q must be wildcard or per_host", mode))
+		return
+	}
+	ip, ip6 := strings.TrimSpace(r.PostFormValue("default_ip")), strings.TrimSpace(r.PostFormValue("default_ip6"))
+	zone := strings.ToLower(strings.TrimSpace(r.PostFormValue("zone")))
+	zoneID := ""
+	if s.dnsOn() {
+		if _, err := config.ValidateIP(ip); err != nil {
+			fail(w, http.StatusUnprocessableEntity, "default IP: "+err.Error())
+			return
+		}
+		if ip6 != "" {
+			if _, err := config.ValidateIP6(ip6); err != nil {
+				fail(w, http.StatusUnprocessableEntity, "default IPv6: "+err.Error())
+				return
+			}
+		}
+		if zone != "" {
+			if zoneID, err = s.deps.CF.ZoneID(r.Context(), zone); err != nil {
+				fail(w, http.StatusUnprocessableEntity, err.Error())
+				return
+			}
+		}
+	} else {
+		ip, ip6 = "", ""
+		if mode == "wildcard" {
+			fail(w, http.StatusUnprocessableEntity, "Wildcard certificates need Cloudflare DNS (set CLOUDFLARE_API_TOKEN). Use per_host.")
+			return
+		}
+	}
+	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
+		d, err := tx.GetDomain(r.Context(), id)
+		if err != nil {
+			return userError{http.StatusNotFound, "domain not found"}
+		}
+		d.DefaultIP, d.DefaultIP6, d.CertMode = ip, ip6, mode
+		if zoneID != "" {
+			d.ZoneID = zoneID
+		}
+		return tx.UpdateDomain(r.Context(), d)
+	})
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+	w.Header().Set("HX-Redirect", "/domains")
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {

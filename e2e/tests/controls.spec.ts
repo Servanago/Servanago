@@ -9,9 +9,8 @@ test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'controls.example.net' })).toBeVisible();
 
-  await page.goto('/sites/new/full');
-  await page.locator('select[name=domain_id]').selectOption('controls.example.net');
-  await page.getByLabel('Subdomain').fill('bazarr');
+  await page.goto('/sites/new');
+  await page.getByLabel('Hostnames').fill('bazarr.controls.example.net');
   await page.getByLabel('Upstream port').fill('6767');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.22');
   await page.getByLabel('Allowed sources').fill('192.168.0.0/16');

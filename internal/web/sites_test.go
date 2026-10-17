@@ -15,7 +15,7 @@ import (
 )
 
 func siteForm(kv ...string) url.Values {
-	v := url.Values{"hostname": {"oc.example.com"}, "scheme": {"http"}, "upstream_host": {"192.168.25.165"}, "upstream_port": {"9200"}, "enabled": {"on"}}
+	v := url.Values{"hostnames": {"oc.example.com"}, "scheme": {"http"}, "upstream_host": {"192.168.25.165"}, "upstream_port": {"9200"}, "enabled": {"on"}}
 	for i := 0; i < len(kv); i += 2 {
 		v.Set(kv[i], kv[i+1])
 	}
@@ -100,7 +100,7 @@ func TestAddSiteLongestManagedDomainWins(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if code, body := postSite(s, siteForm("hostname", "oc.lab.example.com")); code != 204 {
+	if code, body := postSite(s, siteForm("hostnames", "oc.lab.example.com")); code != 204 {
 		t.Fatalf("%d %q", code, body)
 	}
 	rs, _ := s.deps.Store.ListSites(ctx)
@@ -121,11 +121,11 @@ func TestAddSiteValidation(t *testing.T) {
 		{"host:port in the host field", siteForm("upstream_host", "192.168.25.165:9200"), "upstream host"},
 		{"no backend host", siteForm("upstream_host", ""), "upstream host"},
 		{"bad scheme", siteForm("scheme", "ftp"), "scheme"},
-		{".local hostname", siteForm("hostname", "nas.local"), ".local"},
-		{"single label", siteForm("hostname", "oc"), "label"},
-		{"hostname with a scheme", siteForm("hostname", "https://oc.example.com"), "hostname"},
-		{"hostname with a path", siteForm("hostname", "oc.example.com/x"), "hostname"},
-		{"hostname with a port", siteForm("hostname", "oc.example.com:9200"), "hostname"},
+		{".local hostname", siteForm("hostnames", "nas.local"), ".local"},
+		{"single label", siteForm("hostnames", "oc"), "label"},
+		{"hostname with a scheme", siteForm("hostnames", "https://oc.example.com"), "hostname"},
+		{"hostname with a path", siteForm("hostnames", "oc.example.com/x"), "hostname"},
+		{"hostname with a port", siteForm("hostnames", "oc.example.com:9200"), "hostname"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -143,26 +143,46 @@ func TestAddSiteValidation(t *testing.T) {
 	}
 }
 
-func TestAddSiteZoneNotFound(t *testing.T) {
-	s, _ := siteServer(t)
+// A hostname Cloudflare has no zone for is not an error: the site is served with no domain (HTTP-01, no DNS).
+func TestAddSiteWithoutAZoneIsServedWithoutADomain(t *testing.T) {
+	s, cf := siteServer(t)
 	s.deps.CF = fakeNoZoneClient(t)
-	code, body := postSite(s, siteForm("hostname", "oc.nozone.org"))
-	if code != 422 || !strings.Contains(body, "no Cloudflare zone") || !strings.Contains(body, "oc.nozone.org, nozone.org") {
+	if code, body := postSite(s, siteForm("hostnames", "oc.nozone.org")); code != 204 {
 		t.Fatalf("%d %q", code, body)
 	}
-	if ds, _ := s.deps.Store.ListDomains(context.Background()); len(ds) != 0 {
+	ctx := context.Background()
+	if ds, _ := s.deps.Store.ListDomains(ctx); len(ds) != 0 {
 		t.Errorf("domain created without a zone: %+v", ds)
+	}
+	if rs, _ := s.deps.Store.ListSites(ctx); len(rs) != 1 || rs[0].Hostnames[0] != "oc.nozone.org" {
+		t.Fatalf("site: %+v", rs)
+	}
+	if recs := cf.dns.Records(); len(recs) != 0 {
+		t.Errorf("DNS records without a domain: %+v", recs)
 	}
 }
 
-func TestAddSiteRejectsZoneApexAndNestedNames(t *testing.T) {
+// Cloudflare failing (as opposed to having no such zone) still refuses the site: the cause is not "no domain".
+func TestAddSiteCloudflareFailureIsReported(t *testing.T) {
 	s, _ := siteServer(t)
-	if code, body := postSite(s, siteForm("hostname", "example.com")); code != 422 || !strings.Contains(body, "subdomain") {
-		t.Errorf("apex: %d %q", code, body)
+	s.deps.CF = fakeFailingClient(t)
+	if code, body := postSite(s, siteForm("hostnames", "oc.example.com")); code != 422 || strings.Contains(body, "no Cloudflare zone") {
+		t.Fatalf("%d %q", code, body)
 	}
-	// zone lookup resolves a.b.example.com to example.com; a wildcard cert would not cover two labels
-	if code, body := postSite(s, siteForm("hostname", "a.b.example.com")); code != 422 || !strings.Contains(body, "one label") {
-		t.Errorf("nested: %d %q", code, body)
+	if rs, _ := s.deps.Store.ListSites(context.Background()); len(rs) != 0 {
+		t.Errorf("site stored after a Cloudflare failure: %+v", rs)
+	}
+}
+
+// Hostnames are free FQDNs: the domain apex and names several labels deep are fine (each gets its own certificate).
+func TestAddSiteAcceptsApexAndNestedNames(t *testing.T) {
+	s, _ := siteServer(t)
+	if code, body := postSite(s, siteForm("hostnames", "example.com\na.b.example.com\nwww.example.com")); code != 204 {
+		t.Fatalf("%d %q", code, body)
+	}
+	rs, _ := s.deps.Store.ListSites(context.Background())
+	if len(rs) != 1 || len(rs[0].Hostnames) != 3 || rs[0].Hostnames[0] != "example.com" {
+		t.Fatalf("%+v", rs)
 	}
 }
 
@@ -188,7 +208,7 @@ func TestAddSiteDuplicateHost(t *testing.T) {
 func TestSitePageHasSeparatePortField(t *testing.T) {
 	s, _ := siteServer(t)
 	body := s.do(req{path: "/sites/new"}).Body.String()
-	for _, want := range []string{`name="hostname"`, `name="upstream_host"`, `name="upstream_port"`, `type="number"`, "Backend port", `hx-post="/sites"`} {
+	for _, want := range []string{`name="hostnames"`, `name="kind"`, `name="static_root"`, `name="upstream_host"`, `name="upstream_port"`, `type="number"`, "Upstream port", `hx-post="/sites"`} {
 		if !strings.Contains(body, want) {
 			t.Errorf("site form missing %q", want)
 		}
@@ -215,6 +235,16 @@ func fakeNoZoneClient(t *testing.T) *cfdns.Client {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"errors":[],"messages":[],"result":[],"result_info":{"page":1,"per_page":20,"count":0,"total_count":0}}`))
+	}))
+	t.Cleanup(srv.Close)
+	return cfdns.New("tok", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))
+}
+
+// fakeFailingClient is a Cloudflare client whose API answers 500 to everything.
+func fakeFailingClient(t *testing.T) *cfdns.Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, `{"success":false,"errors":[{"code":1000,"message":"boom"}]}`, http.StatusInternalServerError)
 	}))
 	t.Cleanup(srv.Close)
 	return cfdns.New("tok", option.WithBaseURL(srv.URL), option.WithMaxRetries(0))

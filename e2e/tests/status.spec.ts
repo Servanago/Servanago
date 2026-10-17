@@ -10,9 +10,8 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
   await expect(page.getByRole('cell', { name: 'status.example.net' })).toBeVisible();
 
   // the UI's own listener is a guaranteed-open upstream
-  await page.goto('/sites/new/full');
-  await page.locator('select[name=domain_id]').selectOption('status.example.net');
-  await page.getByLabel('Subdomain').fill('self');
+  await page.goto('/sites/new');
+  await page.getByLabel('Hostnames').fill('self.status.example.net');
   await page.getByLabel('Upstream host or IP').fill('127.0.0.1');
   await page.getByLabel('Upstream port').fill('28081');
   await page.getByRole('button', { name: 'Add site' }).click();
@@ -27,7 +26,7 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
   await expect(row.getByText('synced')).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
-  page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Delete site' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'self.status.example.net' })).toHaveCount(0);
 });

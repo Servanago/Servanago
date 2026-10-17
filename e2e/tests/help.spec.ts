@@ -18,10 +18,10 @@ test('fields explain themselves and Add site shows a live preview', async ({ pag
   await page.goto('/sites/new');
   await expect(page.getByText('Not 443: Caddy already provides HTTPS')).toBeVisible(); // port hint
   const preview = page.locator('#preview');
-  await expect(preview).toContainText('Fill in the hostname and backend');
-  await page.getByLabel('Hostname').fill('oc.preview.example.net');
-  await page.getByLabel('Backend host or IP').fill('192.168.25.165');
-  await page.getByLabel('Backend port').fill('9200');
+  await expect(preview).toContainText('Fill in the hostnames and the backend');
+  await page.getByLabel('Hostnames').fill('oc.preview.example.net');
+  await page.getByLabel('Upstream host or IP').fill('192.168.25.165');
+  await page.getByLabel('Upstream port').fill('9200');
   await expect(preview).toContainText('https://oc.preview.example.net');
   await expect(preview).toContainText('http://192.168.25.165:9200');
   await expect(preview).toContainText('192.168.25.165'); // the DNS target is the server address

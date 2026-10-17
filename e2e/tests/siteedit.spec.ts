@@ -9,10 +9,9 @@ test('add a site, edit it, delete it', async ({ page }) => {
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'routes.example.net' })).toBeVisible();
 
-  await page.goto('/sites/new/full');
-  await page.locator('select[name=domain_id]').selectOption('routes.example.net');
+  await page.goto('/sites/new');
   await expect(page.getByLabel('Preset')).toHaveCount(0);
-  await page.getByLabel('Subdomain').fill('sonarr');
+  await page.getByLabel('Hostnames').fill('sonarr.routes.example.net');
   await page.getByLabel('Upstream port').fill('8989');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.20');
   await page.getByRole('button', { name: 'Add site' }).click();
@@ -23,10 +22,12 @@ test('add a site, edit it, delete it', async ({ page }) => {
   await row.getByRole('link', { name: 'Edit' }).click();
   await page.getByLabel('Enabled').uncheck();
   await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Saved and applied.')).toBeVisible();
+  await page.goto('/');
   await expect(row.getByRole('cell', { name: 'disabled' })).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
-  page.once('dialog', (d) => d.accept());
   await page.getByRole('button', { name: 'Delete site' }).click();
+  await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'sonarr.routes.example.net' })).toHaveCount(0);
 });

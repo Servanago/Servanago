@@ -4,6 +4,7 @@ import (
 	"time"
 
 	"context"
+	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/probe"
 	"net/url"
 	"strings"
@@ -13,7 +14,7 @@ import (
 )
 
 func form(kv ...string) url.Values {
-	v := url.Values{"domain_id": {"1"}, "subdomain": {"sonarr"}, "scheme": {"http"}, "upstream_host": {"192.168.1.20"}, "upstream_port": {"8989"}}
+	v := url.Values{"hostnames": {"sonarr.example.com"}, "scheme": {"http"}, "upstream_host": {"192.168.1.20"}, "upstream_port": {"8989"}}
 	for i := 0; i < len(kv); i += 2 {
 		v.Set(kv[i], kv[i+1])
 	}
@@ -29,10 +30,14 @@ func TestParseRoute(t *testing.T) {
 		{"valid", form(), ""},
 		{"hostname upstream with underscore", form("upstream_host", "sonarr_1"), ""},
 		{"ipv6 upstream", form("upstream_host", "fd00::5"), ""},
-		{"uppercase subdomain", form("subdomain", "Sonarr"), "subdomain"},
-		{"empty subdomain", form("subdomain", ""), "subdomain"},
-		{"dotted subdomain", form("subdomain", "a.b"), "subdomain"},
-		{"leading hyphen", form("subdomain", "-a"), "subdomain"},
+		{"uppercase hostname is lowercased", form("hostnames", "Sonarr.Example.com"), ""},
+		{"several hostnames", form("hostnames", "a.example.com\nb.example.org, c.example.net"), ""},
+		{"empty hostnames", form("hostnames", ""), "hostname"},
+		{"single label", form("hostnames", "sonarr"), "hostname"},
+		{"ip literal", form("hostnames", "10.0.0.1"), "hostname"},
+		{"local suffix", form("hostnames", "nas.local"), "hostname"},
+		{"unknown kind", form("kind", "php"), "kind"},
+		{"static without a folder", form("kind", "static"), "static folder"},
 		{"bad scheme", form("scheme", "ftp"), "scheme"},
 		{"empty host", form("upstream_host", ""), "upstream host"},
 		{"host with slash", form("upstream_host", "a/b"), "upstream host"},
@@ -41,7 +46,6 @@ func TestParseRoute(t *testing.T) {
 		{"port zero", form("upstream_port", "0"), "port"},
 		{"port too big", form("upstream_port", "65536"), "port"},
 		{"port text", form("upstream_port", "http"), "port"},
-		{"bad domain id", form("domain_id", "x"), "domain"},
 		{"record ip private", form("record_ip", "100.64.1.2"), ""},
 		{"record ip public", form("record_ip", "8.8.8.8"), ""},
 		{"record ip loopback", form("record_ip", "127.0.0.1"), "record IP"},
@@ -49,9 +53,9 @@ func TestParseRoute(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			r, addr, err := parseSite(tt.v)
+			r, err := parseSite(tt.v, config.Config{})
 			if tt.errHas == "" {
-				if err != nil || addr.Subdomain == "" {
+				if err != nil || len(r.Hostnames) == 0 {
 					t.Fatalf("%+v %v", r, err)
 				}
 				return
@@ -64,21 +68,21 @@ func TestParseRoute(t *testing.T) {
 }
 
 func TestParseRouteRecordIP(t *testing.T) {
-	r, _, _ := parseSite(form("record_ip", " 192.168.1.9 "))
+	r, _ := parseSite(form("record_ip", " 192.168.1.9 "), config.Config{})
 	if r.RecordIP != "192.168.1.9" {
 		t.Errorf("%q", r.RecordIP)
 	}
-	if r, _, _ := parseSite(form()); r.RecordIP != "" {
+	if r, _ := parseSite(form(), config.Config{}); r.RecordIP != "" {
 		t.Errorf("blank must stay blank (domain default): %q", r.RecordIP)
 	}
 }
 
 func TestParseRouteFlags(t *testing.T) {
-	r, _, err := parseSite(form("tls_skip_verify", "on", "enabled", "on"))
+	r, err := parseSite(form("tls_skip_verify", "on", "enabled", "on"), config.Config{})
 	if err != nil || !r.TLSSkipVerify || !r.Enabled {
 		t.Fatalf("%+v %v", r, err)
 	}
-	r, _, _ = parseSite(form())
+	r, _ = parseSite(form(), config.Config{})
 	if r.TLSSkipVerify || r.Enabled {
 		t.Fatalf("unchecked boxes must be false: %+v", r)
 	}
@@ -95,11 +99,12 @@ func routeServer(t *testing.T) (*Server, store.Domain) {
 }
 
 func TestRouteLifecycle(t *testing.T) {
-	s, d := routeServer(t)
+	s, _ := routeServer(t)
+	s.deps.Cfg.HostIP = "192.168.25.165" // a hostname with no managed domain asks Cloudflare for its zone
 	ctx := context.Background()
-	v := form("domain_id", itoa(d.ID), "enabled", "on")
+	v := form("enabled", "on")
 
-	w := s.do(req{method: "POST", path: "/sites/full", body: v.Encode(), hdr: htmxPost})
+	w := s.do(req{method: "POST", path: "/sites", body: v.Encode(), hdr: htmxPost})
 	if w.Code != 204 || w.Header().Get("HX-Redirect") != "/" {
 		t.Fatalf("create: %d %q", w.Code, w.Body.String())
 	}
@@ -108,13 +113,14 @@ func TestRouteLifecycle(t *testing.T) {
 		t.Fatalf("%+v", rs)
 	}
 
-	if w := s.do(req{method: "POST", path: "/sites/full", body: v.Encode(), hdr: htmxPost}); w.Code != 409 {
-		t.Errorf("duplicate subdomain: %d %q", w.Code, w.Body.String())
+	if w := s.do(req{method: "POST", path: "/sites", body: v.Encode(), hdr: htmxPost}); w.Code != 409 {
+		t.Errorf("duplicate hostname: %d %q", w.Code, w.Body.String())
 	}
-	if w := s.do(req{method: "POST", path: "/sites/full", body: form("domain_id", "999").Encode(), hdr: htmxPost}); w.Code != 422 {
-		t.Errorf("unknown domain: %d", w.Code)
+	// A hostname under no managed domain is fine: it is served without one.
+	if w := s.do(req{method: "POST", path: "/sites", body: form("hostnames", "tv.other.test").Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Errorf("hostname with no domain: %d %q", w.Code, w.Body.String())
 	}
-	if w := s.do(req{method: "POST", path: "/sites/full", body: form("domain_id", itoa(d.ID), "upstream_port", "0").Encode(), hdr: htmxPost}); w.Code != 422 {
+	if w := s.do(req{method: "POST", path: "/sites", body: form("upstream_port", "0").Encode(), hdr: htmxPost}); w.Code != 422 {
 		t.Errorf("bad port: %d", w.Code)
 	}
 
@@ -122,7 +128,7 @@ func TestRouteLifecycle(t *testing.T) {
 	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "sonarr.example.com") || !strings.Contains(body, "192.168.1.20:8989") {
 		t.Errorf("dashboard missing site: %s", body)
 	}
-	if body := s.do(req{path: "/sites/new/full"}).Body.String(); !strings.Contains(body, "example.com") {
+	if body := s.do(req{path: "/sites/new"}).Body.String(); !strings.Contains(body, "example.com") {
 		t.Errorf("new page missing domains")
 	}
 	id := itoa(rs[0].ID)
@@ -131,8 +137,8 @@ func TestRouteLifecycle(t *testing.T) {
 	}
 
 	// edit (domain and subdomain stay; upstream changes; checkbox unchecked disables)
-	e := form("domain_id", itoa(d.ID), "upstream_host", "10.1.1.1", "upstream_port", "9000")
-	if w := s.do(req{method: "PUT", path: "/sites/" + id, body: e.Encode(), hdr: htmxPost}); w.Code != 204 {
+	e := form("upstream_host", "10.1.1.1", "upstream_port", "9000")
+	if w := s.do(req{method: "PUT", path: "/sites/" + id, body: e.Encode(), hdr: htmxPost}); w.Code != 200 {
 		t.Fatalf("update: %d %q", w.Code, w.Body.String())
 	}
 	got, _ := s.deps.Store.GetSite(ctx, rs[0].ID)
@@ -143,15 +149,15 @@ func TestRouteLifecycle(t *testing.T) {
 	if w := s.do(req{method: "DELETE", path: "/sites/" + id, hdr: htmxPost}); w.Code != 204 {
 		t.Fatalf("delete: %d", w.Code)
 	}
-	if rs, _ := s.deps.Store.ListSites(ctx); len(rs) != 0 {
-		t.Errorf("not deleted: %+v", rs)
+	if rs, _ := s.deps.Store.ListSites(ctx); len(rs) != 1 || rs[0].Hostnames[0] != "tv.other.test" {
+		t.Errorf("only the domain-less site should remain: %+v", rs)
 	}
 }
 
 func TestRouteCannotShadowUIHost(t *testing.T) {
-	s, d := routeServer(t)
+	s, _ := routeServer(t)
 	s.deps.Cfg.Host = "sonarr.example.com"
-	w := s.do(req{method: "POST", path: "/sites/full", body: form("domain_id", itoa(d.ID)).Encode(), hdr: htmxPost})
+	w := s.do(req{method: "POST", path: "/sites", body: form().Encode(), hdr: htmxPost})
 	if w.Code != 422 || !strings.Contains(w.Body.String(), "sonarr.example.com") {
 		t.Fatalf("create: %d %q", w.Code, w.Body.String())
 	}
@@ -159,12 +165,12 @@ func TestRouteCannotShadowUIHost(t *testing.T) {
 		t.Fatalf("stored: %+v", rs)
 	}
 	// renaming an existing site onto the UI host is rejected too
-	other := form("domain_id", itoa(d.ID), "subdomain", "radarr")
-	if w := s.do(req{method: "POST", path: "/sites/full", body: other.Encode(), hdr: htmxPost}); w.Code != 204 {
+	other := form("hostnames", "radarr.example.com")
+	if w := s.do(req{method: "POST", path: "/sites", body: other.Encode(), hdr: htmxPost}); w.Code != 204 {
 		t.Fatalf("setup: %d", w.Code)
 	}
 	rs, _ := s.deps.Store.ListSites(context.Background())
-	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(rs[0].ID), body: form("domain_id", itoa(d.ID)).Encode(), hdr: htmxPost}); w.Code != 422 {
+	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(rs[0].ID), body: form().Encode(), hdr: htmxPost}); w.Code != 422 {
 		t.Fatalf("rename onto UI host: %d", w.Code)
 	}
 }

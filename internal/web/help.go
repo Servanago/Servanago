@@ -15,37 +15,39 @@ import (
 
 // hints are one-line, plain-text field explanations (rendered by the hint template func).
 var hints = map[string]string{
-	"domain":         "The Cloudflare zone your sites live in, such as example.com. Add it once; sites like oc.example.com go under it.",
-	"default_ip":     "The address your sites' DNS records point to: this server, the machine running ServanaGo. Use its IPv4 address: public, or private (192.168.x.x, 10.x.x.x, 172.16-31.x.x, 100.64-127.x.x for Tailscale).",
-	"default_ip6":    "Optional. The server's IPv6 address, so sites also get AAAA records and are reachable over IPv6. Leave blank to publish IPv4 only.",
-	"cert_mode":      "Wildcard gets one *.example.com certificate for every site, so adding sites is instant and site names stay private. Per host gets a separate certificate for each site.",
-	"hostname":       "The address people type, such as oc.example.com. ServanaGo finds its Cloudflare zone and adds it if it is new.",
-	"hostname_nodns": "The address people type, such as oc.example.com. Its domain (example.com) must be added on the Domains page first.",
-	"domain_nodns":   "The name your sites live under, such as example.com. Add it once; sites like oc.example.com go under it.",
-	"scheme":         "How Caddy talks to your app. Use http unless the app itself serves HTTPS.",
-	"upstream_host":  "Where the app really runs: an IP address such as 192.168.25.165, or a host name that resolves on this server. Not the public hostname.",
-	"upstream_port":  "The port the app listens on, such as 9200 (a Node.js app is often 3000). Not 443: Caddy already provides HTTPS in front of it.",
-	"skip_verify":    "Only for apps that use https with a self-signed certificate. Turns off checking that certificate. Fine on a trusted home network.",
-	"stream":         "Sends the app's answer to the visitor as it arrives instead of in chunks. Turn on for live streams, event feeds and terminals that seem to freeze or lag. Websockets work without it.",
-	"max_body":       "The biggest upload this site accepts, such as 2GB or 512MB (up to 100GB). Larger uploads get error 413. Leave empty for no limit.",
-	"subdomain":      "The first part of the address, such as oc in oc.example.com. Letters, numbers and hyphens only.",
-	"record_ip":      "Leave blank to use the domain's default IP. Set it only if this one site's DNS record must point at a different server.",
-	"record_ip6":     "Leave blank to use the domain's default IPv6 address (or none). Set it only if this one site's AAAA record must point at a different server.",
-	"allowlist":      "Only these networks can open the site; everyone else gets an error 403. One per line. Leave empty to allow anyone who can reach this server. Example: 192.168.0.0/16 is a typical whole home network.",
-	"basic_auth":     "Puts a username and password prompt in front of the app. Leave the user empty for no prompt.",
-	"enabled":        "Turn off to stop serving the site without deleting it. Caddy ignores it completely, so no certificate work happens for it. Its DNS record is kept.",
-	"admin_login":    "The password set as ADMIN_PASSWORD when ServanaGo was started.",
-	"totp_code":      "The 6-digit code from your authenticator app. A backup code also works, once.",
-	"backup_codes":   "Each code works once if you lose your authenticator. Keep them somewhere safe; they are not shown again.",
-	"passkey_name":   "A label so you can tell your passkeys apart, such as Laptop or Phone.",
-	"secret_key":     "Authenticator codes are stored encrypted. Set SERVANAGO_SECRET_KEY (at least 32 characters, for example from openssl rand -hex 32) in the environment file and restart ServanaGo to turn them on. Back it up with your data directory.",
-	"gate_mode":      "A magic link (sent by email, valid for 15 minutes and single-use) opens the site only after it is clicked. With the allowlist, only listed emails and @domain rules get a link; with any email, anyone with a working inbox can ask for one.",
-	"gate_acl":       "One rule per line: alice@example.com admits exactly that address; @contractor.example admits everyone at that domain. Rules are matched after lowering case; a session is shared between all gated sites that allow the address.",
-	"smtp_host":      "The submission server your provider gives you, such as smtp.fastmail.com. Leave empty (with MAIL FROM) to stop sites from sending.",
-	"smtp_port":      "587 (STARTTLS submission) for most providers.",
-	"smtp_pass":      "Stored encrypted with SERVANAGO_SECRET_KEY and never shown again. Leave blank to keep the stored one, or for relays that do not ask for a password.",
-	"mail_from":      "The sender address on the magic-link emails, such as access@example.com. Your provider must allow it.",
-	"smtp_setup":     "Set the SMTP host and MAIL FROM under Settings. A password also needs SERVANAGO_SECRET_KEY in the environment file. A gated site cannot send links until then.",
+	"domain":          "The Cloudflare zone your sites live in, such as example.com. Add it once; sites like oc.example.com go under it.",
+	"default_ip":      "The address your sites' DNS records point to: this server, the machine running ServanaGo. Use its IPv4 address: public, or private (192.168.x.x, 10.x.x.x, 172.16-31.x.x, 100.64-127.x.x for Tailscale).",
+	"default_ip6":     "Optional. The server's IPv6 address, so sites also get AAAA records and are reachable over IPv6. Leave blank to publish IPv4 only.",
+	"zone":            "Only needed when the Cloudflare zone is not this domain's own name: for lab.example.com inside the zone example.com, type example.com. Leave blank to keep the zone as it is.",
+	"cert_mode":       "Wildcard gets one *.example.com certificate for every site, so adding sites is instant and site names stay private. Per host gets a separate certificate for each site.",
+	"hostnames":       "The addresses people type, one per line, such as oc.example.com. The first is the main one. Any name works: if its Cloudflare zone is found ServanaGo adds the DNS record for the main name; otherwise point the name at this server yourself and its certificate comes from HTTP-01.",
+	"hostnames_nodns": "The addresses people type, one per line, such as oc.example.com. The first is the main one. Point each name at this server in your DNS yourself; certificates come from HTTP-01, so ports 80 and 443 must be reachable from the internet.",
+	"kind":            "Proxy forwards requests to an app running on this or another machine. Static serves the files in a folder on this machine.",
+	"static_root":     "The folder to serve, as an absolute path such as /srv/www/blog or /home/me/public_html. Directory listings are off and files whose names start with a dot are never served. The user ServanaGo runs as needs read access to the folder and execute access to every folder above it; ServanaGo never changes permissions.",
+	"domain_nodns":    "The name your sites live under, such as example.com. Add it once; sites like oc.example.com go under it.",
+	"scheme":          "How Caddy talks to your app. Use http unless the app itself serves HTTPS.",
+	"upstream_host":   "Where the app really runs: an IP address such as 192.168.25.165, or a host name that resolves on this server. Not the public hostname.",
+	"upstream_port":   "The port the app listens on, such as 9200 (a Node.js app is often 3000). Not 443: Caddy already provides HTTPS in front of it.",
+	"skip_verify":     "Only for apps that use https with a self-signed certificate. Turns off checking that certificate. Fine on a trusted home network.",
+	"stream":          "Sends the app's answer to the visitor as it arrives instead of in chunks. Turn on for live streams, event feeds and terminals that seem to freeze or lag. Websockets work without it.",
+	"max_body":        "The biggest upload this site accepts, such as 2GB or 512MB (up to 100GB). Larger uploads get error 413. Leave empty for no limit.",
+	"record_ip":       "Leave blank to use the domain's default IP. Set it only if this one site's DNS record must point at a different server.",
+	"record_ip6":      "Leave blank to use the domain's default IPv6 address (or none). Set it only if this one site's AAAA record must point at a different server.",
+	"allowlist":       "Only these networks can open the site; everyone else gets an error 403. One per line. Leave empty to allow anyone who can reach this server. Example: 192.168.0.0/16 is a typical whole home network.",
+	"basic_auth":      "Puts a username and password prompt in front of the app. Leave the user empty for no prompt.",
+	"enabled":         "Turn off to stop serving the site without deleting it. Caddy ignores it completely, so no certificate work happens for it. Its DNS record is kept.",
+	"admin_login":     "The password set as ADMIN_PASSWORD when ServanaGo was started.",
+	"totp_code":       "The 6-digit code from your authenticator app. A backup code also works, once.",
+	"backup_codes":    "Each code works once if you lose your authenticator. Keep them somewhere safe; they are not shown again.",
+	"passkey_name":    "A label so you can tell your passkeys apart, such as Laptop or Phone.",
+	"secret_key":      "Authenticator codes are stored encrypted. Set SERVANAGO_SECRET_KEY (at least 32 characters, for example from openssl rand -hex 32) in the environment file and restart ServanaGo to turn them on. Back it up with your data directory.",
+	"gate_mode":       "A magic link (sent by email, valid for 15 minutes and single-use) opens the site only after it is clicked. With the allowlist, only listed emails and @domain rules get a link; with any email, anyone with a working inbox can ask for one.",
+	"gate_acl":        "One rule per line: alice@example.com admits exactly that address; @contractor.example admits everyone at that domain. Rules are matched after lowering case; a session is shared between all gated sites that allow the address.",
+	"smtp_host":       "The submission server your provider gives you, such as smtp.fastmail.com. Leave empty (with MAIL FROM) to stop sites from sending.",
+	"smtp_port":       "587 (STARTTLS submission) for most providers.",
+	"smtp_pass":       "Stored encrypted with SERVANAGO_SECRET_KEY and never shown again. Leave blank to keep the stored one, or for relays that do not ask for a password.",
+	"mail_from":       "The sender address on the magic-link emails, such as access@example.com. Your provider must allow it.",
+	"smtp_setup":      "Set the SMTP host and MAIL FROM under Settings. A password also needs SERVANAGO_SECRET_KEY in the environment file. A gated site cannot send links until then.",
 }
 
 // statusHelp explains every status word and what to do next. Keys are kind:state.
@@ -92,11 +94,7 @@ var errTable = []struct {
 	{"must be a usable ipv6", explained{"That address cannot be used",
 		"Use the IPv6 address of the server, for example 2001:db8::10. Not ::1, an fe80:: address, a multicast address, an IPv4-mapped address or an IPv4 address."}},
 	{"is the servanago ui host", explained{"That name is ServanaGo's own address",
-		"Choose a different subdomain for this site."}},
-	{"is a zone itself", explained{"Use a subdomain, not the domain itself",
-		"Use a subdomain such as app.example.com instead of example.com itself."}},
-	{"more than one label below", explained{"The name is more than one level below the domain",
-		"A wildcard certificate only covers one level. Use name.example.com, or add the deeper zone as its own domain."}},
+		"Choose a different hostname for this site."}},
 	{"caddy rejected config", explained{"Caddy rejected the configuration",
 		"Nothing was changed. The detail below says which setting Caddy did not accept."}},
 	{"ratelimited", explained{"Let's Encrypt rate limit reached",
@@ -105,8 +103,8 @@ var errTable = []struct {
 		"Too many certificates were requested recently. Wait before retrying, or set ACME_STAGING=true while testing."}},
 	{"context canceled", explained{"The attempt was interrupted",
 		"This usually happens during a restart. It retries automatically."}},
-	{"already exists on that domain", explained{"That site already exists",
-		"Open it from the dashboard to change it, or choose a different name."}},
+	{"is already used by another site", explained{"That hostname already belongs to a site",
+		"Open that site from the dashboard to change it, or choose a different hostname."}},
 }
 
 // explain returns a plain-language explanation for known errors only; unknown errors are shown raw.
@@ -154,8 +152,9 @@ var helpSections = []helpSection{
 </ol>
 <p>Every change is checked by Caddy before it goes live. If Caddy rejects it, nothing changes and you see the reason.</p>`},
 	{"sites", "Sites, domains and ports", `
-<p>A <strong>domain</strong> is the name your sites live under, such as <code>example.com</code> (with Cloudflare, its zone). A <strong>site</strong> is one address under it, such as <code>oc.example.com</code>. With Cloudflare, <strong>Add site</strong> finds the zone and adds the domain for you the first time; without it, add the domain on the Domains page first.</p>
-<p>The <strong>backend port</strong> is the port your app listens on and differs for every app. It is not 443; Caddy provides HTTPS in front of it. The DNS record points at this server, not at the backend, so the backend can be on another machine.</p>`},
+<p>A <strong>site</strong> answers on one or more <strong>hostnames</strong>, such as <code>oc.example.com</code>: any valid public name, with any number of labels, one per line, the first being the main one. A <strong>domain</strong> is optional context for DNS and certificates: the Cloudflare zone, default IPs and certificate mode that apply to the hostnames under it, such as <code>example.com</code>. With Cloudflare, <strong>Add site</strong> finds the zone and adds the domain the first time. A hostname with no domain is still served, with its own certificate from the HTTP-01 check, and ServanaGo creates no DNS record for it.</p>
+<p>A site is either a <strong>proxy</strong> or <strong>static</strong>. A proxy forwards to an app: the <strong>backend port</strong> is the port that app listens on and differs for every app. It is not 443; Caddy provides HTTPS in front of it. The DNS record points at this server, not at the backend, so the backend can be on another machine. A static site serves the files in a <strong>folder</strong> on this machine, with no directory listings and no files whose names start with a dot.</p>
+<p>The folder is checked when you save: it must exist, and system folders (<code>/etc</code>, <code>/proc</code>, <code>/sys</code>, <code>/dev</code>, <code>/root</code>, the data directory) are refused. <code>SERVANAGO_STATIC_ROOTS</code> can limit folders to chosen prefixes. ServanaGo never changes permissions: the user it runs as needs read access to the folder and execute access to every folder above it, and the site page says when it cannot read the folder.</p>`},
 	{"sign-in", "Sign-in security", `
 <p>Under <strong>Security</strong> you can add an <strong>authenticator app</strong> (a 6-digit code after the password) and <strong>passkeys</strong> (sign in with your fingerprint, face or device PIN instead of the password). A passkey sign-in counts as full two-factor, so it asks for no code. Passkeys work only on the HTTPS address, or on <code>localhost</code>.</p>
 <p>If you lose your authenticator and passkeys, use a backup code. If those are gone too, run <code>servanago 2fa-reset</code> on the server: it removes all of them and the password works alone again.</p>
@@ -204,6 +203,10 @@ func newHelpPage() helpPage {
 var helpFuncs = template.FuncMap{
 	"hint": func(key string) template.HTML {
 		return template.HTML("<small>" + html.EscapeString(hints[key]) + "</small>") // #nosec: escaped above
+	},
+	// hintid is hint with an id an input can name in aria-describedby; use it where each key appears once on the page.
+	"hintid": func(key string) template.HTML {
+		return template.HTML(`<small id="hint-` + html.EscapeString(key) + `">` + html.EscapeString(hints[key]) + `</small>`) // #nosec: escaped above
 	},
 	"helplink": func(anchor string) template.HTML {
 		return template.HTML(`<a class="help-link" href="/help#` + html.EscapeString(anchor) + `" title="Open help" aria-label="Open help">?</a>`)

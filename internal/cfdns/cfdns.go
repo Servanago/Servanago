@@ -56,8 +56,12 @@ func (c *Client) ZoneFor(ctx context.Context, host, override string) (id, zone s
 		}
 		_, name, _ = strings.Cut(name, ".")
 	}
-	return "", "", fmt.Errorf("no Cloudflare zone found for %s (tried %s)", host, strings.Join(tried, ", "))
+	return "", "", fmt.Errorf("%w for %s (tried %s)", ErrNoZone, host, strings.Join(tried, ", "))
 }
+
+// ErrNoZone means no visible zone encloses the hostname. The hostname is then served without a domain
+// (HTTP-01, no DNS sync); any other ZoneFor error is a real failure.
+var ErrNoZone = errors.New("no Cloudflare zone found")
 
 // VerifyToken checks the API token is valid and active.
 func (c *Client) VerifyToken(ctx context.Context) error {

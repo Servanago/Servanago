@@ -15,9 +15,9 @@ test('without Cloudflare: add a domain and a site, and no DNS appears anywhere',
   await expect(page.getByRole('cell', { name: 'per_host' })).toBeVisible();
 
   await page.goto('/sites/new');
-  await page.getByLabel('Hostname').fill('app.nocf.example.net');
-  await page.getByLabel('Backend host or IP').fill('192.168.1.40');
-  await page.getByLabel('Backend port').fill('9300');
+  await page.getByLabel('Hostnames').fill('app.nocf.example.net');
+  await page.getByLabel('Upstream host or IP').fill('192.168.1.40');
+  await page.getByLabel('Upstream port').fill('9300');
   await expect(page.locator('#preview')).toContainText('in your DNS yourself');
   await page.getByRole('button', { name: 'Add site' }).click();
 
@@ -27,12 +27,15 @@ test('without Cloudflare: add a domain and a site, and no DNS appears anywhere',
   await expect(page.getByRole('button', { name: 'Resync' })).toHaveCount(0);
 });
 
-test('without Cloudflare: a hostname under an unknown domain asks for the domain first', async ({ page }) => {
+test('without Cloudflare: a hostname under no domain is served without one', async ({ page }) => {
   await login(page);
   await page.goto('/sites/new');
-  await page.getByLabel('Hostname').fill('app.unknown.example.org');
-  await page.getByLabel('Backend host or IP').fill('192.168.1.41');
-  await page.getByLabel('Backend port').fill('9301');
+  await page.getByLabel('Hostnames').fill('app.unknown.example.org');
+  await page.getByLabel('Upstream host or IP').fill('192.168.1.41');
+  await page.getByLabel('Upstream port').fill('9301');
   await page.getByRole('button', { name: 'Add site' }).click();
-  await expect(page.locator('#msg')).toContainText('Add its domain (for example unknown.example.org)');
+  await expect(page).toHaveURL(/\/$/);
+  const row = page.getByRole('row', { name: /app\.unknown\.example\.org/ });
+  await expect(row).toBeVisible();
+  await expect(page.getByRole('cell', { name: 'DNS' })).toHaveCount(0);
 });

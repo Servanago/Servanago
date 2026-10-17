@@ -9,7 +9,7 @@ const UI_NOCF = '127.0.0.1:28091';
 export default defineConfig({
   testDir: './tests',
   workers: 1,
-  use: { baseURL: `http://${UI}`, launchOptions: { args: ['--host-resolver-rules=MAP *.gate.example.test 127.0.0.1'] } },
+  use: { baseURL: `http://${UI}`, launchOptions: { args: ['--host-resolver-rules=MAP *.gate.example.test 127.0.0.1, MAP *.static.example.test 127.0.0.1'] } },
   projects: [
     { name: 'cloudflare', testIgnore: '**/nocf/**' },
     { name: 'nocf', testMatch: '**/nocf/**/*.spec.ts', use: { baseURL: `http://${UI_NOCF}` } },

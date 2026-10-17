@@ -9,11 +9,11 @@ test('streaming and upload limit: set, badge, edit, reject bad size', async ({ p
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'tuning.example.net' })).toBeVisible();
 
-  await page.goto('/sites/new/full');
-  await page.locator('select[name=domain_id]').selectOption('tuning.example.net');
-  await page.getByLabel('Subdomain').fill('term');
+  await page.goto('/sites/new');
+  await page.getByLabel('Hostnames').fill('term.tuning.example.net');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.23');
   await page.getByLabel('Upstream port').fill('8788');
+  await page.getByText('Advanced', { exact: true }).click();
   await page.getByLabel('Send responses as they arrive').check();
   await page.getByLabel('Upload limit').fill('2GB');
   await page.getByRole('button', { name: 'Add site' }).click();
@@ -23,6 +23,7 @@ test('streaming and upload limit: set, badge, edit, reject bad size', async ({ p
   await expect(row.getByText('max 2GB')).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
+  await page.getByText('Advanced', { exact: true }).click();
   await expect(page.getByLabel('Send responses as they arrive')).toBeChecked();
   await expect(page.getByLabel('Upload limit')).toHaveValue('2GB');
   await page.getByLabel('Upload limit').fill('500GB');

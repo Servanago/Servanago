@@ -95,8 +95,8 @@ func TestControlsEndToEndInHandlers(t *testing.T) {
 	}
 
 	// editing other fields with a blank password field keeps auth
-	e := form("domain_id", itoa(d.ID), "enabled", "on", "allowlist", "192.168.0.0/16", "basic_user", "alice", "upstream_port", "9999")
-	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 204 {
+	e := form("enabled", "on", "allowlist", "192.168.0.0/16", "basic_user", "alice", "upstream_port", "9999")
+	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 200 {
 		t.Fatalf("%d %q", w.Code, w.Body.String())
 	}
 	if after, _ := s.deps.Store.GetSite(ctx, r.ID); after.BasicHash != got.BasicHash || after.UpstreamPort != 9999 {
@@ -104,7 +104,7 @@ func TestControlsEndToEndInHandlers(t *testing.T) {
 	}
 
 	// invalid CIDR is a 422 and changes nothing
-	bad := form("domain_id", itoa(d.ID), "enabled", "on", "allowlist", "nope")
+	bad := form("enabled", "on", "allowlist", "nope")
 	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: bad.Encode(), hdr: htmxPost}); w.Code != 422 {
 		t.Errorf("invalid cidr: %d", w.Code)
 	}

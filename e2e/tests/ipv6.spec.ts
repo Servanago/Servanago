@@ -10,9 +10,8 @@ test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA record
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: /2001:db8::10/ })).toBeVisible();
 
-  await page.goto('/sites/new/full');
-  await page.locator('select[name=domain_id]').selectOption('dual.example.net');
-  await page.getByLabel('Subdomain').fill('web');
+  await page.goto('/sites/new');
+  await page.getByLabel('Hostnames').fill('web.dual.example.net');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.30');
   await page.getByLabel('Upstream port').fill('8080');
   await page.getByRole('button', { name: 'Add site' }).click();
@@ -23,8 +22,11 @@ test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA record
 
   // a per-site IPv6 override, then clearing it removes the AAAA badge only when the domain has none
   await row.getByRole('link', { name: 'Edit' }).click();
+  await page.getByText('Advanced', { exact: true }).click();
   await page.getByLabel('AAAA record IPv6').fill('2001:db8::99');
   await page.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('Saved and applied.')).toBeVisible();
+  await page.goto('/');
   await expect(row.getByText('AAAA synced', { exact: true })).toBeVisible();
 
   // delete with the DNS option: the dialog names both records

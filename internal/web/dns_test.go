@@ -10,8 +10,8 @@ import (
 
 func addRoute(t *testing.T, s *Server, d store.Domain, extra ...string) store.Site {
 	t.Helper()
-	kv := append([]string{"domain_id", itoa(d.ID), "enabled", "on"}, extra...)
-	w := s.do(req{method: "POST", path: "/sites/full", body: form(kv...).Encode(), hdr: htmxPost})
+	kv := append([]string{"enabled", "on"}, extra...)
+	w := s.do(req{method: "POST", path: "/sites", body: form(kv...).Encode(), hdr: htmxPost})
 	if w.Code != 204 {
 		t.Fatalf("create site: %d %q", w.Code, w.Body.String())
 	}
@@ -95,11 +95,11 @@ func TestConflictAndTakeOver(t *testing.T) {
 }
 
 func TestDeleteConfirmationAndRecordHandling(t *testing.T) {
-	// owned: confirmation says the record is deleted, and it is
+	// owned: the delete dialog on the edit page offers the record (data-dns-ip is non-empty), and deleting it works
 	s, cf, d := newDNSServer(t)
 	r := addRoute(t, s, d)
-	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "also deletes the A record sonarr.example.com") {
-		t.Errorf("owned confirmation: %s", body)
+	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, `data-dns-ip="10.0.0.1"`) {
+		t.Errorf("owned record not offered in the delete dialog: %s", body)
 	}
 	if w := s.do(req{method: "DELETE", path: "/sites/" + itoa(r.ID) + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
 		t.Fatal(w.Code)
@@ -108,12 +108,12 @@ func TestDeleteConfirmationAndRecordHandling(t *testing.T) {
 		t.Error("owned record not deleted")
 	}
 
-	// adopted: confirmation says left in place, and it is
+	// adopted: the dialog offers nothing to delete (data-dns-ip is empty), and the record stays
 	s, cf, d = newDNSServer(t)
 	cf.dns.Seed("sonarr.example.com", "10.0.0.1")
 	r = addRoute(t, s, d)
-	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "left in place") {
-		t.Errorf("adopted confirmation: %s", body)
+	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, `data-dns-ip=""`) {
+		t.Errorf("adopted record offered for deletion: %s", body)
 	}
 	s.do(req{method: "DELETE", path: "/sites/" + itoa(r.ID), hdr: htmxPost})
 	if len(cf.dns.Records()) != 1 {
@@ -139,8 +139,8 @@ func TestDeleteReportsDNSFailure(t *testing.T) {
 func TestRenameMovesRecord(t *testing.T) {
 	s, cf, d := newDNSServer(t)
 	r := addRoute(t, s, d)
-	e := form("domain_id", itoa(d.ID), "subdomain", "tv", "enabled", "on")
-	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 204 {
+	e := form("hostnames", "tv.example.com", "enabled", "on")
+	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 200 {
 		t.Fatalf("%d %q", w.Code, w.Body.String())
 	}
 	recs := cf.dns.Records()

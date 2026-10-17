@@ -7,17 +7,14 @@ import (
 
 // ServanaGo is not an arr-stack front end: no preset picker, no Docker discovery panel.
 func TestFormsHaveNoPresetOrDockerPanel(t *testing.T) {
-	quick, _ := siteServer(t)
-	full, _, _ := newDNSServer(t) // has a domain, so /sites/new/full renders the form
-	for path, s := range map[string]*Server{"/sites/new": quick, "/sites/new/full": full} {
-		body := s.do(req{path: path}).Body.String()
-		if !strings.Contains(body, "<form") {
-			t.Fatalf("%s rendered no form", path)
-		}
-		for _, banned := range []string{"Preset", `name="preset"`, "Docker containers", "Sonarr", "Radarr"} {
-			if strings.Contains(body, banned) {
-				t.Errorf("%s still contains %q", path, banned)
-			}
+	s, _ := siteServer(t)
+	body := s.do(req{path: "/sites/new"}).Body.String()
+	if !strings.Contains(body, "<form") {
+		t.Fatal("/sites/new rendered no form")
+	}
+	for _, banned := range []string{"Preset", `name="preset"`, "Docker containers", "Sonarr", "Radarr"} {
+		if strings.Contains(body, banned) {
+			t.Errorf("/sites/new still contains %q", banned)
 		}
 	}
 }

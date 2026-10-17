@@ -59,7 +59,7 @@ func TestNoDNSAddSiteUnderManagedDomain(t *testing.T) {
 	if code, body := addDomainNoDNS(s); code != 204 {
 		t.Fatalf("%d %q", code, body)
 	}
-	code, body := postSite(s, siteForm("hostname", "app.example.com"))
+	code, body := postSite(s, siteForm("hostnames", "app.example.com"))
 	if code != 204 {
 		t.Fatalf("add site: %d %q", code, body)
 	}
@@ -72,19 +72,26 @@ func TestNoDNSAddSiteUnderManagedDomain(t *testing.T) {
 	}
 }
 
-func TestNoDNSAddSiteUnderUnknownDomainSaysAddTheDomain(t *testing.T) {
+// Without Cloudflare any hostname works: with no matching domain the site simply has none (HTTP-01).
+func TestNoDNSAddSiteUnderUnknownDomainIsServedWithoutADomain(t *testing.T) {
 	s := noCFServer(t)
-	code, body := postSite(s, siteForm("hostname", "app.example.org"))
-	if code != 422 || !strings.Contains(body, "Domains") || !strings.Contains(body, "example.org") {
-		t.Fatalf("want a hint to add the domain first, got %d %q", code, body)
+	if code, body := postSite(s, siteForm("hostnames", "app.example.org")); code != 204 {
+		t.Fatalf("%d %q", code, body)
+	}
+	ctx := context.Background()
+	if ds, _ := s.deps.Store.ListDomains(ctx); len(ds) != 0 {
+		t.Errorf("a domain appeared: %+v", ds)
+	}
+	if rs, _ := s.deps.Store.ListSites(ctx); len(rs) != 1 || rs[0].Hostnames[0] != "app.example.org" {
+		t.Fatalf("%+v", rs)
 	}
 }
 
 func TestNoDNSPagesHideCloudflare(t *testing.T) {
 	s := noCFServer(t)
 	addDomainNoDNS(s)
-	postSite(s, siteForm("hostname", "app.example.com"))
-	for _, path := range []string{"/", "/domains", "/sites/new", "/sites/new/full"} {
+	postSite(s, siteForm("hostnames", "app.example.com"))
+	for _, path := range []string{"/", "/domains", "/sites/new", "/sites/new"} {
 		w := s.do(req{path: path})
 		if w.Code != 200 {
 			t.Fatalf("%s: %d", path, w.Code)
@@ -104,7 +111,7 @@ func TestNoDNSPagesHideCloudflare(t *testing.T) {
 func TestNoDNSRouteLifecycleDoesNotPanic(t *testing.T) {
 	s := noCFServer(t)
 	addDomainNoDNS(s)
-	if code, body := postSite(s, siteForm("hostname", "app.example.com")); code != 204 {
+	if code, body := postSite(s, siteForm("hostnames", "app.example.com")); code != 204 {
 		t.Fatalf("%d %q", code, body)
 	}
 	rs, _ := s.deps.Store.ListSites(context.Background())
