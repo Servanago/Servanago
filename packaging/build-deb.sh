@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 bin=${1:?usage: packaging/build-deb.sh BIN [OUT]}
-out=${2:-}
+out=${2:-bin/servanago_0.1.0_$(dpkg --print-architecture).deb}
 [[ $bin = /* ]] || bin="$PWD/$bin"
 
 stage=$(mktemp -d)
@@ -14,6 +14,7 @@ mkdir -p "$stage/DEBIAN" "$stage/usr/bin" "$stage/lib/systemd/system" "$stage/et
 cp "$bin" "$stage/usr/bin/servanago"
 chmod 755 "$stage/usr/bin/servanago"
 cp packaging/servanago.service "$stage/lib/systemd/system/"
+cp packaging/servanago-helper.service "$stage/lib/systemd/system/"
 cp packaging/servanago.env "$stage/etc/servanago/servanago.env"
 chmod 640 "$stage/etc/servanago/servanago.env"
 sed "s/@ARCH@/$(dpkg --print-architecture)/" packaging/DEBIAN/control > "$stage/DEBIAN/control"

@@ -1,0 +1,15 @@
+[Unit]
+Description=ServanaGo privileged helper (typed actions for the web runtime manager)
+Wants=servanago.service
+
+[Service]
+ExecStart=/usr/bin/servanago helper
+# The helper is the root half of ServanaGo; it takes typed actions only, over the socket below.
+# RuntimeDirectory is root:servanago so the control plane (User=servanago) may talk to the socket.
+RuntimeDirectory=servanago
+RuntimeDirectoryMode=0755
+Restart=on-failure
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

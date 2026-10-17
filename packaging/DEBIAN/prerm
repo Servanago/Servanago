@@ -3,4 +3,5 @@ set -euo pipefail
 
 if [ "${1:-}" = remove ] || [ "${1:-}" = upgrade ]; then
     systemctl stop servanago.service || true
+    systemctl stop servanago-helper.service || true
 fi

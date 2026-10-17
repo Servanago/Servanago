@@ -38,6 +38,25 @@ func TestSystemdUnit(t *testing.T) {
 	}
 }
 
+// The helper daemon unit: root process, socket dir group-visible to the control plane.
+func TestHelperSystemdUnit(t *testing.T) {
+	b, err := os.ReadFile("../../packaging/servanago-helper.service")
+	if err != nil {
+		t.Fatal(err)
+	}
+	u := string(b)
+	for _, want := range []string{
+		"ExecStart=/usr/bin/servanago helper",
+		"RuntimeDirectory=servanago",
+		"RuntimeDirectoryMode=0755",
+		"Restart=on-failure",
+	} {
+		if !strings.Contains(u, want) {
+			t.Errorf("helper unit missing %q", want)
+		}
+	}
+}
+
 // The installed env file is a copy of .env.example; the admin edits it as a conffile.
 func TestEnvTemplateMatchesExample(t *testing.T) {
 	ex, err := os.ReadFile("../../.env.example")

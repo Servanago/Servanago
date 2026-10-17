@@ -39,6 +39,8 @@ func main() {
 	cmd := run
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
+		case "helper":
+			cmd = runHelper
 		case "import":
 			cmd = func() error { return runImport(os.Args[2:], os.Stdout) }
 		case "user":

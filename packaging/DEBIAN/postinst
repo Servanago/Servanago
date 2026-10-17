@@ -13,5 +13,6 @@ chmod 0640 /etc/servanago/servanago.env
 if [ "${1:-}" = configure ]; then
     systemctl daemon-reload
     systemctl enable servanago.service
+    systemctl enable servanago-helper.service
     echo "Edit /etc/servanago/servanago.env, then: systemctl start servanago"
 fi
