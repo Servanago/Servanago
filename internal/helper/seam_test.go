@@ -20,6 +20,7 @@ type fakeSeam struct {
 	logs                           []string
 	logsErr                        error
 	logLines                       int
+	removeErr                      error
 	userAdded, userHome            string
 	userRemoved                    string
 	fpmTested, fpmTestBin          string
@@ -54,6 +55,9 @@ func (s *fakeSeam) WriteFile(path string, data []byte, perm fs.FileMode) error {
 func (s *fakeSeam) MkdirAll(path string, perm fs.FileMode) error { return nil }
 func (s *fakeSeam) Remove(path string) error {
 	s.removed = path
+	if s.removeErr != nil {
+		return s.removeErr
+	}
 	delete(s.written, path) // the fake tracks what a real filesystem would hold
 	return nil
 }

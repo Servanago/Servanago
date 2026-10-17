@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -305,10 +306,17 @@ func (a Actions) put(path string, content []byte, verify func(path string) error
 		return Response{Error: fmt.Sprintf("write %s: %v", name, err)}
 	}
 	if err := verify(path); err != nil {
+		// Leave the host as it was: restore the previous file or remove the new one. A failed rollback leaves a
+		// bad file on disk, so it is reported along with the verify failure.
+		var rerr error
 		if hasPrev {
-			a.s.WriteFile(path, prev, 0o644)
+			rerr = a.s.WriteFile(path, prev, 0o644)
 		} else {
-			a.s.Remove(path)
+			rerr = a.s.Remove(path)
+		}
+		if rerr != nil {
+			slog.Error("helper rollback after failed verify", "path", path, "error", rerr)
+			return Response{Error: fmt.Sprintf("%s failed to verify: %v; rollback also failed, %s may still be on disk: %v", name, err, path, rerr)}
 		}
 		return Response{Error: fmt.Sprintf("%s failed to verify: %v", name, err)}
 	}

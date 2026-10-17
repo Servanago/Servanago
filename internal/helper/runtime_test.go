@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"errors"
 	"strings"
 	"testing"
 )
@@ -134,6 +135,22 @@ func TestRuntimeUnitInstallRejections(t *testing.T) {
 				t.Errorf("host was written: %v", keys(seam.written))
 			}
 		})
+	}
+}
+
+// A failed verify rolls the new unit back; if the rollback itself fails the caller must be told, because
+// a bad unit file is then still on disk.
+func TestVerifyFailureRollbackIsReported(t *testing.T) {
+	seam := newFakeSeam()
+	seam.verify = errors.New("bad unit")
+	seam.removeErr = errors.New("read-only filesystem")
+	req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":{"kind":"node","slug":"site1","root":"/srv/x","port":3000,"start":"node a"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp := NewActions(seam).UnitInstall(req)
+	if resp.OK || !strings.Contains(resp.Error, "bad unit") || !strings.Contains(resp.Error, "read-only filesystem") {
+		t.Fatalf("response must report both the verify failure and the failed rollback: %+v", resp)
 	}
 }
 
