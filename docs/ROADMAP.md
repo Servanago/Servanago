@@ -39,7 +39,7 @@ validate spec (runtime provider) -> write SQLite in a transaction -> helper writ
 |---|---|---|
 | M0 | Fork and rebrand: rename, brand and dark theme, remove Docker discovery, presets and container packaging, docs | Done |
 | M1 | Decouple Cloudflare: optional token, HTTP-01 / TLS-ALPN default, public IPv4 and IPv6 (dual-stack) record targets, one initial schema | Done |
-| M2 | Site model (static, proxy) and renderer rewrite, golden tests | Next |
+| M2 | Site model (static, proxy) and renderer rewrite, golden tests | Done |
 | M2.5 | Multi-admin: users table, per-user TOTP, backup codes and passkeys, `reset` per user, audit actor | Planned |
 | M3 | Native packaging: systemd unit for the control plane, `.deb`, install script, directory layout above, `DATA_DIR` default | Planned |
 | M4 | Privileged helper: socket, peer credentials, typed actions, input fuzzing | Planned |
@@ -56,7 +56,7 @@ Multi-tenant isolation claims, deployment releases and rollback, Git integration
 ## Known gaps carried from the baseline
 
 - IPv6 is dual-stack only: an AAAA record needs the IPv4 A record beside it, so an IPv6-only site is not supported. `CLOUDFLARE_API_TOKEN` is optional: without it a domain is added by hand and certificates are per host over HTTP-01.
-- Without Cloudflare there is no zone lookup, so a site must be a single label under a domain added by hand; hostnames become first-class in M2.
+- Hostnames are free FQDNs (M2). Without Cloudflare there is no zone lookup, so a hostname that matches no domain added by hand simply has none: it is served with its own HTTP-01 certificate and gets no DNS record.
 - `DATA_DIR` defaults to `/data`, a container path (changed in M3).
 - The mark is shipped as processed PNGs; a traced vector replaces them later (`docs/brand/README.md`).
 - Form field borders are about 1.7:1 against the page; WCAG 1.4.11 asks for 3:1.

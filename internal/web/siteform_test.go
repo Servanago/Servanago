@@ -116,8 +116,13 @@ func TestHostnamesBoxAddsRemovesAndReordersAndSaveStaysOnPage(t *testing.T) {
 	if len(got.Hostnames) != 2 || got.Hostnames[0] != "alias.example.com" || got.Slug != r.Slug {
 		t.Fatalf("after reorder: %v slug %q (was %q)", got.Hostnames, got.Slug, r.Slug)
 	}
-	if recs := cf.dns.Records(); len(recs) != 1 || recs[0].Name != "alias.example.com" {
-		t.Fatalf("the record should move to the new primary: %+v", recs)
+	// Every hostname has its own record; the dropped third one's owned record is deleted, the others stay.
+	recs := map[string]bool{}
+	for _, rec := range cf.dns.Records() {
+		recs[rec.Name] = true
+	}
+	if len(recs) != 2 || !recs["alias.example.com"] || !recs["sonarr.example.com"] {
+		t.Fatalf("records after dropping the third hostname: %v", recs)
 	}
 	// A name another site owns is refused, and nothing changes.
 	addRoute(t, s, d, "hostnames", "other.example.com")
@@ -130,6 +135,26 @@ func TestHostnamesBoxAddsRemovesAndReordersAndSaveStaysOnPage(t *testing.T) {
 	// The edit page shows every hostname in the box.
 	if page := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(page, "alias.example.com\nsonarr.example.com") {
 		t.Errorf("hostnames box: %s", page)
+	}
+}
+
+// With several hostnames the DNS column and the delete dialog say which record belongs to which name.
+func TestDashboardAndDialogNameTheHostnameOfEachRecord(t *testing.T) {
+	s, _, d := newDNSServer(t)
+	addRoute(t, s, d, "hostnames", "sonarr.example.com\nalias.example.com")
+	body := s.do(req{path: "/"}).Body.String()
+	if !strings.Contains(body, `data-dns-ip="sonarr.example.com A 10.0.0.1, alias.example.com A 10.0.0.1"`) &&
+		!strings.Contains(body, `data-dns-ip="alias.example.com A 10.0.0.1, sonarr.example.com A 10.0.0.1"`) {
+		t.Errorf("delete dialog summary lacks hostnames: %s", body)
+	}
+	if strings.Count(body, `<small class="alias">alias.example.com</small> <span class="dns-synced"`) != 1 {
+		t.Errorf("DNS cell does not label the alias's record: %s", body)
+	}
+	// One hostname keeps the short form.
+	s2, _, d2 := newDNSServer(t)
+	addRoute(t, s2, d2)
+	if b := s2.do(req{path: "/"}).Body.String(); !strings.Contains(b, `data-dns-ip="10.0.0.1"`) || strings.Contains(b, `<small class="alias">sonarr.example.com</small> <span`) {
+		t.Errorf("single hostname should stay unlabeled: %s", b)
 	}
 }
 

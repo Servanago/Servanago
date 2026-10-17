@@ -2,7 +2,6 @@ package web
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -115,10 +114,13 @@ func detached(r *http.Request) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 }
 
-// dnsTarget is what a site's A and AAAA records looked like before the site changed or went away.
-type dnsTarget struct {
-	name, zone string
-	rows       []store.DNSRecord // the rows that exist, A before AAAA
+// dnsTarget is the DNS rows of a site (every hostname, A before AAAA) with the zone each one lives in, kept so
+// the records can still be deleted after the site row is gone.
+type dnsTarget struct{ rows []targetRow }
+
+type targetRow struct {
+	store.DNSRecord
+	zone string
 }
 
 func dnsTargetOf(r *http.Request, q *store.Store, rt store.Site) (dnsTarget, error) {
@@ -126,14 +128,14 @@ func dnsTargetOf(r *http.Request, q *store.Store, rt store.Site) (dnsTarget, err
 	if err != nil {
 		return dnsTarget{}, err
 	}
-	d, ok := store.ResolveDomain(ds, rt.Hostnames[0])
-	if !ok {
-		return dnsTarget{}, errors.New("no domain matches " + rt.Hostnames[0])
+	all, err := q.ListSiteDNS(r.Context(), rt.ID)
+	if err != nil {
+		return dnsTarget{}, err
 	}
-	t := dnsTarget{name: rt.Hostnames[0], zone: d.ZoneID}
-	for _, fam := range []string{store.FamilyA, store.FamilyAAAA} {
-		if row, err := q.GetDNS(r.Context(), rt.ID, fam); err == nil {
-			t.rows = append(t.rows, row)
+	var t dnsTarget
+	for _, row := range all {
+		if d, ok := store.ResolveDomain(ds, row.Hostname); ok {
+			t.rows = append(t.rows, targetRow{row, d.ZoneID})
 		}
 	}
 	return t, nil
@@ -158,9 +160,9 @@ func (s *Server) removeRecord(r *http.Request, t dnsTarget) {
 	ctx, cancel := detached(r)
 	defer cancel()
 	for _, row := range t.rows {
-		if _, err := s.deps.DNS.Remove(ctx, t.zone, row); err != nil {
-			slog.Error("dns remove", "record", t.name, "family", row.Family, "error", err)
-			s.flash(fmt.Sprintf("The %s record %s could not be removed: %v", row.Family, t.name, err))
+		if _, err := s.deps.DNS.Remove(ctx, row.zone, row.DNSRecord); err != nil {
+			slog.Error("dns remove", "record", row.Hostname, "family", row.Family, "error", err)
+			s.flash(fmt.Sprintf("The %s record %s could not be removed: %v", row.Family, row.Hostname, err))
 		}
 	}
 }

@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/servanago/servanago/internal/cfdns"
@@ -52,33 +53,57 @@ func (s *Syncer) run(ctx context.Context, siteID int64, takeOver bool) error {
 	if err != nil {
 		return err
 	}
-	name := rt.Hostnames[0]
-	dom, ok := store.ResolveDomain(domains, name)
-	if !ok { // no domain, no zone: nothing to sync
-		return nil
+	var errs []error
+	stale, err := s.st.ListSiteDNS(ctx, siteID) // rows of hostnames the site no longer answers on, or that lost their domain
+	if err != nil {
+		return err
 	}
-	want := map[string]string{
-		store.FamilyA:    first(rt.RecordIP, dom.DefaultIP),
-		store.FamilyAAAA: first(rt.RecordIP6, dom.DefaultIP6),
+	for _, row := range stale {
+		if _, ok := store.ResolveDomain(domains, row.Hostname); slices.Contains(rt.Hostnames, row.Hostname) && ok {
+			continue
+		}
+		errs = append(errs, s.prune(ctx, domains, row))
 	}
-	for _, fam := range families {
-		row, err := s.st.GetDNS(ctx, siteID, fam)
-		if err != nil && !errors.Is(err, sql.ErrNoRows) {
-			return err
+	for _, name := range rt.Hostnames {
+		dom, ok := store.ResolveDomain(domains, name)
+		if !ok { // no domain, no zone: nothing to sync for this name
+			continue
 		}
-		has := err == nil
-		row.SiteID, row.Family = siteID, fam
-		next, drop := s.syncFamily(ctx, dom.ZoneID, name, fam, want[fam], row, has, takeOver)
-		if drop {
-			err = s.st.DeleteDNSRecord(ctx, siteID, fam)
-		} else {
-			err = s.st.UpsertDNS(ctx, next)
+		want := map[string]string{
+			store.FamilyA:    first(rt.RecordIP, dom.DefaultIP),
+			store.FamilyAAAA: first(rt.RecordIP6, dom.DefaultIP6),
 		}
-		if err != nil {
-			return err
+		for _, fam := range families {
+			row, err := s.st.GetDNS(ctx, name, fam)
+			if err != nil && !errors.Is(err, sql.ErrNoRows) {
+				return err
+			}
+			has := err == nil
+			row.Hostname, row.SiteID, row.Family = name, siteID, fam
+			next, drop := s.syncFamily(ctx, dom.ZoneID, name, fam, want[fam], row, has, takeOver)
+			next.Hostname, next.SiteID = name, siteID
+			if drop {
+				err = s.st.DeleteDNSRecord(ctx, name, fam)
+			} else {
+				err = s.st.UpsertDNS(ctx, next)
+			}
+			if err != nil {
+				return err
+			}
 		}
 	}
-	return nil
+	return errors.Join(errs...)
+}
+
+// prune drops the row of a hostname that left its site (or lost its domain), deleting the Cloudflare record
+// first when ServanaGo owns it. A failed delete keeps the row so the next reconcile tries again.
+func (s *Syncer) prune(ctx context.Context, domains []store.Domain, row store.DNSRecord) error {
+	if dom, ok := store.ResolveDomain(domains, row.Hostname); ok {
+		if _, err := s.Remove(ctx, dom.ZoneID, row); err != nil {
+			return fmt.Errorf("remove %s record %s: %w", row.Family, row.Hostname, err)
+		}
+	}
+	return s.st.DeleteDNSRecord(ctx, row.Hostname, row.Family)
 }
 
 // syncFamily reconciles one name's record of one family. want == "" means no record of that family is

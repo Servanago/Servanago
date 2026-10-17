@@ -143,10 +143,10 @@ func TestDNSRecordCascade(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	mustDomain(t, s, "example.com")
 	r, _ := s.CreateSite(ctx, site("sonarr.example.com"))
-	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err == nil {
+	if _, err := s.GetDNS(ctx, r.Hostnames[0], FamilyA); err == nil {
 		t.Error("want not found before upsert")
 	}
-	rec := DNSRecord{SiteID: r.ID, CFRecordID: "cf1", Content: "10.0.0.1", Owned: true, State: "synced"}
+	rec := DNSRecord{Hostname: r.Hostnames[0], SiteID: r.ID, CFRecordID: "cf1", Content: "10.0.0.1", Owned: true, State: "synced"}
 	if err := s.UpsertDNS(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
@@ -154,17 +154,17 @@ func TestDNSRecordCascade(t *testing.T) {
 	if err := s.UpsertDNS(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.GetDNS(ctx, r.ID, FamilyA)
+	got, err := s.GetDNS(ctx, r.Hostnames[0], FamilyA)
 	if err != nil || got.State != "error" || got.Error != "boom" || !got.Owned || got.Family != FamilyA {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if err := s.UpsertDNS(ctx, DNSRecord{SiteID: r.ID, State: "weird"}); err == nil {
+	if err := s.UpsertDNS(ctx, DNSRecord{Hostname: r.Hostnames[0], SiteID: r.ID, State: "weird"}); err == nil {
 		t.Error("bad state accepted")
 	}
 	if err := s.DeleteSite(ctx, r.ID); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err == nil {
+	if _, err := s.GetDNS(ctx, r.Hostnames[0], FamilyA); err == nil {
 		t.Error("dns record survived site delete")
 	}
 }
@@ -191,7 +191,7 @@ func TestListAndDeleteDNS(t *testing.T) {
 	a, _ := s.CreateSite(ctx, site("a.example.com"))
 	b, _ := s.CreateSite(ctx, site("b.example.com"))
 	for _, r := range []Site{a, b} {
-		if err := s.UpsertDNS(ctx, DNSRecord{SiteID: r.ID, State: "synced", Owned: true}); err != nil {
+		if err := s.UpsertDNS(ctx, DNSRecord{Hostname: r.Hostnames[0], SiteID: r.ID, State: "synced", Owned: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -323,34 +323,34 @@ func TestDNSRecordsPerFamily(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	mustDomain(t, s, "example.com")
 	r, _ := s.CreateSite(ctx, site("app.example.com"))
-	a := DNSRecord{SiteID: r.ID, Family: FamilyA, CFRecordID: "a1", Content: "203.0.113.5", Owned: true, State: "synced"}
-	aaaa := DNSRecord{SiteID: r.ID, Family: FamilyAAAA, CFRecordID: "q1", Content: "2001:db8::5", Owned: false, State: "conflict", Error: "x"}
+	a := DNSRecord{Hostname: r.Hostnames[0], SiteID: r.ID, Family: FamilyA, CFRecordID: "a1", Content: "203.0.113.5", Owned: true, State: "synced"}
+	aaaa := DNSRecord{Hostname: r.Hostnames[0], SiteID: r.ID, Family: FamilyAAAA, CFRecordID: "q1", Content: "2001:db8::5", Owned: false, State: "conflict", Error: "x"}
 	for _, rec := range []DNSRecord{a, aaaa} {
 		if err := s.UpsertDNS(ctx, rec); err != nil {
 			t.Fatal(err)
 		}
 	}
-	gotA, err := s.GetDNS(ctx, r.ID, FamilyA)
+	gotA, err := s.GetDNS(ctx, r.Hostnames[0], FamilyA)
 	if err != nil || gotA.Content != "203.0.113.5" || gotA.State != "synced" {
 		t.Fatalf("A: %+v %v", gotA, err)
 	}
-	gotQ, err := s.GetDNS(ctx, r.ID, FamilyAAAA)
+	gotQ, err := s.GetDNS(ctx, r.Hostnames[0], FamilyAAAA)
 	if err != nil || gotQ.Content != "2001:db8::5" || gotQ.State != "conflict" || gotQ.Family != FamilyAAAA {
 		t.Fatalf("AAAA: %+v %v", gotQ, err)
 	}
 	if all, _ := s.ListDNS(ctx); len(all) != 2 || all[0].Family != FamilyA || all[1].Family != FamilyAAAA {
 		t.Fatalf("list must give A then AAAA: %+v", all)
 	}
-	if err := s.UpsertDNS(ctx, DNSRecord{SiteID: r.ID, Family: "MX", State: "synced"}); err == nil {
+	if err := s.UpsertDNS(ctx, DNSRecord{Hostname: r.Hostnames[0], SiteID: r.ID, Family: "MX", State: "synced"}); err == nil {
 		t.Error("an unknown family was accepted")
 	}
-	if err := s.DeleteDNSRecord(ctx, r.ID, FamilyAAAA); err != nil {
+	if err := s.DeleteDNSRecord(ctx, r.Hostnames[0], FamilyAAAA); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.GetDNS(ctx, r.ID, FamilyAAAA); err == nil {
+	if _, err := s.GetDNS(ctx, r.Hostnames[0], FamilyAAAA); err == nil {
 		t.Error("AAAA row survived its delete")
 	}
-	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err != nil {
+	if _, err := s.GetDNS(ctx, r.Hostnames[0], FamilyA); err != nil {
 		t.Errorf("deleting AAAA must leave A: %v", err)
 	}
 	_ = s.UpsertDNS(ctx, aaaa)

@@ -99,6 +99,39 @@ func TestSlugDerivedUniqueAndImmutable(t *testing.T) {
 	}
 }
 
+// DNS rows are keyed by hostname and family, so a site's several hostnames each keep their own pair.
+func TestDNSRecordsPerHostname(t *testing.T) {
+	s, ctx := open(t), context.Background()
+	a, err := s.CreateSite(ctx, Site{Hostnames: []string{"a.example.com", "b.example.com"}, Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, _ := s.CreateSite(ctx, site("c.example.com"))
+	for _, rec := range []DNSRecord{
+		{Hostname: "a.example.com", SiteID: a.ID, Family: FamilyA, State: "synced", Owned: true},
+		{Hostname: "a.example.com", SiteID: a.ID, Family: FamilyAAAA, State: "synced", Owned: true},
+		{Hostname: "b.example.com", SiteID: a.ID, Family: FamilyA, State: "pending"},
+		{Hostname: "c.example.com", SiteID: other.ID, Family: FamilyA, State: "synced"},
+	} {
+		if err := s.UpsertDNS(ctx, rec); err != nil {
+			t.Fatal(err)
+		}
+	}
+	rows, err := s.ListSiteDNS(ctx, a.ID)
+	if err != nil || len(rows) != 3 || rows[0].Hostname != "a.example.com" || rows[2].Hostname != "b.example.com" {
+		t.Fatalf("site rows: %+v %v", rows, err)
+	}
+	if err := s.DeleteDNSRecord(ctx, "b.example.com", FamilyA); err != nil {
+		t.Fatal(err)
+	}
+	if rows, _ = s.ListSiteDNS(ctx, a.ID); len(rows) != 2 {
+		t.Fatalf("after deleting one hostname's row: %+v", rows)
+	}
+	if got, err := s.GetDNS(ctx, "c.example.com", FamilyA); err != nil || got.SiteID != other.ID {
+		t.Fatalf("another site's row was touched: %+v %v", got, err)
+	}
+}
+
 func TestStaticSiteRoundTripAndConstraints(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	st, err := s.CreateSite(ctx, Site{Kind: "static", StaticRoot: "/srv/www/blog", Hostnames: []string{"blog.example.com"}, Enabled: true})

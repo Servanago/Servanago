@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 )
@@ -44,6 +45,7 @@ const (
 )
 
 type DNSRecord struct {
+	Hostname   string // the name the record is for; empty on the UI host's rows
 	SiteID     int64
 	Family     string // FamilyA | FamilyAAAA; "" means FamilyA
 	CFRecordID string
@@ -270,43 +272,37 @@ func familyOf(f string) string {
 	return f
 }
 
-// GetDNS returns the site's record of one family (FamilyA or FamilyAAAA).
-func (s *Store) GetDNS(ctx context.Context, siteID int64, family string) (DNSRecord, error) {
+// GetDNS returns the hostname's record of one family (FamilyA or FamilyAAAA).
+func (s *Store) GetDNS(ctx context.Context, hostname, family string) (DNSRecord, error) {
 	d := DNSRecord{Family: familyOf(family)}
-	err := s.q.QueryRowContext(ctx, `SELECT site_id, COALESCE(cf_record_id,''), COALESCE(content,''), owned, state,
-		COALESCE(error,''), COALESCE(synced_at,'') FROM dns_records WHERE site_id=? AND family=?`, siteID, d.Family).
-		Scan(&d.SiteID, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt)
+	err := s.q.QueryRowContext(ctx, "SELECT "+dnsCols+" FROM dns_records WHERE hostname=? AND family=?", hostname, d.Family).
+		Scan(&d.Hostname, &d.SiteID, &d.Family, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt)
 	if err != nil {
-		return DNSRecord{}, fmt.Errorf("get %s record for site %d: %w", d.Family, siteID, err)
+		return DNSRecord{}, fmt.Errorf("get %s record for %s: %w", d.Family, hostname, err)
 	}
 	return d, nil
 }
 
 func (s *Store) UpsertDNS(ctx context.Context, d DNSRecord) error {
 	d.Family = familyOf(d.Family)
-	_, err := s.q.ExecContext(ctx, `INSERT INTO dns_records (site_id, family, cf_record_id, content, owned, state, error, synced_at)
-		VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(site_id, family) DO UPDATE SET cf_record_id=excluded.cf_record_id,
+	_, err := s.q.ExecContext(ctx, `INSERT INTO dns_records (hostname, site_id, family, cf_record_id, content, owned, state, error, synced_at)
+		VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(hostname, family) DO UPDATE SET site_id=excluded.site_id, cf_record_id=excluded.cf_record_id,
 		content=excluded.content, owned=excluded.owned, state=excluded.state, error=excluded.error, synced_at=excluded.synced_at`,
-		d.SiteID, d.Family, nullStr(d.CFRecordID), nullStr(d.Content), d.Owned, d.State, nullStr(d.Error), nullStr(d.SyncedAt))
+		d.Hostname, d.SiteID, d.Family, nullStr(d.CFRecordID), nullStr(d.Content), d.Owned, d.State, nullStr(d.Error), nullStr(d.SyncedAt))
 	if err != nil {
-		return fmt.Errorf("upsert %s record for site %d: %w", d.Family, d.SiteID, err)
+		return fmt.Errorf("upsert %s record for %s: %w", d.Family, d.Hostname, err)
 	}
 	return nil
 }
 
-const dnsCols = "site_id, family, COALESCE(cf_record_id,''), COALESCE(content,''), owned, state, COALESCE(error,''), COALESCE(synced_at,'')"
+const dnsCols = "hostname, site_id, family, COALESCE(cf_record_id,''), COALESCE(content,''), owned, state, COALESCE(error,''), COALESCE(synced_at,'')"
 
-// ListDNS returns every record, ordered by site then family (A before AAAA).
-func (s *Store) ListDNS(ctx context.Context) ([]DNSRecord, error) {
-	rows, err := s.q.QueryContext(ctx, "SELECT "+dnsCols+" FROM dns_records ORDER BY site_id, family")
-	if err != nil {
-		return nil, err
-	}
+func scanDNSRows(rows *sql.Rows) ([]DNSRecord, error) {
 	defer rows.Close()
 	var out []DNSRecord
 	for rows.Next() {
 		var d DNSRecord
-		if err := rows.Scan(&d.SiteID, &d.Family, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt); err != nil {
+		if err := rows.Scan(&d.Hostname, &d.SiteID, &d.Family, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -314,7 +310,25 @@ func (s *Store) ListDNS(ctx context.Context) ([]DNSRecord, error) {
 	return out, rows.Err()
 }
 
-// DeleteDNS removes every record row of the site, whatever the family.
+// ListDNS returns every record, ordered by site, hostname, then family (A before AAAA).
+func (s *Store) ListDNS(ctx context.Context) ([]DNSRecord, error) {
+	rows, err := s.q.QueryContext(ctx, "SELECT "+dnsCols+" FROM dns_records ORDER BY site_id, hostname, family")
+	if err != nil {
+		return nil, err
+	}
+	return scanDNSRows(rows)
+}
+
+// ListSiteDNS returns one site's records, ordered by hostname then family.
+func (s *Store) ListSiteDNS(ctx context.Context, siteID int64) ([]DNSRecord, error) {
+	rows, err := s.q.QueryContext(ctx, "SELECT "+dnsCols+" FROM dns_records WHERE site_id=? ORDER BY hostname, family", siteID)
+	if err != nil {
+		return nil, err
+	}
+	return scanDNSRows(rows)
+}
+
+// DeleteDNS removes every record row of the site, whatever the hostname or family.
 func (s *Store) DeleteDNS(ctx context.Context, siteID int64) error {
 	if _, err := s.q.ExecContext(ctx, "DELETE FROM dns_records WHERE site_id=?", siteID); err != nil {
 		return fmt.Errorf("delete dns records for site %d: %w", siteID, err)
@@ -322,10 +336,10 @@ func (s *Store) DeleteDNS(ctx context.Context, siteID int64) error {
 	return nil
 }
 
-// DeleteDNSRecord removes one family's row, for example the AAAA row when the site's IPv6 address is cleared.
-func (s *Store) DeleteDNSRecord(ctx context.Context, siteID int64, family string) error {
-	if _, err := s.q.ExecContext(ctx, "DELETE FROM dns_records WHERE site_id=? AND family=?", siteID, familyOf(family)); err != nil {
-		return fmt.Errorf("delete %s record for site %d: %w", familyOf(family), siteID, err)
+// DeleteDNSRecord removes one hostname's row of one family, for example the AAAA row when its IPv6 address is cleared.
+func (s *Store) DeleteDNSRecord(ctx context.Context, hostname, family string) error {
+	if _, err := s.q.ExecContext(ctx, "DELETE FROM dns_records WHERE hostname=? AND family=?", hostname, familyOf(family)); err != nil {
+		return fmt.Errorf("delete %s record for %s: %w", familyOf(family), hostname, err)
 	}
 	return nil
 }

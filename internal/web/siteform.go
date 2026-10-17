@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -235,13 +234,10 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	var old dnsTarget
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		before, err := tx.GetSite(r.Context(), id)
-		if err != nil {
+		if _, err := tx.GetSite(r.Context(), id); err != nil {
 			return userError{http.StatusNotFound, "site not found"}
 		}
-		old, _ = dnsTargetOf(r, tx, before)
 		if err := addDomainIfNew(r.Context(), tx, nd); err != nil {
 			return err
 		}
@@ -257,16 +253,7 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	// A rename moves the record: drop the old one (if owned), then sync the new name.
-	if now, err := s.deps.Store.GetSite(r.Context(), id); err == nil {
-		if t, err := dnsTargetOf(r, s.deps.Store, now); err != nil || t.name != old.name {
-			s.removeRecord(r, old)
-			if err := s.deps.Store.DeleteDNS(r.Context(), id); err != nil {
-				slog.Error("clear dns row", "site", id, "error", err)
-			}
-		}
-	}
-	s.reconcile(r, id)
+	s.reconcile(r, id) // adds records for new hostnames and removes the owned ones of hostnames that went
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprint(w, "Saved and applied.")
 }

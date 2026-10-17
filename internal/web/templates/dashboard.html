@@ -13,7 +13,7 @@
 {{if eq .Cert.State "pending"}}<small class="next">{{.CertWait}}</small>{{else if and $c.Next (or (ne .Cert.State "error") (not .Cert.Err))}}<small class="next">{{$c.Next}}</small>{{end}}
 {{if .Cert.Err}}<div class="explain">{{errhtml .Cert.Err}}</div>{{end}}{{end}}</td>
 {{if .DNSOn}}<td>
-{{$row := .}}{{if .HasDNS}}{{range .DNS}}{{$d := status "dns" .State}}<span class="dns-{{.State}}" title="{{$d.Meaning}}">{{if gt (len $row.DNS) 1}}{{.Family}} {{end}}{{.State}}</span>
+{{$row := .}}{{if .HasDNS}}{{range .DNS}}{{$d := status "dns" .State}}{{if gt (len $row.Hostnames) 1}}<small class="alias">{{.Hostname}}</small> {{end}}<span class="dns-{{.State}}" title="{{$d.Meaning}}">{{if gt (len $row.DNS) 1}}{{.Family}} {{end}}{{.State}}</span>
 {{if and $d.Next (or (ne .State "error") (not .Error))}}<small class="next">{{$d.Next}}</small>{{end}}
 {{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}
 {{end}}

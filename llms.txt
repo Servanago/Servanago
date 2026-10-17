@@ -34,7 +34,7 @@ All management is through the web UI (htmx, server-rendered); there is no public
 
 - Add a site: `/sites/new`. Enter one or more hostnames (`oc.example.com`, one per line, first is the main one), choose Proxy (backend host or IP and port as separate fields) or Static (a folder to serve). With Cloudflare, ServanaGo finds the zone for the main hostname, adds the domain if new, and creates the A record; a hostname with no domain is still served (HTTP-01 certificate) and you point DNS at the server yourself. Equivalent to the Caddyfile `oc.example.com { reverse_proxy http://192.168.25.165:9200 }` or `file_server`.
 - Domains: `/domains`. Per domain, `cert_mode` is `wildcard` (default) or `per_host`; `default_ip` is where its A records point.
-- Routes: `/routes/{id}`. Enable/disable, CIDR allowlist, basic auth, streaming, upload limit, per-route DNS record IP, optional magic-link gate.
+- Sites: `/sites/{id}`. Hostnames, proxy or static kind, enable/disable, CIDR allowlist, basic auth, streaming, upload limit, per-site DNS record IP (applies to every hostname), optional magic-link gate. With Cloudflare each hostname that falls under a managed domain gets its own A (and AAAA) record; dropping a hostname deletes the record ServanaGo created for it.
 - Dashboard `/`: upstream health, certificate expiry, DNS state, UI host record card. `/logs`: live Caddy/ACME log. `/help`: plain-language help. `/security`: authenticator app, passkeys, gate identities.
 - If the UI host's A record already exists with a different value, the dashboard shows a conflict; nothing is overwritten until you click *Take over*.
 

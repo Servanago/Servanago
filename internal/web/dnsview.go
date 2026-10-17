@@ -32,13 +32,21 @@ func ownedRecords(rows []store.DNSRecord) []store.DNSRecord {
 }
 
 // recordSummary renders rows as "A 10.0.0.1, AAAA 2001:db8::1", or just the address when there is one record.
+// Rows of several hostnames are prefixed with their hostname.
 func recordSummary(rows []store.DNSRecord) string {
 	if len(rows) == 1 {
 		return rows[0].Content
 	}
+	multiHost := false
+	for _, r := range rows {
+		multiHost = multiHost || r.Hostname != rows[0].Hostname
+	}
 	parts := make([]string, len(rows))
 	for i, r := range rows {
 		parts[i] = r.Family + " " + r.Content
+		if multiHost {
+			parts[i] = r.Hostname + " " + parts[i]
+		}
 	}
 	return strings.Join(parts, ", ")
 }

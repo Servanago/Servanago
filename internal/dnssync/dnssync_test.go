@@ -43,7 +43,7 @@ func newFx(t *testing.T) *fx {
 
 func (f *fx) row(t *testing.T) store.DNSRecord {
 	t.Helper()
-	d, err := f.st.GetDNS(context.Background(), f.site.ID, store.FamilyA)
+	d, err := f.st.GetDNS(context.Background(), f.site.Hostnames[0], store.FamilyA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -314,7 +314,7 @@ func TestHostDisabledWhenUnconfigured(t *testing.T) {
 
 func (f *fx) row6(t *testing.T) (store.DNSRecord, bool) {
 	t.Helper()
-	d, err := f.st.GetDNS(context.Background(), f.site.ID, store.FamilyAAAA)
+	d, err := f.st.GetDNS(context.Background(), f.site.Hostnames[0], store.FamilyAAAA)
 	return d, err == nil
 }
 

@@ -42,9 +42,10 @@ CREATE TABLE site_hostnames (
 );
 CREATE UNIQUE INDEX site_hostnames_one_primary ON site_hostnames (site_id) WHERE is_primary = 1;
 
--- One Cloudflare record per site and family (A or AAAA).
+-- One Cloudflare record per hostname and family (A or AAAA); site_id groups them and cascades on delete.
 CREATE TABLE dns_records (
-  site_id     INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  hostname     TEXT NOT NULL,                 -- one record pair per hostname that resolves to a domain
+  site_id      INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
   family       TEXT NOT NULL DEFAULT 'A' CHECK (family IN ('A','AAAA')),
   cf_record_id TEXT,
   content      TEXT,
@@ -52,7 +53,7 @@ CREATE TABLE dns_records (
   state        TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','synced','error','conflict')),
   error        TEXT,
   synced_at    TEXT,
-  PRIMARY KEY (site_id, family)
+  PRIMARY KEY (hostname, family)
 );
 
 -- The records for SERVANAGO_HOST itself; not tied to a site, so a twin of dns_records keyed by family only.
