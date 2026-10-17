@@ -48,7 +48,7 @@ validate spec (runtime provider) -> write SQLite in a transaction -> helper writ
 | M5 | Apply v2: reconciler, last-known-good restore, audit events, service status and journald logs in the UI | Done (LKG + audit events; the service panel on a site's edit page arrived with M6) |
 | M6 | Node.js provider: dedicated user, sandboxed unit, port or socket allocation, explicit install/build/start commands, health check | Done: `sg-<slug>` user, sandboxed unit, admin-chosen loopback port (unique across node and FrankenPHP sites), start command run by systemd; install/build commands are recorded and shown, never run; health = the upstream probe; unit state and journal on the edit page |
 | M7 | PHP-FPM provider: per-site pool and socket, `php_fastcgi` JSON expansion, multiple installed versions | Done: one pool and socket per site, Caddy 2.11's `php_fastcgi` expansion rendered as JSON, version picked from the detected binaries |
-| M8 | FrankenPHP: per-site process | Done: kind `frankenphp`; one `frankenphp php-server` unit per site as `sg-<slug>` on an admin-chosen loopback port (shared port space with node), Caddy reverse-proxies to it; binary detected in `/usr/local/bin`, `/usr/bin`, `/opt/frankenphp` and accepted by the helper only if root-owned and not group/world-writable; classic mode only, worker mode not wired |
+| M8 | FrankenPHP: per-site process | Done: kind `frankenphp`; one `frankenphp php-server` unit per site as `sg-<slug>` on an admin-chosen loopback port (shared port space with node), Caddy reverse-proxies to it; binary detected in `/usr/local/bin`, `/usr/bin`, `/opt/frankenphp` and accepted by the helper only if root-owned and not group/world-writable; Caddy answers dotfile paths (`.env`, `.git`) with 404 before the proxy, because FrankenPHP serves them itself; classic mode only, worker mode not wired. Checked by hand against FrankenPHP 1.13.1: `php-server --listen 127.0.0.1:PORT` serves plain HTTP, opens no admin port and writes nothing into the webroot when `XDG_DATA_HOME`/`XDG_CONFIG_HOME` point at the unit's private `/tmp`; the helper-driven unit install has not been run on a real host yet |
 | M9 | CGI/FastCGI: per-site pool and socket | New |
 | M10 | MCP Server | New |
 | M11 | Hardening: privilege boundaries, paths, sockets, secrets, crash and interrupted-update tests, backup and restore docs | Planned |
@@ -60,6 +60,7 @@ Multi-tenant isolation claims, deployment releases and rollback, Git integration
 
 ## Known gaps carried from the baseline
 
+- The distro FrankenPHP package installs and enables its own `frankenphp.service` (a Caddy on ports 80 and 443). It stops ServanaGo from binding them, so disable it (`sudo systemctl disable --now frankenphp`); ServanaGo runs its own `frankenphp php-server` per site and needs only the binary.
 - IPv6 is dual-stack only: an AAAA record needs the IPv4 A record beside it, so an IPv6-only site is not supported. `CLOUDFLARE_API_TOKEN` is optional: without it a domain is added by hand and certificates are per host over HTTP-01.
 - Hostnames are free FQDNs (M2). Without Cloudflare there is no zone lookup, so a hostname that matches no domain added by hand simply has none: it is served with its own HTTP-01 certificate and gets no DNS record.
 - The mark is shipped as processed PNGs; a traced vector replaces them later (`docs/brand/README.md`).
