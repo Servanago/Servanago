@@ -1,5 +1,5 @@
 // Package smtpx sends one magic-link email over submission SMTP with stdlib net/smtp.
-// Credentials and host come from env at boot (secrets are never stored anywhere else).
+// Host and credentials come from the settings row (the password is sealed at rest).
 package smtpx
 
 import (
@@ -22,7 +22,7 @@ func (d Dialer) Configured() bool { return d.Host != "" }
 // Send is the whole mailer contract; body is plain text with \n newlines.
 func (d Dialer) Send(from, to, subject, body string) error {
 	if !d.Configured() {
-		return fmt.Errorf("SMTP_HOST is not set")
+		return fmt.Errorf("SMTP host is not set")
 	}
 	msg := "From: " + from + "\r\nTo: " + to + "\r\nSubject: " + subject + "\r\n" +
 		"MIME-Version: 1.0\r\nContent-Type: text/plain; charset=utf-8\r\n\r\n" +

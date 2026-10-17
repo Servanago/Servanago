@@ -1,7 +1,9 @@
 package web
 
 import (
+	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"strings"
@@ -10,10 +12,29 @@ import (
 	"github.com/servanago/servanago/internal/store"
 )
 
+// mailReady reports whether magic links can be sent right now.
+func (s *Server) mailReady(ctx context.Context) (bool, error) {
+	set, err := s.deps.Store.GetSettings(ctx)
+	if err != nil {
+		return false, err
+	}
+	return set.MailReady(), nil
+}
+
+// gateUsable is mailReady plus the session key, logged rather than failed: the forms only
+// need it to decide whether the gate controls are live.
+func (s *Server) gateUsable(ctx context.Context) bool {
+	ok, err := s.mailReady(ctx)
+	if err != nil {
+		slog.Error("gate mail settings", "error", err)
+	}
+	return ok && s.deps.Cfg.SecretKey != ""
+}
+
 // parseGate reads the site form's protection block. Gate-off clears the grants; other modes
 // need email delivery and the session key configured, and acl needs at least one rule.
-func (s *Server) parseGate(rt store.Site, v url.Values) ([]store.Grant, error) {
-	if err := s.gateNeedsHelp(rt); err != nil {
+func (s *Server) parseGate(ctx context.Context, rt store.Site, v url.Values) ([]store.Grant, error) {
+	if err := s.gateNeedsHelp(ctx, rt); err != nil {
 		return nil, err
 	}
 	if rt.GateMode == "" || rt.GateMode == "open" {
@@ -47,12 +68,16 @@ func gateACLText(gs []store.Grant) string {
 }
 
 // gateNeedsHelp refuses a gate when the app cannot honor it (checked once, both save paths).
-func (s *Server) gateNeedsHelp(rt store.Site) error {
+func (s *Server) gateNeedsHelp(ctx context.Context, rt store.Site) error {
 	if rt.GateMode == "" {
 		return nil
 	}
-	if s.deps.Cfg.SMTPHost == "" || s.deps.Cfg.MailFrom == "" {
-		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs email delivery: set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS and MAIL_FROM in the environment file and restart ServanaGo."}
+	ok, err := s.mailReady(ctx)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs email delivery: set the SMTP host and MAIL FROM under Settings."}
 	}
 	if s.deps.Cfg.SecretKey == "" {
 		return userError{http.StatusUnprocessableEntity, fmt.Sprintf("Magic-link sessions need SERVANAGO_SECRET_KEY (at least 32 characters) in .env to mint session keys for %s.", rt.Subdomain)}

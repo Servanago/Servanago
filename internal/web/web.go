@@ -65,7 +65,7 @@ func (s *Server) takeFlashes() []string {
 
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "domains", "siteedit", "site", "logs", "help"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "settings", "domains", "siteedit", "site", "logs", "help"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -119,6 +119,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /security/gate/revoke", s.security(s.revokeGateIdentity, false))
 	mux.Handle("GET /{$}", s.protected(s.dashboard))
 	mux.Handle("GET /help", s.protected(s.helpPage))
+	mux.Handle("GET /settings", s.protected(s.settingsPage))
+	mux.Handle("POST /settings/smtp", s.protected(s.saveSMTP))
 	mux.Handle("GET /status", s.protected(s.status))
 	mux.Handle("GET /logs", s.protected(s.logsPage))
 	mux.Handle("GET /logs/rows", s.protected(s.logRows))

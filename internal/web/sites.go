@@ -15,6 +15,7 @@ type addSiteData struct {
 	Port           int
 	ServerIP       string // where the A record will point; shown in the live preview
 	DNSOn          bool   // Cloudflare is configured; otherwise there is no DNS record to preview
+	MailOK         bool   // email delivery works: the magic-link controls are live
 }
 
 // newSitePage supports prefill via ?hostname=&host=&port=.
@@ -22,7 +23,7 @@ func (s *Server) newSitePage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	port, _ := strconv.Atoi(q.Get("port"))
 	s.render(w, "site", http.StatusOK, page{Title: "Add site", Data: addSiteData{
-		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, ServerIP: s.deps.Cfg.HostIP, DNSOn: s.dnsOn()}})
+		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, ServerIP: s.deps.Cfg.HostIP, DNSOn: s.dnsOn(), MailOK: s.gateUsable(r.Context())}})
 }
 
 // addSite turns "oc.example.com -> 192.168.25.165:9200" into the managed domain (if new), the site and its A record.
@@ -97,6 +98,12 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	grants, err := s.parseGate(r.Context(), rt, v)
+	if err != nil {
+		failErr(w, err)
+		return
+	}
+
 	var created store.Site
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		if managed != nil {
@@ -113,7 +120,10 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 		}
 		var cerr error
 		created, cerr = tx.CreateSite(r.Context(), rt)
-		return cerr
+		if cerr != nil {
+			return cerr
+		}
+		return tx.ReplaceGrants(r.Context(), created.ID, grants)
 	})
 	if err != nil {
 		failErr(w, err)

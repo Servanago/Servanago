@@ -134,7 +134,7 @@ type siteEditForm struct {
 	DeleteConfirm string
 	DNSOn         bool   // Cloudflare is configured; otherwise the DNS record fields are hidden
 	GateACL       string // textarea content for an existing ACL
-	MailOK        bool   // email delivery configured; the gate section is shown only then
+	MailOK        bool   // email delivery and the session key work; otherwise the gate section is shown disabled
 }
 
 // recordWord names records by family: "A record", "AAAA record" or "A and AAAA records".
@@ -187,7 +187,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 		confirm = deleteConfirm(t)
 	}
 	form := siteEditForm{Site: rt, Edit: edit, Domains: ds, DeleteConfirm: confirm, DNSOn: s.dnsOn(),
-		MailOK: s.deps.Cfg.SMTPHost != "" && s.deps.Cfg.MailFrom != "" && s.deps.Cfg.SecretKey != ""}
+		MailOK: s.gateUsable(r.Context())}
 	if edit {
 		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {
 			form.GateACL = gateACLText(gs)
@@ -252,7 +252,7 @@ func (s *Server) createSiteFull(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	grants, err := s.parseGate(rt, r.PostForm)
+	grants, err := s.parseGate(r.Context(), rt, r.PostForm)
 	if err != nil {
 		failErr(w, err)
 		return
@@ -293,7 +293,7 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
 	}
-	grants, err := s.parseGate(in, r.PostForm)
+	grants, err := s.parseGate(r.Context(), in, r.PostForm)
 	if err != nil {
 		failErr(w, err)
 		return

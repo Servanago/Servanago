@@ -70,10 +70,9 @@ scoped to the zones you want to manage. The same token is used for certificate i
 | `SERVANAGO_HOST` | yes | Hostname the UI is served on. It gets its own certificate. |
 | `ACME_EMAIL` | yes | Let's Encrypt contact; a bare address. |
 | `ADMIN_PASSWORD` | no | Enables login. **Unset means the UI is open** (warning in the log and a red banner). |
-| `SERVANAGO_SECRET_KEY` | no | At least 32 characters (`openssl rand -hex 32`). Encrypts the authenticator-app seed in SQLite; without it that option is off. Back it up with the data directory: if it is lost, run `2fa-reset`. |
+| `SERVANAGO_SECRET_KEY` | no | At least 32 characters (`openssl rand -hex 32`). Encrypts the authenticator-app seed and the SMTP password in SQLite, and signs magic-link sessions; without it those options are off. Back it up with the data directory: if it is lost, run `2fa-reset`. |
 | `REQUIRE_2FA` | no | `true`: a password login must be followed by an authenticator code, and a password-only session is limited to the Security page until one is set up. Needs `ADMIN_PASSWORD` and `SERVANAGO_SECRET_KEY`. |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | no | Both or neither. Adds a Cloudflare Turnstile check to the password form on `SERVANAGO_HOST`. The `UI_LISTEN` recovery address is exempt. Passkey and code steps have no widget. |
-| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM` | no | Email delivery for magic-link site access (`SMTP_PORT` defaults to 587, `SMTP_USER`/`SMTP_PASS` optional). Both `SMTP_HOST` and `MAIL_FROM` are needed for the gate; credentials come from the environment only. |
 | `ACME_ISSUER` | no | `internal` serves self-signed certificates from Caddy's local CA (offline setups and tests). Default is Let's Encrypt. |
 | `ACME_STAGING` | no | `true` uses the Let's Encrypt staging CA. |
 | `UI_LISTEN` | no | Default `127.0.0.1:8080`. |
@@ -97,7 +96,7 @@ scoped to the zones you want to manage. The same token is used for certificate i
 
 **Two-factor and passkeys.** With `ADMIN_PASSWORD` set, the Security page adds an authenticator app (with 10 one-time backup codes) and passkeys. A passkey sign-in skips the code. Passkeys work on `https://SERVANAGO_HOST` and on `localhost`, and are tied to that hostname: changing `SERVANAGO_HOST` makes existing ones unusable. Lost everything? Stop ServanaGo and run `servanago 2fa-reset` (it needs only `DATA_DIR`); it removes the authenticator, backup codes and passkeys. Restart afterwards to end open sessions.
 
-**Magic-link site access.** A site's edit form can require a magic link before it is served: either an allowlist of addresses and `@domains`, or open to any address. The link is sent by email, single-use, 15 minutes. Sessions are shared across the gated sites that allow that address and slide 30 days (allowlist) or 7 days (open) while in use; revoking one identity under Security cuts it on every gated site at once. This is an access barrier for staging sites, not full authentication: a site that needs real auth must do its own.
+**Magic-link site access.** A site's form (add and edit) can require a magic link before it is served: either an allowlist of addresses and `@domains`, or open to any address. The link is sent by email, single-use, 15 minutes. Email delivery is configured once under **Settings** (SMTP host, port, user, MAIL FROM; an optional password is stored encrypted, which needs `SERVANAGO_SECRET_KEY`). Sessions are shared across the gated sites that allow that address and slide 30 days (allowlist) or 7 days (open) while in use; revoking one identity under Security cuts it on every gated site at once. This is an access barrier for staging sites, not full authentication: a site that needs real auth must do its own.
 
 **Data directory permissions.** The user running ServanaGo must be able to write `DATA_DIR` (the database and Caddy's certificate storage). Keep it private to that user.
 

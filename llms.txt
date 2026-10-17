@@ -23,7 +23,7 @@ Environment variables (secrets are read from the environment only, never stored 
 - `CLOUDFLARE_API_TOKEN` (optional), `SERVANAGO_HOST_IP` (required with a token), `SERVANAGO_HOST_IP6` (optional AAAA target for the host).
 - `SERVANAGO_HOST_ZONE`: Cloudflare zone of the host; set it if zone auto-detection fails.
 - `ADMIN_PASSWORD`: enables login. `SERVANAGO_SECRET_KEY` (32+ chars) enables the authenticator app; `REQUIRE_2FA` enforces it; `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` add Turnstile to the password form.
-- `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `MAIL_FROM`: email for the optional magic-link site gate.
+- Email for the optional magic-link site gate is set on the Settings page (SMTP host, port, user, password, MAIL FROM), not in env. The password is stored sealed with `SERVANAGO_SECRET_KEY`.
 - `ACME_STAGING`, `ACME_ISSUER` (`internal` = self-signed), `ACME_PROPAGATION_DELAY` / `ACME_PROPAGATION_TIMEOUT` (`2m` / `10m` fixes "timed out waiting for record to fully propagate"), `ACME_RESOLVERS` (default `1.1.1.1,8.8.8.8`).
 - `UI_LISTEN` (default `127.0.0.1:8080`), `DATA_DIR` (default `/data`, a container-era default; set it explicitly), `HTTP_PORT` / `HTTPS_PORT` (default 80/443).
 

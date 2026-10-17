@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
@@ -12,41 +13,114 @@ import (
 	"github.com/servanago/servanago/internal/store"
 )
 
-// gateCfg is config with everything the gate needs.
-func gateCfg() config.Config {
-	return config.Config{AdminPassword: "pw", SMTPHost: "127.0.0.1", SMTPPort: 587,
-		MailFrom: "access@example.com", SecretKey: "e2e-secret-key-0123456789abcdef-e2e"}
+// gateSettings is the settings row the gate tests need: mail ready.
+func gateSettings() store.Settings {
+	return store.Settings{SMTPHost: "127.0.0.1", SMTPPort: 28097, SMTPUser: "u",
+		SMTPPass: []byte{1}, MailFrom: "access@example.com", UpdatedAt: "2026-10-15T10:00:00Z"}
 }
 
-// gateServer is domainServer with the gate's config; it reuses the cftest-backed deps.
+// gateCfg is config with the admin password and session key the gate needs.
+func gateCfg() config.Config {
+	return config.Config{AdminPassword: "pw", SecretKey: "e2e-secret-key-0123456789abcdef-e2e"}
+}
+
+// gateServer is domainServer's wiring with gate settings and the gate's config.
 func gateServer(t *testing.T) *Server {
 	cf := &cfFake{zones: zonesOK}
-	return cfgServer(t, cf, gateCfg())
+	s := cfgServer(t, cf, gateCfg())
+	if err := s.deps.Store.SaveSettings(context.Background(), gateSettings()); err != nil {
+		t.Fatal(err)
+	}
+	return s
 }
 
 func TestParseGate(t *testing.T) {
+	ctx := context.Background()
 	v := url.Values{"gate_acl": {"alice@example.com\n@dev.example"}}
 	s := gateServer(t)
-	gs, err := s.parseGate(store.Site{GateMode: "acl"}, v)
+	gs, err := s.parseGate(ctx, store.Site{GateMode: "acl"}, v)
 	if err != nil || len(gs) != 2 || gs[0].Mode != "email" || gs[1].Mode != "domain" {
 		t.Fatalf("acl: %v %v", gs, err)
 	}
-	if gs, err = s.parseGate(store.Site{GateMode: "open"}, url.Values{}); err != nil || len(gs) != 0 {
+	if gs, err = s.parseGate(ctx, store.Site{GateMode: "open"}, url.Values{}); err != nil || len(gs) != 0 {
 		t.Fatalf("open: %v %v", gs, err)
 	}
-	if gs, err = s.parseGate(store.Site{GateMode: ""}, v); err != nil || len(gs) != 0 {
+	if gs, err = s.parseGate(ctx, store.Site{GateMode: ""}, v); err != nil || len(gs) != 0 {
 		t.Fatalf("none: %v %v", gs, err)
 	}
-	// Without the secret key or mail, saving a gated site is refused with a plain-language error.
+	// No secret key: saving a gated site is refused naming it (mail is ready here).
 	s2 := newServer(t, "pw")
-	s2.deps.Cfg = config.Config{SMTPHost: "127.0.0.1", MailFrom: "access@example.com"}
-	if _, err := s2.parseGate(store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
+	if err := s2.deps.Store.SaveSettings(ctx, gateSettings()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s2.parseGate(ctx, store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
 		t.Fatalf("secret-key refusal: %v", err)
 	}
+	// Mail not ready: refused pointing at Settings.
 	s3 := newServer(t, "pw")
 	s3.deps.Cfg = config.Config{SecretKey: "e2e-secret-key-0123456789abcdef-e2e"}
-	if _, err := s3.parseGate(store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "SMTP") {
-		t.Fatalf("smtp refusal: %v", err)
+	if _, err := s3.parseGate(ctx, store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "Settings") {
+		t.Fatalf("mail refusal: %v", err)
+	}
+}
+
+// TestSettingsPageEndToEnd covers the page render, bad saves, a good save, sealing and clearing.
+func TestSettingsPageEndToEnd(t *testing.T) {
+	s := gateServer(t) // settings row already prefilled
+	c := sessionCookie(t, login(s, "pw", nil, ""))
+	post := func(srv *Server, ck *http.Cookie, kv url.Values) *httptest.ResponseRecorder {
+		return srv.do(req{method: "POST", path: "/settings/smtp", body: kv.Encode(), hdr: htmxPost, cookies: []*http.Cookie{ck}})
+	}
+
+	w := s.do(req{path: "/settings", cookies: []*http.Cookie{c}})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "Email delivery") || !strings.Contains(w.Body.String(), `value="28097"`) {
+		t.Fatalf("settings page: %d %s", w.Code, w.Body.String())
+	}
+	if w = post(s, c, url.Values{"smtp_host": {"mail.x"}, "mail_from": {"not-an-email"}}); w.Code != 422 {
+		t.Fatalf("bad from: %d %s", w.Code, w.Body.String())
+	}
+	if w = post(s, c, url.Values{"smtp_host": {"mail.x"}}); w.Code != 422 { // host without sender
+		t.Fatalf("half config: %d", w.Code)
+	}
+	if w = post(s, c, url.Values{"smtp_host": {"mail.x"}, "smtp_port": {"587"}, "mail_from": {"access@x.io"}}); w.Code != 204 {
+		t.Fatalf("save: %d %s", w.Code, w.Body.String())
+	}
+	if set, err := s.deps.Store.GetSettings(context.Background()); err != nil || !set.MailReady() || set.SMTPHost != "mail.x" {
+		t.Fatalf("persisted: %+v %v", set, err)
+	}
+
+	// A password needs the secret key to seal it.
+	noKey := cfgServer(t, &cfFake{zones: zonesOK}, config.Config{AdminPassword: "pw"})
+	cNK := sessionCookie(t, login(noKey, "pw", nil, ""))
+	w = post(noKey, cNK, url.Values{"smtp_host": {"mail.x"}, "mail_from": {"a@x.io"}, "smtp_pass": {"hunter2"}})
+	if w.Code != 422 || !strings.Contains(w.Body.String(), "SECRET_KEY") {
+		t.Fatalf("pass without key: %d %s", w.Code, w.Body.String())
+	}
+	// With the key it is stored sealed, shown as set, and a blank password keeps it.
+	if w = post(s, c, url.Values{"smtp_host": {"mail.x"}, "mail_from": {"a@x.io"}, "smtp_pass": {"hunter2"}}); w.Code != 204 {
+		t.Fatalf("sealed save: %d %s", w.Code, w.Body.String())
+	}
+	set, _ := s.deps.Store.GetSettings(context.Background())
+	if set.SMTPPass == nil || strings.Contains(string(set.SMTPPass), "hunter2") {
+		t.Fatalf("pass not sealed: %q", set.SMTPPass)
+	}
+	sealed := string(set.SMTPPass)
+	if w = post(s, c, url.Values{"smtp_host": {"mail.x"}, "mail_from": {"a@x.io"}}); w.Code != 204 {
+		t.Fatalf("keep save: %d", w.Code)
+	}
+	if set, _ = s.deps.Store.GetSettings(context.Background()); string(set.SMTPPass) != sealed {
+		t.Fatal("blank password did not keep the stored one")
+	}
+	if w = s.do(req{path: "/settings", cookies: []*http.Cookie{c}}); !strings.Contains(w.Body.String(), "leave blank to keep") {
+		t.Fatal("password-set state not shown")
+	}
+
+	// Clearing host and sender stops delivery and drops the password.
+	if w = post(s, c, url.Values{}); w.Code != 204 {
+		t.Fatalf("clear: %d", w.Code)
+	}
+	if set, _ = s.deps.Store.GetSettings(context.Background()); set.MailReady() || set.SMTPPass != nil {
+		t.Fatalf("not cleared: %+v", set)
 	}
 }
 
@@ -60,15 +134,24 @@ func TestRouteFormShowsGateSection(t *testing.T) {
 	if !strings.Contains(w.Body.String(), "gate_mode") || !strings.Contains(w.Body.String(), "Magic-link access") {
 		t.Fatalf("gate section missing from the site form:\n%s", w.Body.String())
 	}
-	// Without email delivery: no section, and the hint explains what to set.
+	// Mail unconfigured: the section stays visible but its controls are off, with a pointer to Settings.
 	s2 := newServer(t, "pw")
-	c2 := sessionCookie(t, login(s2, "pw", nil, ""))
-	w2 := s2.do(req{path: "/sites/new/full", cookies: []*http.Cookie{c2}})
-	if strings.Contains(w2.Body.String(), "gate_mode") {
-		t.Fatal("gate section shown without email delivery")
+	if _, err := s2.deps.Store.CreateDomain(context.Background(), store.Domain{Name: "gateui2.example.net", DefaultIP: "192.168.1.6", CertMode: "wildcard"}); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(w2.Body.String(), "No domains yet") {
-		t.Fatalf("unexpected page: %s", w2.Body.String())
+	c2 := sessionCookie(t, login(s2, "pw", nil, ""))
+	for _, path := range []string{"/sites/new/full", "/sites/new"} {
+		w2 := s2.do(req{path: path, cookies: []*http.Cookie{c2}})
+		if strings.Contains(w2.Body.String(), "gate_mode") {
+			t.Fatalf("%s: controls rendered while mail is unconfigured", path)
+		}
+		if !strings.Contains(w2.Body.String(), "unlock afterwards") {
+			t.Fatalf("%s: disabled note missing: %s", path, w2.Body.String())
+		}
+	}
+	// The quick Add-site form carries the controls too once mail works.
+	if w3 := s.do(req{path: "/sites/new", cookies: []*http.Cookie{c}}); !strings.Contains(w3.Body.String(), "gate_mode") {
+		t.Fatal("quick Add site form lacks the gate section")
 	}
 }
 

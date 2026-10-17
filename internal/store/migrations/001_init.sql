@@ -100,3 +100,16 @@ CREATE TABLE gate_tokens (
   expires_at  TEXT NOT NULL,
   consumed_at TEXT
 );
+
+-- App-level settings: email delivery for the magic-link gate. One row, same pattern as the single-row totp.
+-- smtp_pass is secretbox-sealed with SERVANAGO_SECRET_KEY; NULL = no password.
+CREATE TABLE settings (
+  id         INTEGER PRIMARY KEY CHECK (id = 1),
+  smtp_host  TEXT NOT NULL DEFAULT '',
+  smtp_port  INTEGER NOT NULL DEFAULT 587,
+  smtp_user  TEXT NOT NULL DEFAULT '',
+  smtp_pass  BLOB,
+  mail_from  TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL DEFAULT ''
+);
+INSERT INTO settings (id) VALUES (1);
