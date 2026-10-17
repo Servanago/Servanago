@@ -18,24 +18,28 @@ type Domain struct {
 }
 
 type Site struct {
-	ID            int64
-	Slug          string   // immutable; derived from the first hostname on create
-	Kind          string   // proxy | static; "" means proxy on create
-	Hostnames     []string // primary first; each is a free FQDN, unique across sites
-	Scheme        string   // http | https (proxy)
-	UpstreamHost  string   // proxy only
-	UpstreamPort  int      // proxy only
-	StaticRoot    string   // static only: absolute directory served with file_server
-	TLSSkipVerify bool
-	Enabled       bool
-	RecordIP      string // "" = domain default
-	RecordIP6     string // IPv6 override for this site's AAAA record; "" = domain default
-	Allowlist     string // newline-separated CIDRs
-	BasicUser     string
-	BasicHash     string // bcrypt
-	Stream        bool   // no response buffering (flush_interval -1)
-	MaxBody       int64  // request body limit in bytes; 0 = Caddy default
-	GateMode      string // "" | acl | open: the magic-link gate (gate.go)
+	ID             int64
+	Slug           string   // immutable; derived from the first hostname on create
+	Kind           string   // proxy | static | node | php; "" means proxy on create
+	Hostnames      []string // primary first; each is a free FQDN, unique across sites
+	Scheme         string   // http | https (proxy)
+	UpstreamHost   string   // proxy only
+	UpstreamPort   int      // proxy only; node: the app's port (upstream_host stores 127.0.0.1)
+	StaticRoot     string   // static, node and php: absolute directory served
+	StartCommand   string   // node: the long-running start command, run by systemd as the site user
+	InstallCommand string   // node: shown to the admin, who runs it by hand on the server
+	BuildCommand   string   // node: same
+	FPMVersion     string   // php: version of the detected php-fpm binary, e.g. 8.2
+	TLSSkipVerify  bool
+	Enabled        bool
+	RecordIP       string // "" = domain default
+	RecordIP6      string // IPv6 override for this site's AAAA record; "" = domain default
+	Allowlist      string // newline-separated CIDRs
+	BasicUser      string
+	BasicHash      string // bcrypt
+	Stream         bool   // no response buffering (flush_interval -1)
+	MaxBody        int64  // request body limit in bytes; 0 = Caddy default
+	GateMode       string // "" | acl | open: the magic-link gate (gate.go)
 }
 
 // Record families: one DNS row per site (and one for the UI host) per family.
@@ -115,13 +119,15 @@ func (s *Store) DeleteDomain(ctx context.Context, id int64) error {
 	return nil
 }
 
-const siteCols = "id, slug, kind, scheme, COALESCE(upstream_host,''), COALESCE(upstream_port,0), COALESCE(static_root,''), tls_skip_verify, enabled, " +
+const siteCols = "id, slug, kind, scheme, COALESCE(upstream_host,''), COALESCE(upstream_port,0), COALESCE(static_root,''), " +
+	"start_command, install_command, build_command, fpm_version, tls_skip_verify, enabled, " +
 	"COALESCE(record_ip,''), COALESCE(record_ip6,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), stream, max_body, gate_mode"
 
 func scanSite(r interface{ Scan(...any) error }) (Site, error) {
 	var x Site
-	err := r.Scan(&x.ID, &x.Slug, &x.Kind, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.StaticRoot, &x.TLSSkipVerify,
-		&x.Enabled, &x.RecordIP, &x.RecordIP6, &x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode)
+	err := r.Scan(&x.ID, &x.Slug, &x.Kind, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.StaticRoot, &x.StartCommand,
+		&x.InstallCommand, &x.BuildCommand, &x.FPMVersion, &x.TLSSkipVerify, &x.Enabled, &x.RecordIP, &x.RecordIP6,
+		&x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode)
 	return x, err
 }
 
@@ -139,13 +145,14 @@ func (s *Store) CreateSite(ctx context.Context, r Site) (Site, error) {
 		if r.Kind == "" {
 			r.Kind = "proxy"
 		}
-		if r.Scheme == "" && r.Kind == "static" { // meaningless for static; the column is NOT NULL
+		if r.Scheme == "" && r.Kind != "proxy" { // meaningless outside proxy; the column is NOT NULL
 			r.Scheme = "http"
 		}
 		res, err := tx.q.ExecContext(ctx, `INSERT INTO sites (slug, kind, scheme, upstream_host, upstream_port, static_root,
-			tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-			slug, r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot), r.TLSSkipVerify, r.Enabled,
+			start_command, install_command, build_command, fpm_version, tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			slug, r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot),
+			r.StartCommand, r.InstallCommand, r.BuildCommand, r.FPMVersion, r.TLSSkipVerify, r.Enabled,
 			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode)
 		if err != nil {
 			return fmt.Errorf("create site %s: %w", r.Hostnames[0], err)
@@ -200,9 +207,10 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 func (s *Store) UpdateSite(ctx context.Context, r Site) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		_, err := tx.q.ExecContext(ctx, `UPDATE sites SET kind=?, scheme=?, upstream_host=?, upstream_port=?, static_root=?,
-			tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=? WHERE id=?`,
-			r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot), r.TLSSkipVerify, r.Enabled, nullStr(r.RecordIP), nullStr(r.RecordIP6),
-			r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ID)
+			start_command=?, install_command=?, build_command=?, fpm_version=?, tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=? WHERE id=?`,
+			r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot),
+			r.StartCommand, r.InstallCommand, r.BuildCommand, r.FPMVersion, r.TLSSkipVerify, r.Enabled,
+			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ID)
 		if err != nil {
 			return fmt.Errorf("update site %d: %w", r.ID, err)
 		}

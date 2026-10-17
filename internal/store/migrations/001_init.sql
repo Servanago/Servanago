@@ -14,11 +14,15 @@ CREATE TABLE domains (
 CREATE TABLE sites (
   id              INTEGER PRIMARY KEY,
   slug            TEXT NOT NULL UNIQUE,       -- immutable, derived once from the first hostname: ^[a-z][a-z0-9-]{1,31}$
-  kind            TEXT NOT NULL DEFAULT 'proxy' CHECK (kind IN ('proxy','static')),
+  kind            TEXT NOT NULL DEFAULT 'proxy' CHECK (kind IN ('proxy','static','node','php')),
   scheme          TEXT NOT NULL DEFAULT 'http' CHECK (scheme IN ('http','https')),
-  upstream_host   TEXT,                       -- proxy only
-  upstream_port   INTEGER CHECK (upstream_port BETWEEN 1 AND 65535), -- proxy only
-  static_root     TEXT,                       -- static only: symlink-resolved absolute directory (config.ValidateStaticRoot)
+  upstream_host   TEXT,                       -- proxy and node only; proxy stores the upstream, node stores 127.0.0.1
+  upstream_port   INTEGER CHECK (upstream_port BETWEEN 1 AND 65535), -- proxy only; node: the app's port
+  static_root     TEXT,                       -- static, node and php: absolute directory
+  start_command   TEXT NOT NULL DEFAULT '',   -- node: the long-running start command (systemd ExecStart)
+  install_command TEXT NOT NULL DEFAULT '',   -- node: shown to the admin, who runs it by hand on the server
+  build_command   TEXT NOT NULL DEFAULT '',   -- node: same
+  fpm_version     TEXT NOT NULL DEFAULT '',   -- php: version of the detected php-fpm binary, e.g. 8.2
   tls_skip_verify INTEGER NOT NULL DEFAULT 0,
   enabled         INTEGER NOT NULL DEFAULT 1,
   record_ip       TEXT,                       -- IPv4 override for this site's A record; NULL = domain default
@@ -29,8 +33,16 @@ CREATE TABLE sites (
   stream          INTEGER NOT NULL DEFAULT 0, -- flush_interval -1
   max_body        INTEGER NOT NULL DEFAULT 0 CHECK (max_body >= 0), -- request_body max_size in bytes; 0 = Caddy default
   gate_mode       TEXT NOT NULL DEFAULT '',   -- magic-link gate (DESIGN.md §18): '' = ungated, 'acl' = email allowlist, 'open' = any email
-  CHECK ((kind = 'proxy' AND upstream_host IS NOT NULL AND upstream_port IS NOT NULL AND static_root IS NULL)
-      OR (kind = 'static' AND static_root IS NOT NULL AND upstream_host IS NULL AND upstream_port IS NULL))
+  CHECK (
+       (kind = 'proxy'  AND upstream_host IS NOT NULL AND upstream_port IS NOT NULL AND static_root IS NULL
+                      AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')
+   OR (kind = 'static' AND static_root IS NOT NULL AND upstream_host IS NULL AND upstream_port IS NULL
+                      AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')
+   OR (kind = 'node'   AND static_root IS NOT NULL AND upstream_host = '127.0.0.1' AND upstream_port IS NOT NULL
+                      AND start_command != '' AND fpm_version = '')
+   OR (kind = 'php'    AND static_root IS NOT NULL AND upstream_host IS NULL AND upstream_port IS NULL
+                      AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version != '')
+  )
 );
 
 -- A site answers on one or more free FQDNs. Its domain (Cloudflare zone, default IPs, cert mode) is the
