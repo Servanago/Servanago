@@ -6,7 +6,7 @@
 
 A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an embedded [Caddy](https://caddyserver.com), SQLite and (planned) systemd integration. Caddy's configuration is generated from SQLite and applied atomically.
 
-> **Status: early.** The code is still the inherited baseline, a single-process Caddy front end that publishes reverse-proxy routes under Cloudflare-managed domains. Static sites, Node.js and PHP-FPM runtimes, systemd supervision and native packaging are on the [roadmap](docs/ROADMAP.md), not shipped. Nothing below describes planned features as working.
+> **Status: early.** Static sites, Node.js and PHP-FPM runtimes and systemd supervision of managed applications are on the [roadmap](docs/ROADMAP.md), not shipped. Nothing below describes planned features as working.
 
 ## What works today
 
@@ -21,6 +21,19 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 **Addresses.** An A record target (`SERVANAGO_HOST_IP`, a domain's default IP, a route's DNS record IP) can be any usable IPv4 address: public, private (10/8, 172.16/12, 192.168/16) or CGNAT (100.64/10, Tailscale). Loopback, link-local, multicast and reserved addresses are refused. **IPv6 is dual-stack:** an optional IPv6 address next to each IPv4 one (`SERVANAGO_HOST_IP6`, a domain's IPv6, a route's AAAA record IPv6) makes ServanaGo manage an AAAA record beside the A record, with its own state, conflict and take-over handling. The IPv4 address stays required, and an IPv6-only site is not supported. Cloudflare-proxied (orange cloud) records are not supported either.
 
 **Without Cloudflare** (no `CLOUDFLARE_API_TOKEN`): add each domain on the *Domains* page before adding sites under it (ServanaGo cannot look up a zone), certificates are per host, and you point DNS at the server yourself. A site must be a single label under its domain (`app.example.com` under `example.com`) until the site model lands in M2.
+
+## Install
+
+Debian 12+ or Ubuntu 22.04+ with systemd. One deb: the binary, a `servanago` system user, `/etc/servanago/servanago.env`, the `servanago.service` unit and `/var/lib/servanago` (`DATA_DIR`) plus `/var/log/servanago`.
+
+```sh
+make deb                                    # bin/servanago_0.1.0_amd64.deb
+sudo apt-get install ./bin/servanago_0.1.0_amd64.deb
+```
+
+Or all of it with nothing but this checkout: `sudo packaging/install.sh`.
+
+The unit is enabled but not started: fill in the env file first (`SERVANAGO_HOST`, `ACME_EMAIL`, `ADMIN_PASSWORD`), then `systemctl start servanago`. The env file is a conffile: dpkg keeps your edits across upgrades. Logs go to journald (`journalctl -u servanago`). Removing the package stops and disables the unit; purging it also removes the `servanago` user but keeps `/var/lib/servanago` until you delete it.
 
 ## Run it from source
 
