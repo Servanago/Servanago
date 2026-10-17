@@ -90,3 +90,18 @@ func TestBuildDeb(t *testing.T) {
 		}
 	}
 }
+
+// install.sh must parse and refuse to run without root (it does nothing but the id check first).
+func TestInstallScript(t *testing.T) {
+	if err := exec.Command("bash", "-n", "../../packaging/install.sh").Run(); err != nil {
+		t.Fatal(err)
+	}
+	var stderr bytes.Buffer
+	cmd := exec.Command("bash", "../../packaging/install.sh")
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err == nil {
+		t.Error("install.sh ran without root; want refusal")
+	} else if !strings.Contains(stderr.String(), "root") {
+		t.Errorf("refusal %q does not mention root", stderr.String())
+	}
+}
