@@ -19,9 +19,17 @@ func runHelper() error {
 		return err
 	}
 	defer ln.Close()
+	a := helper.NewActions(helper.RealSeam{})
 	acts := map[string]helper.Action{
 		helper.ActionPing:        func(helper.Request) helper.Response { return helper.Response{OK: true} },
-		helper.ActionUnitInstall: helper.NewActions(helper.RealSeam{}).UnitInstall,
+		helper.ActionUnitInstall: a.UnitInstall,
+		helper.ActionUnitStatus:  a.UnitStatus,
+		helper.ActionUnitLogs:    a.UnitLogs,
+		helper.ActionUserAdd:     a.UserAdd,
+		helper.ActionUserRemove:  a.UserRemove,
+		helper.ActionUnitRemove:  a.UnitRemove,
+		helper.ActionUnitStart:   a.UnitStart,
+		helper.ActionUnitStop:    a.UnitStop,
 	}
 	slog.Info("helper listening", "socket", helper.SocketPath, "servanago_user", hasUser)
 	helper.Serve(ln, helper.NewAuthorizer(uid), acts)

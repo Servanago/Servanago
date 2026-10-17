@@ -16,6 +16,11 @@ const (
 	ActionUnitInstall = "unit-install"
 	ActionUnitStatus  = "unit-status"
 	ActionUnitLogs    = "unit-logs"
+	ActionUserAdd     = "user-add"
+	ActionUserRemove  = "user-remove"
+	ActionUnitRemove  = "unit-remove"
+	ActionUnitStart   = "unit-start"
+	ActionUnitStop    = "unit-stop"
 )
 
 // MaxRequestSize bounds one request; larger input is refused before parsing.
@@ -41,17 +46,25 @@ func unitName(slug string) (string, error) {
 }
 
 // Spec carries the validated fields of one action; unknown fields are refused at decode.
-// Lines is the unit-logs tail size; unit-install ignores it.
+// Lines is the unit-logs tail size (0 = default); the unit-install fields are kind-specific
+// and validated per kind in the helper.
 type Spec struct {
-	Slug  string `json:"slug,omitempty"`
-	Lines int    `json:"lines,omitempty"`
+	Slug       string `json:"slug,omitempty"`
+	Lines      int    `json:"lines,omitempty"`
+	Kind       string `json:"kind,omitempty"`        // unit-install: node | php
+	Root       string `json:"root,omitempty"`        // node | php | user-add: site directory
+	Port       int    `json:"port,omitempty"`        // node: the app's port
+	Start      string `json:"start,omitempty"`       // node: the start command (runs as the site user)
+	FPMBin     string `json:"fpm_bin,omitempty"`     // php: detected binary
+	FPMVersion string `json:"fpm_version,omitempty"` // php: label matching FPMBin's suffix
 }
 
 // Request is one newline-delimited action from the control plane. Spec is mandatory, even
-// for ping, so every request parses through the same strict decoder.
+// for ping, so every request parses through the same strict decoder; Vals is the decoded Spec.
 type Request struct {
 	Action string          `json:"action"`
 	Spec   json.RawMessage `json:"spec"`
+	Vals   Spec            `json:"-"`
 }
 
 // DecodeRequest parses exactly one request: size-bounded, strict on unknown fields, action
@@ -66,7 +79,8 @@ func DecodeRequest(b []byte) (Request, error) {
 		return Request{}, fmt.Errorf("decode request: %w", err)
 	}
 	switch r.Action {
-	case ActionPing, ActionUnitInstall, ActionUnitStatus, ActionUnitLogs:
+	case ActionPing, ActionUnitInstall, ActionUnitStatus, ActionUnitLogs,
+		ActionUserAdd, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop:
 	default:
 		return Request{}, fmt.Errorf("unknown action %q", r.Action)
 	}
@@ -74,26 +88,21 @@ func DecodeRequest(b []byte) (Request, error) {
 	if err := strict(bytes.NewReader(r.Spec)).Decode(&s); err != nil {
 		return Request{}, fmt.Errorf("decode spec for %s: %w", r.Action, err)
 	}
+	r.Vals = s
 	return r, nil
 }
 
 // Slug returns the spec's slug for actions that carry one; SlugErr reports why it is invalid.
 func (r Request) Slug() (string, error) {
-	var s Spec
-	if err := json.Unmarshal(r.Spec, &s); err != nil {
+	if err := ValidateSlug(r.Vals.Slug); err != nil {
 		return "", err
 	}
-	if err := ValidateSlug(s.Slug); err != nil {
-		return "", err
-	}
-	return s.Slug, nil
+	return r.Vals.Slug, nil
 }
 
 // SpecLines returns the log tail size the spec asks for; 0 means the action default.
 func (r Request) SpecLines() int {
-	var s Spec
-	_ = json.Unmarshal(r.Spec, &s) // the shape was validated by DecodeRequest already
-	return s.Lines
+	return r.Vals.Lines
 }
 
 func strict(r *bytes.Reader) *json.Decoder {

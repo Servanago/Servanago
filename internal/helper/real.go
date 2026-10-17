@@ -20,6 +20,59 @@ func (RealSeam) WriteFile(path string, data []byte, perm fs.FileMode) error {
 	return os.WriteFile(path, data, perm)
 }
 func (RealSeam) Remove(path string) error { return os.Remove(path) }
+func (RealSeam) MkdirAll(path string, perm fs.FileMode) error {
+	return os.MkdirAll(path, perm)
+}
+
+func (RealSeam) UserAdd(user, root string) error {
+	args := []string{"--system", "--user-group", "--no-create-home", "--home-dir", root, "--shell", "/usr/sbin/nologin"}
+	args = append(args, user)
+	if out, err := exec.Command("useradd", args...).CombinedOutput(); err != nil {
+		return fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	if root == "" {
+		return nil
+	}
+	if out, err := exec.Command("chown", "-R", user+":"+user, root).CombinedOutput(); err != nil {
+		return fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	return nil
+}
+func (RealSeam) UserRemove(user string) error {
+	out, err := exec.Command("userdel", user).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	return nil
+}
+func (RealSeam) FPMTest(bin, conf string) error {
+	out, err := exec.Command(bin, "-t", "-y", conf).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	return nil
+}
+func (RealSeam) StartUnit(name string) error {
+	out, err := exec.Command("systemctl", "start", name).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	return nil
+}
+func (RealSeam) StopUnit(name string) error {
+	out, err := exec.Command("systemctl", "stop", name).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	return nil
+}
+func (RealSeam) DisableUnit(name string) error {
+	out, err := exec.Command("systemctl", "disable", name).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("%w: %s", err, firstLines(out))
+	}
+	return nil
+}
 
 func (RealSeam) VerifyUnit(path string) error {
 	out, err := exec.Command("systemd-analyze", "verify", path).CombinedOutput()
