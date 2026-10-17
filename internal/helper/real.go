@@ -5,6 +5,7 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	osuser "os/user"
 	"strconv"
 	"strings"
 )
@@ -24,16 +25,19 @@ func (RealSeam) MkdirAll(path string, perm fs.FileMode) error {
 	return os.MkdirAll(path, perm)
 }
 
-func (RealSeam) UserAdd(user, root string) error {
-	args := []string{"--system", "--user-group", "--no-create-home", "--home-dir", root, "--shell", "/usr/sbin/nologin"}
-	args = append(args, user)
-	if out, err := exec.Command("useradd", args...).CombinedOutput(); err != nil {
-		return fmt.Errorf("%w: %s", err, firstLines(out))
-	}
-	if root == "" {
+// UserAdd creates the system user with the site folder as its home. It is idempotent (editing a site
+// calls it again) and never touches the folder: ServanaGo does not change ownership or permissions
+// of the admin's files.
+func (RealSeam) UserAdd(user, home string) error {
+	if _, err := osuser.Lookup(user); err == nil {
 		return nil
 	}
-	if out, err := exec.Command("chown", "-R", user+":"+user, root).CombinedOutput(); err != nil {
+	if home == "" {
+		home = "/nonexistent"
+	}
+	out, err := exec.Command("useradd", "--system", "--user-group", "--no-create-home",
+		"--home-dir", home, "--shell", "/usr/sbin/nologin", user).CombinedOutput()
+	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil

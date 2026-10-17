@@ -16,7 +16,7 @@ import (
 // nodeUnitTemplate is the sandboxed unit for a Node.js site. The start command is the
 // admin's own text; systemd runs it as the unprivileged site user, never root.
 func nodeUnitTemplate(user, root, start string) []byte {
-	esc := strings.ReplaceAll(start, "'", `'\''`)
+	esc := systemdEscape(strings.ReplaceAll(start, "'", `'\''`))
 	return []byte(fmt.Sprintf(`[Unit]
 Description=ServanaGo site %s (Node.js)
 After=network.target
@@ -44,7 +44,7 @@ func poolTemplate(slug, user string) []byte {
 	return []byte(fmt.Sprintf(`; per-site pool for ServanaGo site %s; written by the helper
 [global]
 daemonize=no
-error_log=/var/log/servanago/%s-fpm.log
+error_log=/proc/self/fd/2
 
 [servanago-%s]
 user=%s
@@ -59,35 +59,42 @@ pm.start_servers=2
 pm.min_spare_servers=1
 pm.max_spare_servers=3
 catch_workers_output=yes
-`, slug, user, slug, user, user, slug))
+`, slug, slug, user, user, slug))
 }
 
 // phpUnitTemplate runs exactly one pool — its own php-fpm master per site.
-func phpUnitTemplate(user, fpmBin, confPath string) []byte {
+//
+// There is deliberately no User= here: php-fpm's master starts as root, creates the socket in the
+// root-owned /run/servanago, and drops its workers to the site user through the pool's user=. A master
+// started as the site user could not create the socket. The runtime directory is declared (and preserved)
+// here as well as in the helper unit, so a helper restart does not delete every site socket.
+func phpUnitTemplate(user, fpmBin, confPath, root string) []byte {
 	return []byte(fmt.Sprintf(`[Unit]
 Description=ServanaGo site %s (php-fpm %s)
 After=network.target
 
 [Service]
 Type=simple
-User=%s
-Group=%s
 ExecStart=%s -F -y %s
+RuntimeDirectory=servanago
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
 NoNewPrivileges=yes
 PrivateTmp=yes
 PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/run/servanago
+ReadWritePaths=/run/servanago %s
 
 [Install]
 WantedBy=multi-user.target
-`, user, filepath.Base(fpmBin), user, user, fpmBin, confPath))
+`, user, filepath.Base(fpmBin), fpmBin, confPath, root))
 }
 
 var fpmBinRE = regexp.MustCompile(`^(?:/usr/(?:sbin|bin)|/usr/local/bin)/php-fpm[0-9]+(?:\.[0-9]+)*$`)
 
-// UserAdd creates the sg-<slug> system user; a root hands that directory to the user.
+// UserAdd creates the sg-<slug> system user (a no-op when it exists). The optional root becomes its
+// home directory; nothing in it is ever chowned.
 func (a Actions) UserAdd(r Request) Response {
 	slug, err := r.Slug()
 	if err != nil {
@@ -125,11 +132,8 @@ func validateKindSpec(s Spec) error {
 		if s.Port < 1024 || s.Port > 65535 {
 			return fmt.Errorf("port %d: a node site uses 1024-65535", s.Port)
 		}
-		if s.Start == "" {
-			return fmt.Errorf("start command: required")
-		}
-		if strings.ContainsRune(s.Start, 0) || len(s.Start) > 2000 {
-			return fmt.Errorf("start command: 1-2000 characters, no NUL bytes")
+		if err := validateStart(s.Start); err != nil {
+			return err
 		}
 	case "php":
 		if err := validateRoot(s.Root, false); err != nil {
@@ -158,10 +162,40 @@ func validateRoot(root string, optional bool) error {
 	if root[0] != '/' {
 		return fmt.Errorf("root %q must be an absolute path", root)
 	}
-	if strings.ContainsRune(root, 0) || len(root) > 4096 {
-		return fmt.Errorf("root %q is not a valid path", root)
+	if len(root) > 4096 || root != filepath.Clean(root) {
+		return fmt.Errorf("root %q must be a clean absolute path (no .., //, ./ or trailing slash)", root)
+	}
+	// The root is written into unit text (WorkingDirectory=, ReadWritePaths=), where whitespace splits a
+	// path list, a line break starts a new directive, and %, $ and \ are expanded by systemd.
+	if strings.IndexFunc(root, func(r rune) bool {
+		return r < 0x20 || r == 0x7f || r == ' ' || r == '%' || r == '$' || r == '\\' || r == '"' || r == '\''
+	}) >= 0 {
+		return fmt.Errorf("root %q must not contain spaces, control characters or any of: percent, dollar, backslash, quotes", root)
 	}
 	return nil
+}
+
+// ValidateRoot and ValidateStart are the helper's own rules, exported so the web form refuses a bad
+// value before it is saved instead of after.
+func ValidateRoot(root string) error { return validateRoot(root, false) }
+func ValidateStart(cmd string) error { return validateStart(cmd) }
+
+// validateStart bounds the admin's start command. It is written inside a quoted ExecStart= line, so a
+// line break would begin a new unit directive; tabs are fine.
+func validateStart(start string) error {
+	if start == "" || len(start) > 2000 {
+		return fmt.Errorf("start command: 1-2000 characters")
+	}
+	if strings.IndexFunc(start, func(r rune) bool { return (r < 0x20 && r != '\t') || r == 0x7f }) >= 0 {
+		return fmt.Errorf("start command: no line breaks or control characters")
+	}
+	return nil
+}
+
+// systemdEscape keeps text literal for systemd: it expands % specifiers and $VAR in ExecStart, even
+// inside a shell -c string, and the command is meant for sh, not for systemd.
+func systemdEscape(s string) string {
+	return strings.NewReplacer("%", "%%", "$", "$$").Replace(s)
 }
 
 // unitTemplates render the unit (and, for php, the pool) from validated fields only.
@@ -171,7 +205,7 @@ func (a Actions) unitFor(s Spec) (unitPath string, content []byte) {
 		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), nodeUnitTemplate(user, s.Root, s.Start)
 	}
 	conf := filepath.Join("/etc/servanago/fpm", s.Slug+".conf")
-	return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), phpUnitTemplate(user, s.FPMBin, conf)
+	return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), phpUnitTemplate(user, s.FPMBin, conf, s.Root)
 }
 
 // UnitInstall writes the template unit (plus the pool for php), verifies each artifact

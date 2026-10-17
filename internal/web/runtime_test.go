@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"net"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -126,11 +127,19 @@ func TestCreatePHPSite(t *testing.T) {
 func TestRuntimeSiteRejections(t *testing.T) {
 	s, host := runtimeServer(t)
 	root := t.TempDir()
+	// A real, readable folder the helper would still refuse: whitespace splits a ReadWritePaths= list.
+	spaced := filepath.Join(t.TempDir(), "my site")
+	if err := os.Mkdir(spaced, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	for name, kv := range map[string][]string{
 		"node low port":            nodeForm(root, "port", "80"),
 		"node no start":            nodeForm(root, "start_command", ""),
 		"node overlong start":      nodeForm(root, "start_command", strings.Repeat("a", 2001)),
 		"node missing folder":      nodeForm("/does/not/exist"),
+		"node start line break":    nodeForm(root, "start_command", "node a\nUser=root"),
+		"node folder with space":   nodeForm(spaced),
+		"php folder with space":    phpForm(spaced),
 		"php version not detected": phpForm(root, "fpm_version", "7.4"),
 		"php no version":           phpForm(root, "fpm_version", ""),
 	} {

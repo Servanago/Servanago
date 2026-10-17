@@ -30,14 +30,19 @@ func TestRuntimeUnitInstall(t *testing.T) {
 				t.Fatalf("no unit written: path=%q written=%v", unitPath, seam.written)
 			}
 			u := string(unit)
-			if !strings.Contains(u, "User=sg-"+tt.slug) {
-				t.Errorf("unit not run as site user:\n%s", u)
-			}
 			if !strings.Contains(u, "ProtectSystem=strict") || strings.Contains(u, "ProtectHome=yes") {
 				t.Errorf("unit sandbox wrong:\n%s", u)
 			}
+			// The site's folder is writable by the unit: apps write uploads, caches and sessions there.
+			if !strings.Contains(u, "ReadWritePaths=") || !strings.Contains(u, "/home/brian/"+tt.slug) {
+				t.Errorf("unit cannot write the site folder:\n%s", u)
+			}
 			switch tt.name {
 			case "node":
+				// The app itself runs as the unprivileged site user, never root.
+				if !strings.Contains(u, "User=sg-"+tt.slug) {
+					t.Errorf("node unit not run as site user:\n%s", u)
+				}
 				if !strings.Contains(u, `ExecStart=/bin/sh -c 'node server.js'`) {
 					t.Errorf("node start missing:\n%s", u)
 				}
@@ -48,6 +53,19 @@ func TestRuntimeUnitInstall(t *testing.T) {
 					t.Errorf("node wrote extra files: %v", keys(seam.written))
 				}
 			case "php":
+				// php-fpm's own model: the master (root) creates the socket in the root-owned /run/servanago
+				// and its workers drop to the site user through the pool's user=. A master started as the site
+				// user could not create the socket at all.
+				if strings.Contains(u, "\nUser=") {
+					t.Errorf("php master must start as root and drop privileges in the pool:\n%s", u)
+				}
+				// The socket directory outlives the helper unit: systemd would otherwise delete every site socket
+				// when the helper restarts.
+				for _, want := range []string{"RuntimeDirectory=servanago", "RuntimeDirectoryPreserve=yes", "ReadWritePaths=/run/servanago"} {
+					if !strings.Contains(u, want) {
+						t.Errorf("php unit missing %q:\n%s", want, u)
+					}
+				}
 				pool, ok := seam.written["/etc/servanago/fpm/blog.conf"]
 				if !ok {
 					t.Fatalf("no pool written: %v", keys(seam.written))
@@ -57,6 +75,10 @@ func TestRuntimeUnitInstall(t *testing.T) {
 					if !strings.Contains(p, want) {
 						t.Errorf("pool missing %q:\n%s", want, p)
 					}
+				}
+				// Logs go to the journal: the site user cannot write /var/log/servanago.
+				if strings.Contains(p, "/var/log/") || !strings.Contains(p, "error_log=/proc/self/fd/2") {
+					t.Errorf("pool must log to stderr (journald):\n%s", p)
 				}
 				if seam.fpmTested != "/etc/servanago/fpm/blog.conf" || seam.fpmTestBin != "/usr/sbin/php-fpm8.2" {
 					t.Errorf("pool not tested: bin=%q conf=%q", seam.fpmTestBin, seam.fpmTested)
@@ -70,17 +92,29 @@ func TestRuntimeUnitInstall(t *testing.T) {
 }
 
 func TestRuntimeUnitInstallRejections(t *testing.T) {
-	tests := []struct {
-		name, spec string
-	}{
-		{"unknown kind", `{"kind":"cgi","slug":"x"}`},
-		{"node no start", `{"kind":"node","slug":"x","root":"/srv/x","port":3000,"start":""}`},
-		{"node NUL start", `{"kind":"node","slug":"x","root":"/srv/x","port":3000,"start":"a` + `\u0000b"` + `}`},
-		{"node overlong start", `{"kind":"node","slug":"x","root":"/srv/x","port":3000,"start":"` + strings.Repeat("a", 3000) + `"}`},
-		{"node relative root", `{"kind":"node","slug":"x","root":"srv/x","port":3000,"start":"node a"}`},
-		{"node bad port", `{"kind":"node","slug":"x","root":"/srv/x","port":80,"start":"node a"}`},
-		{"php bad binary name", `{"kind":"php","slug":"x","root":"/srv/x","fpm_bin":"/bin/sh","fpm_version":"8.2"}`},
-		{"php mismatched version", `{"kind":"php","slug":"x","root":"/srv/x","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.1"}`},
+	// Every row uses a valid slug, so a row can only pass by being rejected for the reason named in want.
+	// (An earlier version used a one-letter slug, which ValidateSlug rejects: the whole table passed vacuously.)
+	const nodeHead = `{"kind":"node","slug":"site1","port":3000,`
+	const phpHead = `{"kind":"php","slug":"site1","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.2",`
+	tests := []struct{ name, spec, want string }{
+		{"unknown kind", `{"kind":"cgi","slug":"site1"}`, "kind"},
+		{"bad slug", `{"kind":"node","slug":"../x","root":"/srv/x","port":3000,"start":"node a"}`, "slug"},
+		{"node no start", nodeHead + `"root":"/srv/x","start":""}`, "start"},
+		{"node NUL start", nodeHead + `"root":"/srv/x","start":"a\u0000b"}`, "start"},
+		{"node overlong start", nodeHead + `"root":"/srv/x","start":"` + strings.Repeat("a", 3000) + `"}`, "start"},
+		{"node relative root", nodeHead + `"root":"srv/x","start":"node a"}`, "root"},
+		{"node bad port", `{"kind":"node","slug":"site1","port":80,"root":"/srv/x","start":"node a"}`, "port"},
+		// Unit-file injection: a line break would add directives such as User=root or ExecStartPre=.
+		{"node newline start", nodeHead + `"root":"/srv/x","start":"node a\nUser=root"}`, "start"},
+		{"node CR start", nodeHead + `"root":"/srv/x","start":"node a\rUser=root"}`, "start"},
+		{"node newline root", nodeHead + `"root":"/srv/x\nUser=root","start":"node a"}`, "root"},
+		{"node space root", nodeHead + `"root":"/srv/x /etc","start":"node a"}`, "root"},
+		{"node traversal root", nodeHead + `"root":"/srv/../etc","start":"node a"}`, "root"},
+		{"php newline root", phpHead + `"root":"/srv/x\nUser=root"}`, "root"},
+		{"php space root", phpHead + `"root":"/srv/x /etc"}`, "root"},
+		{"php traversal root", phpHead + `"root":"/srv/../etc"}`, "root"},
+		{"php bad binary name", `{"kind":"php","slug":"site1","root":"/srv/x","fpm_bin":"/bin/sh","fpm_version":"8.2"}`, "php-fpm binary"},
+		{"php mismatched version", `{"kind":"php","slug":"site1","root":"/srv/x","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.1"}`, "version"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -89,13 +123,39 @@ func TestRuntimeUnitInstallRejections(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if resp := NewActions(seam).UnitInstall(req); resp.OK {
+			resp := NewActions(seam).UnitInstall(req)
+			if resp.OK {
 				t.Fatalf("accepted: %+v", resp)
+			}
+			if !strings.Contains(resp.Error, tt.want) {
+				t.Errorf("rejected for the wrong reason: %q does not mention %q", resp.Error, tt.want)
 			}
 			if len(seam.written) != 0 {
 				t.Errorf("host was written: %v", keys(seam.written))
 			}
 		})
+	}
+}
+
+// systemd expands % specifiers and $VAR in ExecStart even inside a shell -c string. The admin's start
+// command is data for sh, not for systemd, so both must reach the shell untouched.
+func TestNodeStartCommandIsEscapedForSystemd(t *testing.T) {
+	seam := newFakeSeam()
+	req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":{"kind":"node","slug":"app11","root":"/srv/app11","port":3000,` +
+		`"start":"node server.js --name %h --home $HOME --it's ${PORT}"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := NewActions(seam).UnitInstall(req); !resp.OK {
+		t.Fatalf("install: %+v", resp)
+	}
+	u := string(seam.written["/etc/systemd/system/servanago-app11.service"])
+	want := `ExecStart=/bin/sh -c 'node server.js --name %%h --home $$HOME --it'\''s $${PORT}'`
+	if !strings.Contains(u, want) {
+		t.Errorf("start command not escaped\nwant line %s\ngot:\n%s", want, u)
+	}
+	if strings.Count(u, "\nExecStart=") != 1 {
+		t.Errorf("exactly one ExecStart expected:\n%s", u)
 	}
 }
 
@@ -110,8 +170,10 @@ func TestUserAndUnitLifecycle(t *testing.T) {
 	if resp := acts.UserAdd(req); !resp.OK {
 		t.Fatalf("user-add: %+v", resp)
 	}
-	if seam.userAdded != "sg-app11" || len(seam.chowned) != 1 || seam.chowned[0].user != "sg-app11" {
-		t.Fatalf("user-add seam: %+v %+v", seam.userAdded, seam.chowned)
+	// The user's home is the site folder, but ServanaGo never changes ownership or permissions of the
+	// admin's files: the seam gets no chown, only the home directory to record.
+	if seam.userAdded != "sg-app11" || seam.userHome != "/srv/app11" {
+		t.Fatalf("user-add seam: user %q home %q", seam.userAdded, seam.userHome)
 	}
 	// unit-start / unit-stop / unit-remove
 	start, _ := DecodeRequest([]byte(`{"action":"unit-start","spec":{"slug":"app11"}}`))

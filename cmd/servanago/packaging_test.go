@@ -49,6 +49,7 @@ func TestHelperSystemdUnit(t *testing.T) {
 		"ExecStart=/usr/bin/servanago helper",
 		"RuntimeDirectory=servanago",
 		"RuntimeDirectoryMode=0755",
+		"RuntimeDirectoryPreserve=yes", // site sockets live here: a helper restart must not delete them
 		"Restart=on-failure",
 	} {
 		if !strings.Contains(u, want) {

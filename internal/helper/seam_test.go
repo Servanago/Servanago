@@ -20,19 +20,14 @@ type fakeSeam struct {
 	logs                           []string
 	logsErr                        error
 	logLines                       int
-	userAdded                      string
+	userAdded, userHome            string
 	userRemoved                    string
-	chowned                        []chownCall
 	fpmTested, fpmTestBin          string
 	fpmTestErr                     error
 	started, stopped               string
 	startStopErr                   error
 	disabled                       string
 	disableErr                     error
-}
-
-type chownCall struct {
-	user, path string
 }
 
 func newFakeSeam() *fakeSeam { return &fakeSeam{written: map[string][]byte{}} }
@@ -77,11 +72,8 @@ func (s *fakeSeam) UnitLogs(name string, lines int) ([]string, error) {
 	}
 	return s.logs, nil
 }
-func (s *fakeSeam) UserAdd(user, root string) error {
-	s.userAdded = user
-	if root != "" {
-		s.chowned = append(s.chowned, chownCall{user, root})
-	}
+func (s *fakeSeam) UserAdd(user, home string) error {
+	s.userAdded, s.userHome = user, home
 	return nil
 }
 func (s *fakeSeam) UserRemove(user string) error { s.userRemoved = user; return nil }

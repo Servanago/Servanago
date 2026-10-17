@@ -16,6 +16,7 @@ import (
 
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/helper"
 	"github.com/servanago/servanago/internal/runtimes"
 	"github.com/servanago/servanago/internal/store"
 )
@@ -75,6 +76,9 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 		if r.StartCommand, err = parseCommand(v.Get("start_command"), true); err != nil {
 			return r, err
 		}
+		if err := helper.ValidateStart(r.StartCommand); err != nil { // written into a unit file: no line breaks
+			return r, err
+		}
 		if r.InstallCommand, err = parseCommand(v.Get("install_command"), false); err != nil {
 			return r, err
 		}
@@ -121,6 +125,10 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 func rootOrErr(v url.Values, cfg config.Config) (string, error) {
 	root, err := config.ValidateStaticRoot(strings.TrimSpace(v.Get("static_root")), cfg.DataDir, cfg.StaticRoots)
 	if err != nil {
+		return "", fmt.Errorf("app folder: %w", err)
+	}
+	// The same rules the helper applies when it writes the folder into a unit file.
+	if err := helper.ValidateRoot(root); err != nil {
 		return "", fmt.Errorf("app folder: %w", err)
 	}
 	return root, nil

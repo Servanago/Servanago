@@ -5,6 +5,64 @@ import (
 	"testing"
 )
 
+// FuzzUnitInstallNoInjection: whatever the root and start command are, an accepted node or php install
+// renders a unit with exactly the line count of a benign one, a single ExecStart=, and no User= for php.
+// Any injected directive would need a line break, a path-list split or an unescaped specifier to get in.
+func FuzzUnitInstallNoInjection(f *testing.F) {
+	f.Add("node", "/srv/app", "node server.js")
+	f.Add("node", "/srv/app\nUser=root", "node a")
+	f.Add("node", "/srv/app", "node a\nExecStartPre=/bin/sh")
+	f.Add("node", "/srv/app /etc", "node a %h $HOME")
+	f.Add("php", "/srv/blog", "")
+	f.Add("php", "/srv/blog\r\nUser=root", "")
+	benign := func(kind string) int {
+		seam := newFakeSeam()
+		spec := `{"kind":"node","slug":"site1","root":"/srv/app","port":3000,"start":"node server.js"}`
+		if kind == "php" {
+			spec = `{"kind":"php","slug":"site1","root":"/srv/app","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.2"}`
+		}
+		req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":` + spec + `}`))
+		if err != nil {
+			f.Fatal(err)
+		}
+		if resp := NewActions(seam).UnitInstall(req); !resp.OK {
+			f.Fatalf("benign %s install failed: %+v", kind, resp)
+		}
+		return strings.Count(string(seam.written["/etc/systemd/system/servanago-site1.service"]), "\n")
+	}
+	nodeLines, phpLines := benign("node"), benign("php")
+	f.Fuzz(func(t *testing.T, kind, root, start string) {
+		if kind != "node" && kind != "php" {
+			return
+		}
+		spec := Spec{Kind: kind, Slug: "site1", Root: root}
+		if kind == "node" {
+			spec.Port, spec.Start = 3000, start
+		} else {
+			spec.FPMBin, spec.FPMVersion = "/usr/sbin/php-fpm8.2", "8.2"
+		}
+		seam := newFakeSeam()
+		if resp := NewActions(seam).UnitInstall(Request{Action: ActionUnitInstall, Vals: spec}); !resp.OK {
+			return // rejected: nothing to check
+		}
+		u := string(seam.written["/etc/systemd/system/servanago-site1.service"])
+		want := nodeLines
+		if kind == "php" {
+			want = phpLines
+		}
+		// benign line counts differ only by the root, which has no line breaks once accepted
+		if got := strings.Count(u, "\n"); got != want {
+			t.Fatalf("injected lines: %d lines, benign has %d\nroot=%q start=%q\n%s", got, want, root, start, u)
+		}
+		if strings.Count(u, "\nExecStart=") != 1 {
+			t.Fatalf("ExecStart count != 1:\n%s", u)
+		}
+		if kind == "php" && strings.Contains(u, "\nUser=") {
+			t.Fatalf("php unit gained a User= directive:\n%s", u)
+		}
+	})
+}
+
 // FuzzDecodeRequest proves accepted requests can only be known actions, and that a validated
 // slug can only ever become a servanago-<slug>.service unit name: no NUL bytes, separators,
 // traversal or unit-file injection ever reach the helper's filesystem calls.

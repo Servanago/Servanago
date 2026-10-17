@@ -8,6 +8,8 @@ ExecStart=/usr/bin/servanago helper
 # RuntimeDirectory is root:servanago so the control plane (User=servanago) may talk to the socket.
 RuntimeDirectory=servanago
 RuntimeDirectoryMode=0755
+# Per-site php-fpm sockets live in this directory too: keep it when the helper stops or restarts.
+RuntimeDirectoryPreserve=yes
 Restart=on-failure
 NoNewPrivileges=yes
 
