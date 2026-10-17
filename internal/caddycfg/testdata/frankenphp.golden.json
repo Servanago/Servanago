@@ -38,10 +38,35 @@
             {
               "handle": [
                 {
-                  "handler": "reverse_proxy",
-                  "upstreams": [
+                  "handler": "subroute",
+                  "routes": [
                     {
-                      "dial": "127.0.0.1:8100"
+                      "handle": [
+                        {
+                          "handler": "static_response",
+                          "status_code": "404"
+                        }
+                      ],
+                      "match": [
+                        {
+                          "path_regexp": {
+                            "pattern": "(^|/)\\."
+                          }
+                        }
+                      ],
+                      "terminal": true
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [
+                            {
+                              "dial": "127.0.0.1:8100"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }

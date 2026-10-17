@@ -200,6 +200,12 @@ func siteHandler(host string, r store.Site) (any, error) {
 		if r.MaxBody > 0 {
 			handlers = []any{m{"handler": "request_body", "max_size": r.MaxBody}, proxy}
 		}
+		if r.Kind == "frankenphp" { // FrankenPHP serves .env and .git itself: answer dotfiles here, as for static and php
+			handlers = []any{m{"handler": "subroute", "routes": []any{
+				m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true},
+				m{"handle": handlers},
+			}}}
+		}
 	}
 	if r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(handlers) == 1 {
 		return handlers[0], nil

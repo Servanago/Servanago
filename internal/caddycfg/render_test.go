@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -264,5 +265,45 @@ func TestHTTP01RendersNoDNSChallengeAndNoWildcards(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("HTTP-01 config lacks %s", want)
 		}
+	}
+}
+
+// FrankenPHP serves dotfiles (.env, .git) itself, so Caddy must answer them with 404 before the proxy is reached.
+func TestFrankenPHPBlocksDotfilesBeforeProxy(t *testing.T) {
+	st := with(asNode(site, "shop", 8100, ""), func(r *store.Site) { r.Kind = "frankenphp" })
+	got, err := Render(State{[]store.Domain{dom}, []store.Site{st}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// JSON keys are sorted, so order in the text says nothing: find the subroute that holds the app's upstream
+	// and require its first route to be the terminal dotfile 404.
+	var walk func(v any) bool
+	walk = func(v any) bool {
+		switch x := v.(type) {
+		case map[string]any:
+			if routes, ok := x["routes"].([]any); ok && len(routes) == 2 && strings.Contains(fmt.Sprint(routes[1]), "127.0.0.1:8100") && routes[1].(map[string]any)["match"] == nil {
+				first, _ := routes[0].(map[string]any)
+				return first["terminal"] == true && strings.Contains(fmt.Sprint(first["match"]), `(^|/)\.`) && strings.Contains(fmt.Sprint(first["handle"]), "404")
+			}
+			for _, c := range x {
+				if walk(c) {
+					return true
+				}
+			}
+		case []any:
+			for _, c := range x {
+				if walk(c) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	var cfg any
+	if err := json.Unmarshal(got, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !walk(cfg) {
+		t.Errorf("frankenphp route must start with a terminal dotfile 404 ahead of the upstream:\n%s", got)
 	}
 }
