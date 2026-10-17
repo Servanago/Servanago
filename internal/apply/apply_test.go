@@ -52,7 +52,7 @@ func newFixture(t *testing.T) *fixture {
 func (f *fixture) addRoute(sub, body string, t *testing.T) func(*store.Store) error {
 	host, port := splitHostPort(t, caddytest.Upstream(t, body))
 	return func(tx *store.Store) error {
-		_, err := tx.CreateRoute(context.Background(), store.Route{
+		_, err := tx.CreateSite(context.Background(), store.Site{
 			DomainID: f.domainID, Subdomain: sub, Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true})
 		return err
 	}
@@ -71,7 +71,7 @@ func TestMutateMakesRouteLive(t *testing.T) {
 		t.Fatalf("got %d %q", code, body)
 	}
 	if code, body := caddytest.Get(t, f.httpsPort, uiHost); code != 200 || body != "ui" {
-		t.Fatalf("ui route: %d %q", code, body)
+		t.Fatalf("ui site: %d %q", code, body)
 	}
 }
 
@@ -85,7 +85,7 @@ func TestInvalidMutationRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	err := f.svc.Mutate(ctx, func(tx *store.Store) error {
-		r, err := tx.CreateRoute(ctx, store.Route{DomainID: f.domainID, Subdomain: "bad", Scheme: "http",
+		r, err := tx.CreateSite(ctx, store.Site{DomainID: f.domainID, Subdomain: "bad", Scheme: "http",
 			UpstreamHost: "127.0.0.1", UpstreamPort: 9, Enabled: true, Allowlist: "not-a-cidr"})
 		_ = r
 		return err
@@ -93,19 +93,19 @@ func TestInvalidMutationRollsBack(t *testing.T) {
 	if err == nil {
 		t.Fatal("Caddy accepted an invalid CIDR")
 	}
-	rs, _ := f.st.ListRoutes(ctx)
+	rs, _ := f.st.ListSites(ctx)
 	if len(rs) != 1 || rs[0].Subdomain != "app" {
 		t.Fatalf("db not rolled back: %+v", rs)
 	}
 	if code, body := caddytest.Get(t, f.httpsPort, "app.example.com"); code != 200 || body != "hello" {
-		t.Fatalf("old route lost: %d %q", code, body)
+		t.Fatalf("old site lost: %d %q", code, body)
 	}
 }
 
 func TestCorruptStateFallsBackToBootstrap(t *testing.T) {
 	f := newFixture(t)
 	ctx := context.Background()
-	if _, err := f.st.CreateRoute(ctx, store.Route{DomainID: f.domainID, Subdomain: "bad", Scheme: "http",
+	if _, err := f.st.CreateSite(ctx, store.Site{DomainID: f.domainID, Subdomain: "bad", Scheme: "http",
 		UpstreamHost: "127.0.0.1", UpstreamPort: 9, Enabled: true, Allowlist: "garbage"}); err != nil {
 		t.Fatal(err)
 	}
@@ -116,7 +116,7 @@ func TestCorruptStateFallsBackToBootstrap(t *testing.T) {
 		t.Fatal("StartupError not set")
 	}
 	if code, body := caddytest.Get(t, f.httpsPort, uiHost); code != 200 || body != "ui" {
-		t.Fatalf("bootstrap UI route: %d %q", code, body)
+		t.Fatalf("bootstrap UI site: %d %q", code, body)
 	}
 }
 
@@ -168,14 +168,14 @@ func TestTwoRoutesOneDomain(t *testing.T) {
 	}
 }
 
-// routeWith adds an "app" route with the given tweaks and returns its host.
-func (f *fixture) routeWith(t *testing.T, tweak func(*store.Route)) {
+// routeWith adds an "app" site with the given tweaks and returns its host.
+func (f *fixture) routeWith(t *testing.T, tweak func(*store.Site)) {
 	t.Helper()
 	host, port := splitHostPort(t, caddytest.Upstream(t, "secret-content"))
 	err := f.svc.Mutate(context.Background(), func(tx *store.Store) error {
-		r := store.Route{DomainID: f.domainID, Subdomain: "app", Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true}
+		r := store.Site{DomainID: f.domainID, Subdomain: "app", Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: true}
 		tweak(&r)
-		_, err := tx.CreateRoute(context.Background(), r)
+		_, err := tx.CreateSite(context.Background(), r)
 		return err
 	})
 	if err != nil {
@@ -191,7 +191,7 @@ func TestDisabledRouteIsNotServed(t *testing.T) {
 	if err := f.svc.Mutate(context.Background(), f.addRoute("other", "other-content", t)); err != nil {
 		t.Fatal(err)
 	}
-	f.routeWith(t, func(r *store.Route) { r.Enabled = false })
+	f.routeWith(t, func(r *store.Site) { r.Enabled = false })
 	// A disabled host is not in Caddy at all: no certificate is managed for it, so even the handshake fails.
 	caddytest.WaitCert(t, f.httpsPort, "other.example.com")
 	if c, err := tls.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", f.httpsPort), &tls.Config{InsecureSkipVerify: true, ServerName: "app.example.com"}); err == nil {
@@ -199,9 +199,9 @@ func TestDisabledRouteIsNotServed(t *testing.T) {
 		t.Fatal("disabled host completed a TLS handshake")
 	}
 	err := f.svc.Mutate(context.Background(), func(tx *store.Store) error {
-		rs, _ := tx.ListRoutes(context.Background())
+		rs, _ := tx.ListSites(context.Background())
 		rs[0].Enabled = true
-		return tx.UpdateRoute(context.Background(), rs[0])
+		return tx.UpdateSite(context.Background(), rs[0])
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -224,7 +224,7 @@ func TestAllowlist(t *testing.T) {
 			if err := f.svc.Start(context.Background()); err != nil {
 				t.Fatal(err)
 			}
-			f.routeWith(t, func(r *store.Route) { r.Allowlist = tt.allow })
+			f.routeWith(t, func(r *store.Site) { r.Allowlist = tt.allow })
 			code, body := caddytest.Get(t, f.httpsPort, "app.example.com")
 			if code != tt.want || (tt.want == 403 && body == "secret-content") {
 				t.Fatalf("%d %q", code, body)
@@ -242,7 +242,7 @@ func TestBasicAuth(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f.routeWith(t, func(r *store.Route) { r.BasicUser, r.BasicHash = "alice", string(hash) })
+	f.routeWith(t, func(r *store.Site) { r.BasicUser, r.BasicHash = "alice", string(hash) })
 	for _, c := range []struct {
 		name, user, pass string
 		want             int
@@ -263,7 +263,7 @@ func TestMaxBodyAndStreamLoad(t *testing.T) {
 	if err := f.svc.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	f.routeWith(t, func(r *store.Route) { r.Stream, r.MaxBody = true, 10 })
+	f.routeWith(t, func(r *store.Site) { r.Stream, r.MaxBody = true, 10 })
 	if code := caddytest.Post(t, f.httpsPort, "app.example.com", "tiny"); code != 200 {
 		t.Errorf("under the limit: got %d want 200", code)
 	}

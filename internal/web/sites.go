@@ -25,7 +25,7 @@ func (s *Server) newSitePage(w http.ResponseWriter, r *http.Request) {
 		Hostname: q.Get("hostname"), Host: q.Get("host"), Port: port, ServerIP: s.deps.Cfg.HostIP, DNSOn: s.dnsOn()}})
 }
 
-// addSite turns "oc.example.com -> 192.168.25.165:9200" into the managed domain (if new), the route and its A record.
+// addSite turns "oc.example.com -> 192.168.25.165:9200" into the managed domain (if new), the site and its A record.
 // The backend address and port are separate fields, so the hostname/zone logic never has to parse a host:port.
 func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
@@ -38,9 +38,9 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := r.PostForm
-	v.Set("domain_id", "0") // placeholders: parseRoute validates the rest; the real values are resolved below
+	v.Set("domain_id", "0") // placeholders: parseSite validates the rest; the real values are resolved below
 	v.Set("subdomain", strings.SplitN(hostname, ".", 2)[0])
-	rt, err := parseRoute(v)
+	rt, err := parseSite(v)
 	if err == nil {
 		err = applyControls(&rt, v)
 	}
@@ -97,7 +97,7 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var created store.Route
+	var created store.Site
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		if managed != nil {
 			rt.DomainID = managed.ID
@@ -108,11 +108,11 @@ func (s *Server) addSite(w http.ResponseWriter, r *http.Request) {
 			}
 			rt.DomainID = d.ID
 		}
-		if err := s.checkRoute(r, tx, rt); err != nil {
+		if err := s.checkSite(r, tx, rt); err != nil {
 			return err
 		}
 		var cerr error
-		created, cerr = tx.CreateRoute(r.Context(), rt)
+		created, cerr = tx.CreateSite(r.Context(), rt)
 		return cerr
 	})
 	if err != nil {

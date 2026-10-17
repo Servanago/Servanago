@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { login } from './helpers';
 
-test('Add site asks for hostname and a separate backend port, and creates domain, route and record', async ({ page }) => {
+test('Add site asks for hostname and a separate backend port, and creates domain, site and record', async ({ page }) => {
   await login(page);
   await page.getByRole('link', { name: 'Add site' }).first().click();
   await expect(page.getByLabel('Backend port')).toBeVisible();

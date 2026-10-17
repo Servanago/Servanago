@@ -38,7 +38,7 @@ func failErr(w http.ResponseWriter, err error) {
 
 type domainRow struct {
 	store.Domain
-	Routes int
+	Sites int
 }
 
 func (s *Server) domainRows(r *http.Request) ([]domainRow, error) {
@@ -46,7 +46,7 @@ func (s *Server) domainRows(r *http.Request) ([]domainRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	rs, err := s.deps.Store.ListRoutes(r.Context())
+	rs, err := s.deps.Store.ListSites(r.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		rs, err := tx.ListRoutes(r.Context())
+		rs, err := tx.ListSites(r.Context())
 		if err != nil {
 			return err
 		}
@@ -146,7 +146,7 @@ func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		if n > 0 {
-			return userError{http.StatusConflict, fmt.Sprintf("Delete its %d route(s) first.", n)}
+			return userError{http.StatusConflict, fmt.Sprintf("Delete its %d site(s) first.", n)}
 		}
 		return tx.DeleteDomain(r.Context(), id)
 	})

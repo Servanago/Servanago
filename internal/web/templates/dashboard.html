@@ -1,4 +1,4 @@
-{{define "routes"}}
+{{define "sites"}}
 {{if .}}
 <table>
 <thead><tr><th>Host</th><th>Backend</th><th>State</th><th>Certificate {{helplink "statuses"}}</th>{{if (index . 0).DNSOn}}<th>DNS {{helplink "statuses"}}</th>{{end}}<th></th></tr></thead>
@@ -17,15 +17,15 @@
 {{if and $d.Next (or (ne .State "error") (not .Error))}}<small class="next">{{$d.Next}}</small>{{end}}
 {{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}
 {{end}}
-{{if eq .DNSState "conflict"}}<button class="outline warn icon-btn" hx-post="/routes/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Host}}? The current record(s) will be replaced." aria-label="Take over" data-tooltip="Replace the existing DNS record">{{icon "takeover"}}</button>
-{{else if eq .DNSState "error"}}<button class="outline icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Retry" data-tooltip="Try the DNS update again">{{icon "refresh"}}</button>
-{{else}}<button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Resync" data-tooltip="Check the record in Cloudflare again">{{icon "refresh"}}</button>{{end}}
+{{if eq .DNSState "conflict"}}<button class="outline warn icon-btn" hx-post="/sites/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Host}}? The current record(s) will be replaced." aria-label="Take over" data-tooltip="Replace the existing DNS record">{{icon "takeover"}}</button>
+{{else if eq .DNSState "error"}}<button class="outline icon-btn" hx-post="/sites/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Retry" data-tooltip="Try the DNS update again">{{icon "refresh"}}</button>
+{{else}}<button class="outline secondary icon-btn" hx-post="/sites/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Resync" data-tooltip="Check the record in Cloudflare again">{{icon "refresh"}}</button>{{end}}
 {{else}}{{$d := status "dns" "pending"}}<span class="dns-pending" title="{{$d.Meaning}}">pending</span><small class="next">{{$d.Next}}</small>{{end}}
 </td>{{end}}
 <td class="actions">
-<a class="icon-btn" href="/routes/{{.ID}}" aria-label="Edit" data-tooltip="Edit this site">{{icon "edit"}}</a>
-<button class="outline secondary icon-btn" hx-post="/routes/{{.ID}}/toggle" hx-target="#msg" aria-label="{{if .Enabled}}Disable{{else}}Enable{{end}}" data-tooltip="{{if .Enabled}}Disable: stop serving this site{{if .DNSOn}}, keep its DNS record{{end}}{{else}}Enable: start serving this site again{{end}}">{{if .Enabled}}{{icon "pause"}}{{else}}{{icon "play"}}{{end}}</button>
-<button class="outline danger icon-btn delete-route" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{.OwnedSummary}}" aria-label="Delete" data-tooltip="Delete this site">{{icon "trash"}}</button>
+<a class="icon-btn" href="/sites/{{.ID}}" aria-label="Edit" data-tooltip="Edit this site">{{icon "edit"}}</a>
+<button class="outline secondary icon-btn" hx-post="/sites/{{.ID}}/toggle" hx-target="#msg" aria-label="{{if .Enabled}}Disable{{else}}Enable{{end}}" data-tooltip="{{if .Enabled}}Disable: stop serving this site{{if .DNSOn}}, keep its DNS record{{end}}{{else}}Enable: start serving this site again{{end}}">{{if .Enabled}}{{icon "pause"}}{{else}}{{icon "play"}}{{end}}</button>
+<button class="outline danger icon-btn delete-site" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{.OwnedSummary}}" aria-label="Delete" data-tooltip="Delete this site">{{icon "trash"}}</button>
 </td>
 </tr>
 {{end}}
@@ -60,16 +60,16 @@
 {{end}}
 <h2>Sites</h2>
 <article>
-<div id="routes" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "routes" .Routes}}</div>
+<div id="sites" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "sites" .Sites}}</div>
 <p id="msg" role="alert"></p>
 </article>
 <a role="button" href="/sites/new">Add site</a>
-{{/* One dialog for every row, outside #routes: the 10s refresh replaces #routes and would close a dialog inside it. */}}
+{{/* One dialog for every row, outside #sites: the 10s refresh replaces #sites and would close a dialog inside it. */}}
 <dialog id="delete-dialog">
 <article>
 <h3>Delete <span class="dlg-host"></span>?</h3>
-<p>The site stops being served and the route is removed. This cannot be undone.</p>
-<form hx-delete="/routes/0" hx-target="find .dlg-msg">
+<p>The site stops being served and the site is removed. This cannot be undone.</p>
+<form hx-delete="/sites/0" hx-target="find .dlg-msg">
 {{if .DNSOn}}<label class="dlg-owned" hidden><input type="checkbox" name="delete_dns"> Also delete the DNS record <span class="dlg-record"></span> in Cloudflare</label>
 <p class="dlg-kept" hidden>The DNS record is left in place: ServanaGo did not create it, or there is none.</p>{{end}}
 <p class="dlg-msg" role="alert"></p>
@@ -82,10 +82,10 @@
 </dialog>
 <script>
 document.addEventListener('click', function (e) {
-  var b = e.target.closest('.delete-route');
+  var b = e.target.closest('.delete-site');
   if (!b) return;
   var d = document.getElementById('delete-dialog'), f = d.querySelector('form'), ip = b.dataset.dnsIp;
-  f.setAttribute('hx-delete', '/routes/' + b.dataset.id);
+  f.setAttribute('hx-delete', '/sites/' + b.dataset.id);
   htmx.process(f); // htmx captures the URL when it binds the form, so re-bind after changing it
   f.reset();
   d.querySelector('.dlg-host').textContent = b.dataset.host;

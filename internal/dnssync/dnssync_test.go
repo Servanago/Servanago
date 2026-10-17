@@ -13,11 +13,11 @@ import (
 )
 
 type fx struct {
-	cf    *cftest.Fake
-	st    *store.Store
-	sync  *Syncer
-	dom   store.Domain
-	route store.Route
+	cf   *cftest.Fake
+	st   *store.Store
+	sync *Syncer
+	dom  store.Domain
+	site store.Site
 }
 
 func newFx(t *testing.T) *fx {
@@ -33,7 +33,7 @@ func newFx(t *testing.T) *fx {
 	if err != nil {
 		t.Fatal(err)
 	}
-	r, err := st.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: "sonarr", Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
+	r, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "sonarr", Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func newFx(t *testing.T) *fx {
 
 func (f *fx) row(t *testing.T) store.DNSRecord {
 	t.Helper()
-	d, err := f.st.GetDNS(context.Background(), f.route.ID, store.FamilyA)
+	d, err := f.st.GetDNS(context.Background(), f.site.ID, store.FamilyA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func (f *fx) row(t *testing.T) store.DNSRecord {
 
 func (f *fx) reconcile(t *testing.T) {
 	t.Helper()
-	if err := f.sync.Reconcile(context.Background(), f.route.ID); err != nil {
+	if err := f.sync.Reconcile(context.Background(), f.site.ID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -89,7 +89,7 @@ func TestConflictThenTakeOver(t *testing.T) {
 	if r.State != "conflict" || r.Owned || !strings.Contains(r.Error, "9.9.9.9") || f.cf.Writes() != 0 {
 		t.Fatalf("%+v writes=%d", r, f.cf.Writes())
 	}
-	if err := f.sync.TakeOver(context.Background(), f.route.ID); err != nil {
+	if err := f.sync.TakeOver(context.Background(), f.site.ID); err != nil {
 		t.Fatal(err)
 	}
 	r = f.row(t)
@@ -105,8 +105,8 @@ func TestIPChangeUpdatesOwnedOnly(t *testing.T) {
 	f := newFx(t)
 	f.reconcile(t)
 	ctx := context.Background()
-	f.route.RecordIP = "10.0.0.2"
-	if err := f.st.UpdateRoute(ctx, f.route); err != nil {
+	f.site.RecordIP = "10.0.0.2"
+	if err := f.st.UpdateSite(ctx, f.site); err != nil {
 		t.Fatal(err)
 	}
 	f.reconcile(t)
@@ -118,8 +118,8 @@ func TestIPChangeUpdatesOwnedOnly(t *testing.T) {
 	g := newFx(t)
 	g.cf.Seed("sonarr.example.com", "10.0.0.1")
 	g.reconcile(t)
-	g.route.RecordIP = "10.0.0.5"
-	if err := g.st.UpdateRoute(ctx, g.route); err != nil {
+	g.site.RecordIP = "10.0.0.5"
+	if err := g.st.UpdateSite(ctx, g.site); err != nil {
 		t.Fatal(err)
 	}
 	g.reconcile(t)
@@ -152,7 +152,7 @@ func TestResyncRecreatesRecordDeletedUpstream(t *testing.T) {
 func TestAPIErrorSetsErrorStateWithoutFailing(t *testing.T) {
 	f := newFx(t)
 	f.cf.FailWith("cloudflare is down")
-	f.reconcile(t) // must not return an error: DNS failure never reverts the route
+	f.reconcile(t) // must not return an error: DNS failure never reverts the site
 	if r := f.row(t); r.State != "error" || !strings.Contains(r.Error, "cloudflare is down") {
 		t.Fatalf("%+v", r)
 	}
@@ -314,7 +314,7 @@ func TestHostDisabledWhenUnconfigured(t *testing.T) {
 
 func (f *fx) row6(t *testing.T) (store.DNSRecord, bool) {
 	t.Helper()
-	d, err := f.st.GetDNS(context.Background(), f.route.ID, store.FamilyAAAA)
+	d, err := f.st.GetDNS(context.Background(), f.site.ID, store.FamilyAAAA)
 	return d, err == nil
 }
 
@@ -381,8 +381,8 @@ func mustRow6(t *testing.T, f *fx) store.DNSRecord {
 func TestRouteIPv6OverridesDomainDefault(t *testing.T) {
 	f := newFx(t)
 	f.setDomain6(t, "2001:db8::1")
-	f.route.RecordIP6 = "2001:db8::77"
-	if err := f.st.UpdateRoute(context.Background(), f.route); err != nil {
+	f.site.RecordIP6 = "2001:db8::77"
+	if err := f.st.UpdateSite(context.Background(), f.site); err != nil {
 		t.Fatal(err)
 	}
 	f.reconcile(t)
@@ -418,7 +418,7 @@ func TestAAAAConflictIsIndependentOfA(t *testing.T) {
 	if q.State != "conflict" || q.Owned || !strings.Contains(q.Error, "2001:db8::dead") || !strings.Contains(q.Error, "2001:db8::1") {
 		t.Fatalf("AAAA conflict: %+v", q)
 	}
-	if err := f.sync.TakeOver(context.Background(), f.route.ID); err != nil {
+	if err := f.sync.TakeOver(context.Background(), f.site.ID); err != nil {
 		t.Fatal(err)
 	}
 	q = mustRow6(t, f)

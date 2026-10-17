@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { login } from './helpers';
 
-test('list row delete panel: cancel keeps the route, delete asks about the DNS record', async ({ page }) => {
+test('list row delete panel: cancel keeps the site, delete asks about the DNS record', async ({ page }) => {
   await login(page);
   await page.goto('/domains');
   await page.getByLabel('Domain', { exact: true }).fill('delrow.example.net');
@@ -9,12 +9,12 @@ test('list row delete panel: cancel keeps the route, delete asks about the DNS r
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'delrow.example.net' })).toBeVisible();
 
-  await page.goto('/routes/new');
+  await page.goto('/sites/new/full');
   await page.locator('select[name=domain_id]').selectOption('delrow.example.net');
   await page.getByLabel('Subdomain').fill('lidarr');
   await page.getByLabel('Upstream port').fill('8686');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.24');
-  await page.getByRole('button', { name: 'Add route' }).click();
+  await page.getByRole('button', { name: 'Add site' }).click();
   const row = page.getByRole('row', { name: /lidarr\.delrow\.example\.net/ });
   await expect(row.getByText('synced')).toBeVisible();
 
@@ -28,7 +28,7 @@ test('list row delete panel: cancel keeps the route, delete asks about the DNS r
 
   await row.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
-  // The route list refreshes every 10s; an open dialog and its ticked box must survive that.
+  // The site list refreshes every 10s; an open dialog and its ticked box must survive that.
   await page.waitForResponse((r) => r.url().endsWith('/status') && r.status() === 200, { timeout: 15000 });
   await expect(page.getByRole('dialog').getByLabel('Also delete the DNS record')).toBeChecked();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
@@ -42,12 +42,12 @@ test('row actions share one line and show a tooltip', async ({ page }) => {
   await page.getByLabel('Default IP').fill('192.168.1.10');
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'icons.example.net' })).toBeVisible();
-  await page.goto('/routes/new');
+  await page.goto('/sites/new/full');
   await page.locator('select[name=domain_id]').selectOption('icons.example.net');
   await page.getByLabel('Subdomain').fill('readarr');
   await page.getByLabel('Upstream port').fill('8787');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.25');
-  await page.getByRole('button', { name: 'Add route' }).click();
+  await page.getByRole('button', { name: 'Add site' }).click();
   const row = page.getByRole('row', { name: /readarr\.icons\.example\.net/ });
 
   const edit = await row.getByRole('link', { name: 'Edit' }).boundingBox();
@@ -57,7 +57,7 @@ test('row actions share one line and show a tooltip', async ({ page }) => {
   expect(Math.abs(toggle!.y - del!.y)).toBeLessThan(2);
   await expect(row.getByRole('button', { name: 'Delete', exact: true })).toHaveAttribute('data-tooltip', /Delete this site/);
 
-  // Shared server: take the route back out so later specs (checklist state) are unaffected.
+  // Shared server: take the site back out so later specs (checklist state) are unaffected.
   await row.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(page.getByRole('cell', { name: 'readarr.icons.example.net' })).toBeHidden();

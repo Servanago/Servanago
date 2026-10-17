@@ -73,7 +73,7 @@ func run() error {
 		issuer = caddycfg.Internal
 	}
 	// The gate module reads SQLite directly in the Caddy request path; without an installed
-	// service every gated route fails closed with 503, never open.
+	// service every gated site fails closed with 503, never open.
 	caddygate.Install(caddygate.New(st, smtpx.Dialer{
 		Host: cfg.SMTPHost, Port: cfg.SMTPPort, User: cfg.SMTPUser, Pass: cfg.SMTPPass,
 	}, cfg.MailFrom, cfg.SecretKey, cfg.HTTPSPort))

@@ -9,14 +9,14 @@ test('streaming and upload limit: set, badge, edit, reject bad size', async ({ p
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'tuning.example.net' })).toBeVisible();
 
-  await page.goto('/routes/new');
+  await page.goto('/sites/new/full');
   await page.locator('select[name=domain_id]').selectOption('tuning.example.net');
   await page.getByLabel('Subdomain').fill('term');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.23');
   await page.getByLabel('Upstream port').fill('8788');
   await page.getByLabel('Send responses as they arrive').check();
   await page.getByLabel('Upload limit').fill('2GB');
-  await page.getByRole('button', { name: 'Add route' }).click();
+  await page.getByRole('button', { name: 'Add site' }).click();
 
   const row = page.getByRole('row', { name: /term\.tuning\.example\.net/ });
   await expect(row.getByText('stream', { exact: true })).toBeVisible();

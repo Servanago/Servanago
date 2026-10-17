@@ -27,25 +27,25 @@ func gateServer(t *testing.T) *Server {
 func TestParseGate(t *testing.T) {
 	v := url.Values{"gate_acl": {"alice@example.com\n@dev.example"}}
 	s := gateServer(t)
-	gs, err := s.parseGate(store.Route{GateMode: "acl"}, v)
+	gs, err := s.parseGate(store.Site{GateMode: "acl"}, v)
 	if err != nil || len(gs) != 2 || gs[0].Mode != "email" || gs[1].Mode != "domain" {
 		t.Fatalf("acl: %v %v", gs, err)
 	}
-	if gs, err = s.parseGate(store.Route{GateMode: "open"}, url.Values{}); err != nil || len(gs) != 0 {
+	if gs, err = s.parseGate(store.Site{GateMode: "open"}, url.Values{}); err != nil || len(gs) != 0 {
 		t.Fatalf("open: %v %v", gs, err)
 	}
-	if gs, err = s.parseGate(store.Route{GateMode: ""}, v); err != nil || len(gs) != 0 {
+	if gs, err = s.parseGate(store.Site{GateMode: ""}, v); err != nil || len(gs) != 0 {
 		t.Fatalf("none: %v %v", gs, err)
 	}
-	// Without the secret key or mail, saving a gated route is refused with a plain-language error.
+	// Without the secret key or mail, saving a gated site is refused with a plain-language error.
 	s2 := newServer(t, "pw")
 	s2.deps.Cfg = config.Config{SMTPHost: "127.0.0.1", MailFrom: "access@example.com"}
-	if _, err := s2.parseGate(store.Route{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
+	if _, err := s2.parseGate(store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
 		t.Fatalf("secret-key refusal: %v", err)
 	}
 	s3 := newServer(t, "pw")
 	s3.deps.Cfg = config.Config{SecretKey: "e2e-secret-key-0123456789abcdef-e2e"}
-	if _, err := s3.parseGate(store.Route{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "SMTP") {
+	if _, err := s3.parseGate(store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "SMTP") {
 		t.Fatalf("smtp refusal: %v", err)
 	}
 }
@@ -56,14 +56,14 @@ func TestRouteFormShowsGateSection(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := sessionCookie(t, login(s, "pw", nil, ""))
-	w := s.do(req{path: "/routes/new", cookies: []*http.Cookie{c}})
+	w := s.do(req{path: "/sites/new/full", cookies: []*http.Cookie{c}})
 	if !strings.Contains(w.Body.String(), "gate_mode") || !strings.Contains(w.Body.String(), "Magic-link access") {
-		t.Fatalf("gate section missing from the route form:\n%s", w.Body.String())
+		t.Fatalf("gate section missing from the site form:\n%s", w.Body.String())
 	}
 	// Without email delivery: no section, and the hint explains what to set.
 	s2 := newServer(t, "pw")
 	c2 := sessionCookie(t, login(s2, "pw", nil, ""))
-	w2 := s2.do(req{path: "/routes/new", cookies: []*http.Cookie{c2}})
+	w2 := s2.do(req{path: "/sites/new/full", cookies: []*http.Cookie{c2}})
 	if strings.Contains(w2.Body.String(), "gate_mode") {
 		t.Fatal("gate section shown without email delivery")
 	}
@@ -78,15 +78,15 @@ func TestCreateGatedRouteAndSecurityListing(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := sessionCookie(t, login(s, "pw", nil, ""))
-	w := s.do(req{method: "POST", path: "/routes",
+	w := s.do(req{method: "POST", path: "/sites/full",
 		body: form("enabled", "on", "gate_mode", "acl", "gate_acl", "alice@example.com\n@dev.example").Encode(),
 		hdr:  htmxPost, cookies: []*http.Cookie{c}})
 	if w.Code != 204 {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())
 	}
-	rs, err := s.deps.Store.ListRoutes(context.Background())
+	rs, err := s.deps.Store.ListSites(context.Background())
 	if err != nil || len(rs) != 1 || rs[0].GateMode != "acl" {
-		t.Fatalf("route: %+v %v", rs, err)
+		t.Fatalf("site: %+v %v", rs, err)
 	}
 	gs, _ := s.deps.Store.Grants(context.Background(), rs[0].ID)
 	if len(gs) != 2 {

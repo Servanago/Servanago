@@ -20,9 +20,9 @@ import (
 
 var hostnameRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`)
 
-// parseRoute validates the route fields shared by create and edit.
-func parseRoute(v url.Values) (store.Route, error) {
-	var r store.Route
+// parseSite validates the site fields shared by create and edit.
+func parseSite(v url.Values) (store.Site, error) {
+	var r store.Site
 	var err error
 	if r.DomainID, err = strconv.ParseInt(v.Get("domain_id"), 10, 64); err != nil {
 		return r, errors.New("choose a domain")
@@ -56,10 +56,10 @@ func parseRoute(v url.Values) (store.Route, error) {
 	return r, nil
 }
 
-type routeRow struct {
-	store.Route
+type siteRow struct {
+	store.Site
 	Host  string
-	DNS   []store.DNSRecord // the route's A and AAAA rows that exist, A first
+	DNS   []store.DNSRecord // the site's A and AAAA rows that exist, A first
 	DNSOn bool              // Cloudflare is configured; otherwise the DNS column and actions are hidden
 	// Probed is false for disabled routes: nothing is served, so nothing is checked.
 	Probed   bool
@@ -69,19 +69,19 @@ type routeRow struct {
 	CertWait string // how long a pending certificate may take, from the propagation settings
 }
 
-// HasDNS is true once at least one of the route's records has been synced or attempted.
-func (r routeRow) HasDNS() bool { return len(r.DNS) > 0 }
+// HasDNS is true once at least one of the site's records has been synced or attempted.
+func (r siteRow) HasDNS() bool { return len(r.DNS) > 0 }
 
-// DNSState is the worst state across the route's records (error, conflict, pending, synced); "" when none exist.
-func (r routeRow) DNSState() string { return worstState(r.DNS) }
+// DNSState is the worst state across the site's records (error, conflict, pending, synced); "" when none exist.
+func (r siteRow) DNSState() string { return worstState(r.DNS) }
 
-// OwnsRecord is true when ServanaGo created at least one of this route's records, the only kind it may delete.
-func (r routeRow) OwnsRecord() bool { return len(ownedRecords(r.DNS)) > 0 }
+// OwnsRecord is true when ServanaGo created at least one of this site's records, the only kind it may delete.
+func (r siteRow) OwnsRecord() bool { return len(ownedRecords(r.DNS)) > 0 }
 
 // OwnedSummary lists the records the delete dialog offers to remove, such as "A 10.0.0.1, AAAA 2001:db8::1".
-func (r routeRow) OwnedSummary() string { return recordSummary(ownedRecords(r.DNS)) }
+func (r siteRow) OwnedSummary() string { return recordSummary(ownedRecords(r.DNS)) }
 
-func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
+func (s *Server) siteRows(r *http.Request) ([]siteRow, error) {
 	ds, err := s.deps.Store.ListDomains(r.Context())
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	for _, d := range ds {
 		names[d.ID] = d.Name
 	}
-	rs, err := s.deps.Store.ListRoutes(r.Context())
+	rs, err := s.deps.Store.ListSites(r.Context())
 	if err != nil {
 		return nil, err
 	}
@@ -98,13 +98,13 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	if err != nil {
 		return nil, err
 	}
-	byRoute := map[int64][]store.DNSRecord{} // ListDNS orders A before AAAA
+	bySite := map[int64][]store.DNSRecord{} // ListDNS orders A before AAAA
 	for _, d := range dns {
-		byRoute[d.RouteID] = append(byRoute[d.RouteID], d)
+		bySite[d.SiteID] = append(bySite[d.SiteID], d)
 	}
-	rows := make([]routeRow, len(rs))
+	rows := make([]siteRow, len(rs))
 	for i, x := range rs {
-		rows[i] = routeRow{Route: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: byRoute[x.ID], DNSOn: s.dnsOn()}
+		rows[i] = siteRow{Site: x, Host: x.Subdomain + "." + names[x.DomainID], DNS: bySite[x.ID], DNSOn: s.dnsOn()}
 		rows[i].Probed = x.Enabled && s.deps.Probe != nil
 	}
 	// Probes wait on the network, so run them side by side; each goroutine writes only its own row.
@@ -113,10 +113,10 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 		if !row.Probed {
 			return
 		}
-		u, known := s.deps.Probe.Upstream(row.Route)
+		u, known := s.deps.Probe.Upstream(row.Site)
 		if !known {
 			ctx, cancel := detached(r)
-			u = s.deps.Probe.Check(ctx, row.Route)
+			u = s.deps.Probe.Check(ctx, row.Site)
 			cancel()
 		}
 		row.Upstream = map[bool]string{true: "up", false: "down"}[u.Up]
@@ -127,8 +127,8 @@ func (s *Server) routeRows(r *http.Request) ([]routeRow, error) {
 	return rows, nil
 }
 
-type routeForm struct {
-	Route         store.Route
+type siteEditForm struct {
+	Site          store.Site
 	Edit          bool
 	Domains       []store.Domain
 	DeleteConfirm string
@@ -145,7 +145,7 @@ func recordWord(families []string) string {
 	return families[0] + " record"
 }
 
-// deleteConfirm tells the user exactly what deleting the route does to its DNS records.
+// deleteConfirm tells the user exactly what deleting the site does to its DNS records.
 func deleteConfirm(t dnsTarget) string {
 	var owned, adopted []string
 	for _, row := range t.rows {
@@ -157,7 +157,7 @@ func deleteConfirm(t dnsTarget) string {
 			adopted = append(adopted, row.Family)
 		}
 	}
-	msg := "Delete this route?"
+	msg := "Delete this site?"
 	if len(owned) > 0 {
 		msg += " This also deletes the " + recordWord(owned) + " " + t.name + " in Cloudflare."
 	}
@@ -171,54 +171,54 @@ func deleteConfirm(t dnsTarget) string {
 	return msg
 }
 
-func (s *Server) routeFormPage(w http.ResponseWriter, r *http.Request, rt store.Route, edit bool) {
+func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.Site, edit bool) {
 	ds, err := s.deps.Store.ListDomains(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	title := "New route"
+	title := "New site"
 	if edit {
-		title = "Edit route"
+		title = "Edit site"
 	}
 	confirm := ""
 	if edit {
 		t, _ := dnsTargetOf(r, s.deps.Store, rt)
 		confirm = deleteConfirm(t)
 	}
-	form := routeForm{Route: rt, Edit: edit, Domains: ds, DeleteConfirm: confirm, DNSOn: s.dnsOn(),
+	form := siteEditForm{Site: rt, Edit: edit, Domains: ds, DeleteConfirm: confirm, DNSOn: s.dnsOn(),
 		MailOK: s.deps.Cfg.SMTPHost != "" && s.deps.Cfg.MailFrom != "" && s.deps.Cfg.SecretKey != ""}
 	if edit {
 		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {
 			form.GateACL = gateACLText(gs)
 		}
 	}
-	s.render(w, "route", http.StatusOK, page{Title: title, Data: form})
+	s.render(w, "siteedit", http.StatusOK, page{Title: title, Data: form})
 }
 
-// newRoutePage supports prefill via ?sub=&host=&port=.
-func (s *Server) newRoutePage(w http.ResponseWriter, r *http.Request) {
+// newSiteFullPage supports prefill via ?sub=&host=&port=.
+func (s *Server) newSiteFullPage(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	port, _ := strconv.Atoi(q.Get("port"))
-	s.routeFormPage(w, r, store.Route{Scheme: "http", Enabled: true, Subdomain: q.Get("sub"), UpstreamHost: q.Get("host"), UpstreamPort: port}, false)
+	s.siteEditPage(w, r, store.Site{Scheme: "http", Enabled: true, Subdomain: q.Get("sub"), UpstreamHost: q.Get("host"), UpstreamPort: port}, false)
 }
 
-func (s *Server) editRoutePage(w http.ResponseWriter, r *http.Request) {
+func (s *Server) editSitePage(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	rt, err := s.deps.Store.GetRoute(r.Context(), id)
+	rt, err := s.deps.Store.GetSite(r.Context(), id)
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	s.routeFormPage(w, r, rt, true)
+	s.siteEditPage(w, r, rt, true)
 }
 
-// checkRoute enforces domain existence and (domain, subdomain) uniqueness inside the apply transaction.
-func (s *Server) checkRoute(r *http.Request, tx *store.Store, rt store.Route) error {
+// checkSite enforces domain existence and (domain, subdomain) uniqueness inside the apply transaction.
+func (s *Server) checkSite(r *http.Request, tx *store.Store, rt store.Site) error {
 	d, err := tx.GetDomain(r.Context(), rt.DomainID)
 	if err != nil {
 		return errors.New("unknown domain")
@@ -226,7 +226,7 @@ func (s *Server) checkRoute(r *http.Request, tx *store.Store, rt store.Route) er
 	if host := rt.Subdomain + "." + d.Name; host == s.deps.Cfg.Host {
 		return fmt.Errorf("%s is the ServanaGo UI host; choose another subdomain", host)
 	}
-	all, err := tx.ListRoutes(r.Context())
+	all, err := tx.ListSites(r.Context())
 	if err != nil {
 		return err
 	}
@@ -238,12 +238,12 @@ func (s *Server) checkRoute(r *http.Request, tx *store.Store, rt store.Route) er
 	return nil
 }
 
-func (s *Server) createRoute(w http.ResponseWriter, r *http.Request) {
+func (s *Server) createSiteFull(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	rt, err := parseRoute(r.PostForm)
+	rt, err := parseSite(r.PostForm)
 	if err != nil {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -257,13 +257,13 @@ func (s *Server) createRoute(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
-	var created store.Route
+	var created store.Site
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		if err := s.checkRoute(r, tx, rt); err != nil {
+		if err := s.checkSite(r, tx, rt); err != nil {
 			return err
 		}
 		var err error
-		created, err = tx.CreateRoute(r.Context(), rt)
+		created, err = tx.CreateSite(r.Context(), rt)
 		if err != nil {
 			return err
 		}
@@ -278,17 +278,17 @@ func (s *Server) createRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
+func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		fail(w, http.StatusBadRequest, "bad route id")
+		fail(w, http.StatusBadRequest, "bad site id")
 		return
 	}
 	if err := r.ParseForm(); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	in, err := parseRoute(r.PostForm)
+	in, err := parseSite(r.PostForm)
 	if err != nil {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
@@ -300,9 +300,9 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 	}
 	var old dnsTarget
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		cur, err := tx.GetRoute(r.Context(), id)
+		cur, err := tx.GetSite(r.Context(), id)
 		if err != nil {
-			return userError{http.StatusNotFound, "route not found"}
+			return userError{http.StatusNotFound, "site not found"}
 		}
 		old, _ = dnsTargetOf(r, tx, cur)
 		// Overlay only the fields this form owns.
@@ -313,10 +313,10 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 		if err := applyControls(&cur, r.PostForm); err != nil {
 			return err
 		}
-		if err := s.checkRoute(r, tx, cur); err != nil {
+		if err := s.checkSite(r, tx, cur); err != nil {
 			return err
 		}
-		if err := tx.UpdateRoute(r.Context(), cur); err != nil {
+		if err := tx.UpdateSite(r.Context(), cur); err != nil {
 			return err
 		}
 		return tx.ReplaceGrants(r.Context(), cur.ID, grants)
@@ -326,11 +326,11 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// A rename or domain change moves the record: drop the old one (if owned), then sync the new name.
-	if cur, err := s.deps.Store.GetRoute(r.Context(), id); err == nil {
+	if cur, err := s.deps.Store.GetSite(r.Context(), id); err == nil {
 		if now, err := dnsTargetOf(r, s.deps.Store, cur); err == nil && now.name != old.name {
 			s.removeRecord(r, old)
 			if err := s.deps.Store.DeleteDNS(r.Context(), id); err != nil {
-				slog.Error("clear dns row", "route", id, "error", err)
+				slog.Error("clear dns row", "site", id, "error", err)
 			}
 		}
 	}
@@ -339,18 +339,18 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (s *Server) deleteRoute(w http.ResponseWriter, r *http.Request) {
+func (s *Server) deleteSite(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		fail(w, http.StatusBadRequest, "bad route id")
+		fail(w, http.StatusBadRequest, "bad site id")
 		return
 	}
 	var target dnsTarget
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		if cur, err := tx.GetRoute(r.Context(), id); err == nil {
+		if cur, err := tx.GetSite(r.Context(), id); err == nil {
 			target, _ = dnsTargetOf(r, tx, cur)
 		}
-		return tx.DeleteRoute(r.Context(), id)
+		return tx.DeleteSite(r.Context(), id)
 	})
 	if err != nil {
 		failErr(w, err)
@@ -363,18 +363,18 @@ func (s *Server) deleteRoute(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
-// detached outlives the request: once the route change is committed, a closed tab must not strand the DNS record.
+// detached outlives the request: once the site change is committed, a closed tab must not strand the DNS record.
 func detached(r *http.Request) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(context.WithoutCancel(r.Context()), 30*time.Second)
 }
 
-// dnsTarget is what a route's A and AAAA records looked like before the route changed or went away.
+// dnsTarget is what a site's A and AAAA records looked like before the site changed or went away.
 type dnsTarget struct {
 	name, zone string
 	rows       []store.DNSRecord // the rows that exist, A before AAAA
 }
 
-func dnsTargetOf(r *http.Request, q *store.Store, rt store.Route) (dnsTarget, error) {
+func dnsTargetOf(r *http.Request, q *store.Store, rt store.Site) (dnsTarget, error) {
 	d, err := q.GetDomain(r.Context(), rt.DomainID)
 	if err != nil {
 		return dnsTarget{}, err
@@ -388,18 +388,18 @@ func dnsTargetOf(r *http.Request, q *store.Store, rt store.Route) (dnsTarget, er
 	return t, nil
 }
 
-func (s *Server) reconcile(r *http.Request, routeID int64) {
+func (s *Server) reconcile(r *http.Request, siteID int64) {
 	if !s.dnsOn() {
 		return
 	}
 	ctx, cancel := detached(r)
 	defer cancel()
-	if err := s.deps.DNS.Reconcile(ctx, routeID); err != nil {
-		slog.Error("dns reconcile", "route", routeID, "error", err)
+	if err := s.deps.DNS.Reconcile(ctx, siteID); err != nil {
+		slog.Error("dns reconcile", "site", siteID, "error", err)
 	}
 }
 
-// removeRecord deletes the route's A and AAAA records when ServanaGo owns them; failures become one-time notices.
+// removeRecord deletes the site's A and AAAA records when ServanaGo owns them; failures become one-time notices.
 func (s *Server) removeRecord(r *http.Request, t dnsTarget) {
 	if !s.dnsOn() {
 		return
@@ -428,7 +428,7 @@ func (s *Server) dnsAction(w http.ResponseWriter, r *http.Request, act func(cont
 	}
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		fail(w, http.StatusBadRequest, "bad route id")
+		fail(w, http.StatusBadRequest, "bad site id")
 		return
 	}
 	if err := act(r.Context(), id); err != nil {

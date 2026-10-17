@@ -20,7 +20,7 @@ func gateStore(t *testing.T) *Store {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateRoute(context.Background(), Route{DomainID: d.ID, Subdomain: "st", Scheme: "http",
+	if _, err := st.CreateSite(context.Background(), Site{DomainID: d.ID, Subdomain: "st", Scheme: "http",
 		UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true, GateMode: "acl"}); err != nil {
 		t.Fatal(err)
 	}
@@ -30,7 +30,7 @@ func gateStore(t *testing.T) *Store {
 func TestGateModeRoundTrip(t *testing.T) {
 	st := gateStore(t)
 	ctx := context.Background()
-	r, err := st.ListRoutes(ctx)
+	r, err := st.ListSites(ctx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,10 +38,10 @@ func TestGateModeRoundTrip(t *testing.T) {
 		t.Fatalf("gate mode lost: %q", r[0].GateMode)
 	}
 	r[0].GateMode = "open"
-	if err := st.UpdateRoute(ctx, r[0]); err != nil {
+	if err := st.UpdateSite(ctx, r[0]); err != nil {
 		t.Fatal(err)
 	}
-	if r, _ = st.ListRoutes(ctx); r[0].GateMode != "open" {
+	if r, _ = st.ListSites(ctx); r[0].GateMode != "open" {
 		t.Fatalf("update lost gate mode: %q", r[0].GateMode)
 	}
 }
@@ -49,7 +49,7 @@ func TestGateModeRoundTrip(t *testing.T) {
 func TestReplaceGrantsAndAutoRevoke(t *testing.T) {
 	st := gateStore(t)
 	ctx := context.Background()
-	r, _ := st.ListRoutes(ctx)
+	r, _ := st.ListSites(ctx)
 	if err := st.ReplaceGrants(ctx, r[0].ID, []Grant{{Mode: "email", Value: "alice@example.com"}, {Mode: "domain", Value: "dev.example"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -72,7 +72,7 @@ func TestReplaceGrantsAndAutoRevoke(t *testing.T) {
 		t.Fatal(err)
 	}
 	d2, _ := st.CreateDomain(ctx, Domain{Name: "dev.example", DefaultIP: "192.168.1.1", CertMode: "wildcard"})
-	r2, _ := st.CreateRoute(ctx, Route{DomainID: d2.ID, Subdomain: "st", Scheme: "http", UpstreamHost: "1.2.3.4", UpstreamPort: 1, Enabled: true, GateMode: "acl"})
+	r2, _ := st.CreateSite(ctx, Site{DomainID: d2.ID, Subdomain: "st", Scheme: "http", UpstreamHost: "1.2.3.4", UpstreamPort: 1, Enabled: true, GateMode: "acl"})
 	if err := st.ReplaceGrants(ctx, r2.ID, []Grant{{Mode: "domain", Value: "dev.example"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -207,8 +207,8 @@ func TestIdentityNonceAndDelete(t *testing.T) {
 	if err != nil || len(gs) != 1 || gs[0].Email != "a@b.c" {
 		t.Fatalf("identities: %+v %v", gs, err)
 	}
-	// Grants appear in the listing once the ACL route matches the identity's domain.
-	r, _ := st.ListRoutes(ctx)
+	// Grants appear in the listing once the ACL site matches the identity's domain.
+	r, _ := st.ListSites(ctx)
 	if err := st.ReplaceGrants(ctx, r[0].ID, []Grant{{Mode: "domain", Value: "b.c"}}); err != nil {
 		t.Fatal(err)
 	}
@@ -222,14 +222,14 @@ func TestIdentityNonceAndDelete(t *testing.T) {
 	if gs, _ = st.GateIdentities(ctx); len(gs) != 0 {
 		t.Fatalf("deleted identity still listed: %+v", gs)
 	}
-	// The identity survives a route deletion (grants cascade, identity may live elsewhere).
+	// The identity survives a site deletion (grants cascade, identity may live elsewhere).
 	if err := st.UpsertIdentity(ctx, "a@b.c", "n2", "h2", now, time.Hour); err != nil {
 		t.Fatal(err)
 	}
-	if err := st.DeleteRoute(ctx, 1); err != nil {
+	if err := st.DeleteSite(ctx, 1); err != nil {
 		t.Fatal(err)
 	}
 	if gs, _ = st.GateIdentities(ctx); len(gs) != 1 {
-		t.Fatalf("identity lost on route delete: %+v", gs)
+		t.Fatalf("identity lost on site delete: %+v", gs)
 	}
 }

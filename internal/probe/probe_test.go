@@ -77,8 +77,8 @@ func TestSweep(t *testing.T) {
 	ctx := context.Background()
 	d, _ := st.CreateDomain(ctx, store.Domain{Name: "example.com", ZoneID: "z", DefaultIP: "1.1.1.1", CertMode: "wildcard"})
 	host, port := listener(t)
-	mk := func(sub string, port int, enabled bool) store.Route {
-		r, err := st.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: sub, Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: enabled})
+	mk := func(sub string, port int, enabled bool) store.Site {
+		r, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: sub, Scheme: "http", UpstreamHost: host, UpstreamPort: port, Enabled: enabled})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -95,7 +95,7 @@ func TestSweep(t *testing.T) {
 		t.Errorf("down: %+v %v", u, ok)
 	}
 	if _, ok := m.Upstream(off); ok {
-		t.Error("disabled route was probed")
+		t.Error("disabled site was probed")
 	}
 }
 
@@ -134,17 +134,17 @@ func TestStateNotReusedWhenRouteIDIsReused(t *testing.T) {
 	t.Cleanup(func() { st.Close() })
 	ctx := context.Background()
 	d, _ := st.CreateDomain(ctx, store.Domain{Name: "example.com", ZoneID: "z", DefaultIP: "1.1.1.1", CertMode: "wildcard"})
-	old, _ := st.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: "a", Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: caddytest.FreePort(t), Enabled: true})
+	old, _ := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "a", Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: caddytest.FreePort(t), Enabled: true})
 	m := NewMonitor(st, "127.0.0.1:1")
 	m.Sweep(ctx)
 	if u, ok := m.Upstream(old); !ok || u.Up {
 		t.Fatalf("setup: %+v %v", u, ok)
 	}
-	if err := st.DeleteRoute(ctx, old.ID); err != nil {
+	if err := st.DeleteSite(ctx, old.ID); err != nil {
 		t.Fatal(err)
 	}
 	_, port := listener(t)
-	fresh, _ := st.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: "b", Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: port, Enabled: true})
+	fresh, _ := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "b", Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: port, Enabled: true})
 	if fresh.ID != old.ID {
 		t.Skipf("sqlite did not reuse the id (%d vs %d)", fresh.ID, old.ID)
 	}
@@ -165,7 +165,7 @@ func TestSweepDialsInParallel(t *testing.T) {
 	d, _ := st.CreateDomain(ctx, store.Domain{Name: "example.com", ZoneID: "z", DefaultIP: "1.1.1.1", CertMode: "wildcard"})
 	const n = 10
 	for i := range n {
-		if _, err := st.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: "r" + strconv.Itoa(i), Scheme: "http", UpstreamHost: "10.9.9.9", UpstreamPort: 1000 + i, Enabled: true}); err != nil {
+		if _, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "r" + strconv.Itoa(i), Scheme: "http", UpstreamHost: "10.9.9.9", UpstreamPort: 1000 + i, Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -191,7 +191,7 @@ func TestSweepDialsInParallel(t *testing.T) {
 		}
 	}
 	m.Sweep(ctx)
-	routes, _ := st.ListRoutes(ctx)
+	routes, _ := st.ListSites(ctx)
 	for _, r := range routes {
 		if u, ok := m.Upstream(r); !ok || !u.Up {
 			t.Fatalf("%s: %+v %v (peak concurrency %d)", r.Subdomain, u, ok, peak)
@@ -225,7 +225,7 @@ func TestUpstreamAddrBracketsIPv6(t *testing.T) {
 		"fd00::1":      "[fd00::1]:8989",
 	}
 	for host, want := range cases {
-		if got := upstreamAddr(store.Route{UpstreamHost: host, UpstreamPort: 8989}); got != want {
+		if got := upstreamAddr(store.Site{UpstreamHost: host, UpstreamPort: 8989}); got != want {
 			t.Errorf("%q: got %q, want %q", host, got, want)
 		}
 	}

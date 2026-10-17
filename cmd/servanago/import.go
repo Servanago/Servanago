@@ -75,14 +75,14 @@ type importer struct {
 	parserSkipped int // blocks the Caddyfile reader could not model; counted in the summary
 }
 
-// run adds each site as a route (creating its domain on first use) and reconciles its A record.
+// run adds each site as a site (creating its domain on first use) and reconciles its A record.
 // A site that cannot be imported is reported and skipped; existing routes are left alone, so reruns are safe.
 func (im importer) run(ctx context.Context, sites []caddyfile.Site, dry bool, out io.Writer) error {
 	domains, err := im.st.ListDomains(ctx)
 	if err != nil {
 		return err
 	}
-	routes, err := im.st.ListRoutes(ctx)
+	routes, err := im.st.ListSites(ctx)
 	if err != nil {
 		return err
 	}
@@ -107,7 +107,7 @@ func (im importer) run(ctx context.Context, sites []caddyfile.Site, dry bool, ou
 			continue
 		}
 		if exists[host] {
-			skip(host, "route already exists")
+			skip(host, "site already exists")
 			continue
 		}
 		maxBody := int64(0)
@@ -127,10 +127,10 @@ func (im importer) run(ctx context.Context, sites []caddyfile.Site, dry bool, ou
 			skip(host, fmt.Sprintf("must be exactly one label below %s", dom.Name))
 			continue
 		}
-		rt := store.Route{DomainID: dom.ID, Subdomain: sub, Scheme: s.Scheme, UpstreamHost: s.Host, UpstreamPort: s.Port,
+		rt := store.Site{DomainID: dom.ID, Subdomain: sub, Scheme: s.Scheme, UpstreamHost: s.Host, UpstreamPort: s.Port,
 			TLSSkipVerify: s.SkipVerify, Enabled: true, Stream: s.Stream, MaxBody: maxBody}
 		if !dry {
-			created, err := im.st.CreateRoute(ctx, rt)
+			created, err := im.st.CreateSite(ctx, rt)
 			if err != nil {
 				skip(host, err.Error())
 				continue

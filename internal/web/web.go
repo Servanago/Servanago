@@ -65,7 +65,7 @@ func (s *Server) takeFlashes() []string {
 
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(d.Cfg.AdminPassword)}
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "domains", "route", "site", "logs", "help"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "domains", "siteedit", "site", "logs", "help"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -127,16 +127,16 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /domains/{id}", s.protected(s.deleteDomain))
 	mux.Handle("GET /sites/new", s.protected(s.newSitePage))
 	mux.Handle("POST /sites", s.protected(s.addSite))
-	mux.Handle("GET /routes/new", s.protected(s.newRoutePage))
-	mux.Handle("POST /routes", s.protected(s.createRoute))
-	mux.Handle("GET /routes/{id}", s.protected(s.editRoutePage))
-	mux.Handle("PUT /routes/{id}", s.protected(s.updateRoute))
-	mux.Handle("DELETE /routes/{id}", s.protected(s.deleteRoute))
+	mux.Handle("GET /sites/new/full", s.protected(s.newSiteFullPage))
+	mux.Handle("POST /sites/full", s.protected(s.createSiteFull))
+	mux.Handle("GET /sites/{id}", s.protected(s.editSitePage))
+	mux.Handle("PUT /sites/{id}", s.protected(s.updateSite))
+	mux.Handle("DELETE /sites/{id}", s.protected(s.deleteSite))
 	mux.Handle("POST /host/dns/resync", s.protected(s.hostDNS(false)))
 	mux.Handle("POST /host/dns/takeover", s.protected(s.hostDNS(true)))
-	mux.Handle("POST /routes/{id}/toggle", s.protected(s.toggleRoute))
-	mux.Handle("POST /routes/{id}/dns/resync", s.protected(s.resyncDNS))
-	mux.Handle("POST /routes/{id}/dns/takeover", s.protected(s.takeOverDNS))
+	mux.Handle("POST /sites/{id}/toggle", s.protected(s.toggleSite))
+	mux.Handle("POST /sites/{id}/dns/resync", s.protected(s.resyncDNS))
+	mux.Handle("POST /sites/{id}/dns/takeover", s.protected(s.takeOverDNS))
 	return s.csrf(mux)
 }
 
@@ -173,13 +173,13 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, p page) 
 
 // status renders just the routes table; the dashboard polls it every 10s.
 func (s *Server) status(w http.ResponseWriter, r *http.Request) {
-	routes, err := s.routeRows(r)
+	routes, err := s.siteRows(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	if err := s.pages["dashboard"].ExecuteTemplate(w, "routes", routes); err != nil {
+	if err := s.pages["dashboard"].ExecuteTemplate(w, "sites", routes); err != nil {
 		slog.Error("render status", "error", err)
 	}
 }
@@ -190,7 +190,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	routes, err := s.routeRows(r)
+	routes, err := s.siteRows(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -199,7 +199,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	items := s.checklist(r.Context(), routes, host)
 	s.render(w, "dashboard", http.StatusOK, page{Title: "Dashboard", Data: struct {
 		Domains   []domainRow
-		Routes    []routeRow
+		Sites     []siteRow
 		Host      *hostCard
 		Checklist []checkItem
 		SetupDone bool

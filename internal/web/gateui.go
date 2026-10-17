@@ -30,7 +30,7 @@ func (s *Server) gateIdentitiesData(ctx context.Context) ([]gateIdentityView, er
 	return out, nil
 }
 
-// revokeGateIdentity deletes one identity, cutting its session on every gated route at once.
+// revokeGateIdentity deletes one identity, cutting its session on every gated site at once.
 func (s *Server) revokeGateIdentity(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())

@@ -43,9 +43,9 @@ func init() { caddy.RegisterModule(Handler{}) }
 // Handler is the Caddy module config. It carries the route's host, mode and id, so the
 // rendered JSON pins them to what SQLite said at render time.
 type Handler struct {
-	RouteID int64  `json:"route_id"`
-	Host    string `json:"host"`
-	Mode    string `json:"mode"` // acl | open, never empty when rendered
+	SiteID int64  `json:"site_id"`
+	Host   string `json:"host"`
+	Mode   string `json:"mode"` // acl | open, never empty when rendered
 }
 
 func (Handler) CaddyModule() caddy.ModuleInfo {
@@ -134,7 +134,7 @@ func (s *Service) guarded(w http.ResponseWriter, r *http.Request, next nextFunc,
 		if ok {
 			good := h.Mode == "open"
 			if !good {
-				grants, gerr := s.st.Grants(ctx, h.RouteID)
+				grants, gerr := s.st.Grants(ctx, h.SiteID)
 				if gerr != nil {
 					slog.Error("gate grants lookup failed", "host", h.Host, "error", gerr)
 					w.WriteHeader(http.StatusServiceUnavailable)
@@ -169,7 +169,7 @@ func (s *Service) request(w http.ResponseWriter, r *http.Request, h Handler) {
 	}
 	ctx, at := s.ctx(r)
 	if h.Mode == "acl" { // open routes issue for any parseable address
-		grants, gerr := s.st.Grants(ctx, h.RouteID)
+		grants, gerr := s.st.Grants(ctx, h.SiteID)
 		if gerr != nil {
 			slog.Error("gate grants lookup failed", "host", h.Host, "error", gerr)
 			w.WriteHeader(http.StatusServiceUnavailable)

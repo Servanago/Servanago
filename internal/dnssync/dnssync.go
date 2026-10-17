@@ -34,17 +34,17 @@ func first(a, b string) string {
 	return b
 }
 
-// Reconcile brings the route's A and AAAA records in line. Cloudflare failures are recorded on the
-// dns_records rows (state "error") and are not returned: a DNS failure never reverts a route.
-func (s *Syncer) Reconcile(ctx context.Context, routeID int64) error {
-	return s.run(ctx, routeID, false)
+// Reconcile brings the site's A and AAAA records in line. Cloudflare failures are recorded on the
+// dns_records rows (state "error") and are not returned: a DNS failure never reverts a site.
+func (s *Syncer) Reconcile(ctx context.Context, siteID int64) error {
+	return s.run(ctx, siteID, false)
 }
 
 // TakeOver overwrites conflicting records (of either family) and marks them owned.
-func (s *Syncer) TakeOver(ctx context.Context, routeID int64) error { return s.run(ctx, routeID, true) }
+func (s *Syncer) TakeOver(ctx context.Context, siteID int64) error { return s.run(ctx, siteID, true) }
 
-func (s *Syncer) run(ctx context.Context, routeID int64, takeOver bool) error {
-	rt, err := s.st.GetRoute(ctx, routeID)
+func (s *Syncer) run(ctx context.Context, siteID int64, takeOver bool) error {
+	rt, err := s.st.GetSite(ctx, siteID)
 	if err != nil {
 		return err
 	}
@@ -58,15 +58,15 @@ func (s *Syncer) run(ctx context.Context, routeID int64, takeOver bool) error {
 		store.FamilyAAAA: first(rt.RecordIP6, dom.DefaultIP6),
 	}
 	for _, fam := range families {
-		row, err := s.st.GetDNS(ctx, routeID, fam)
+		row, err := s.st.GetDNS(ctx, siteID, fam)
 		if err != nil && !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
 		has := err == nil
-		row.RouteID, row.Family = routeID, fam
+		row.SiteID, row.Family = siteID, fam
 		next, drop := s.syncFamily(ctx, dom.ZoneID, name, fam, want[fam], row, has, takeOver)
 		if drop {
-			err = s.st.DeleteDNSRecord(ctx, routeID, fam)
+			err = s.st.DeleteDNSRecord(ctx, siteID, fam)
 		} else {
 			err = s.st.UpsertDNS(ctx, next)
 		}
@@ -109,7 +109,7 @@ func (s *Syncer) step(ctx context.Context, zone, name, family, want string, row 
 		return row, err
 	}
 	synced := func(id string, owned bool) store.DNSRecord {
-		return store.DNSRecord{RouteID: row.RouteID, Family: family, CFRecordID: id, Content: want, Owned: owned, State: "synced",
+		return store.DNSRecord{SiteID: row.SiteID, Family: family, CFRecordID: id, Content: want, Owned: owned, State: "synced",
 			SyncedAt: s.now().UTC().Format(time.RFC3339)}
 	}
 	switch {
@@ -129,7 +129,7 @@ func (s *Syncer) step(ctx context.Context, zone, name, family, want string, row 
 	case found.Content == want:
 		return synced(found.ID, false), nil // adopt
 	default:
-		return store.DNSRecord{RouteID: row.RouteID, Family: family, CFRecordID: found.ID, Content: found.Content, State: "conflict",
+		return store.DNSRecord{SiteID: row.SiteID, Family: family, CFRecordID: found.ID, Content: found.Content, State: "conflict",
 			Error: fmt.Sprintf("%s already points to %s, not %s", name, found.Content, want)}, nil
 	}
 }

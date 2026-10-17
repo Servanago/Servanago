@@ -2,14 +2,14 @@ import { createServer } from 'http';
 import { test, expect } from '@playwright/test';
 import { login } from './helpers';
 
-// The gate is enforced by Caddy on the route's own host: HTTPS via the internal issuer
+// The gate is enforced by Caddy on the site's own host: HTTPS via the internal issuer
 // (playwright.config.ts sets ACME_ISSUER=internal) and Chromium's host-resolver-rules maps the
 // domain to 127.0.0.1. ignoreHTTPSErrors trusts Caddy's self-signed cert.
 const GATE = 'https://st.gate.example.test:28443';
 
 test.use({ ignoreHTTPSErrors: true });
 
-test('gated route: magic link in, revoke out', async ({ page }) => {
+test('gated site: magic link in, revoke out', async ({ page }) => {
   const upstream = createServer((req, res) => res.end('GATE-UPSTREAM'));
   await new Promise<void>((ok) => upstream.listen(29111, '127.0.0.1', ok));
 
@@ -20,17 +20,17 @@ test('gated route: magic link in, revoke out', async ({ page }) => {
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'gate.example.test' })).toBeVisible();
 
-  await page.goto('/routes/new');
+  await page.goto('/sites/new/full');
   await page.locator('select[name=domain_id]').selectOption('gate.example.test');
   await page.getByLabel('Subdomain').fill('st');
   await page.getByLabel('Upstream host or IP').fill('127.0.0.1');
   await page.getByLabel('Upstream port').fill('29111');
   await page.locator('select[name=gate_mode]').selectOption('open');
-  await page.getByRole('button', { name: 'Add route' }).click();
+  await page.getByRole('button', { name: 'Add site' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('row', { name: /st\.gate\.example\.test/ }).getByText('gated (any email)')).toBeVisible();
 
-  // Unauthenticated: the portal answers on the route host, the app never sees the request.
+  // Unauthenticated: the portal answers on the site host, the app never sees the request.
   await page.goto(GATE);
   await expect(page.getByRole('heading', { name: 'Request access to st.gate.example.test' })).toBeVisible();
 
@@ -60,7 +60,7 @@ test('gated route: magic link in, revoke out', async ({ page }) => {
   await page.goto(GATE);
   await expect(page.getByRole('heading', { name: 'Request access' })).toBeVisible();
 
-  // Shared server: remove the route so later specs see the same checklist state they expect.
+  // Shared server: remove the site so later specs see the same checklist state they expect.
   await page.goto('http://127.0.0.1:28081/');
   await expect(page.getByRole('row', { name: /st\.gate\.example\.test/ }).getByRole('link', { name: 'Edit' })).toBeVisible();
   await page.getByRole('row', { name: /st\.gate\.example\.test/ }).getByRole('button', { name: 'Delete' }).click();

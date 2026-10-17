@@ -13,6 +13,7 @@ Today (after M1) the code is still the inherited baseline in shape: a single-pro
 - **Magic-link site gate and Turnstile** are kept. The gate is re-keyed from route to site and hostname.
 - **Runtimes are detected, never installed.** ServanaGo reports installed PHP-FPM and Node.js versions and shows the install command; the admin runs it.
 - **One Caddy ingress** for every site. systemd supervises application processes. Caddy does not install or supervise runtimes.
+- **Static roots may be under `/home`.** Existing `public_html` directories must work, so the root is an admin-supplied absolute path (denylist for `DATA_DIR`, `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/`; optional `SERVANAGO_STATIC_ROOTS` allowlist). The control-plane unit therefore must not set `ProtectHome=yes` (M3). M4 later moves managed sites to `/srv/servanago/sites`.
 - **Unprivileged UI.** The web UI never runs as root. Privileged work goes through a small root helper (the same binary, a `helper` subcommand) on a Unix socket, authenticated with `SO_PEERCRED`, accepting a closed set of typed actions. It takes no free-form strings and re-validates every input: slugs `^[a-z][a-z0-9-]{1,31}$`, paths confined under managed roots after `EvalSymlinks`, unit names built only as `servanago-<slug>.service`, unit and pool files written from the helper's own templates.
 - **Build and install commands** run as the site's unprivileged user, never root.
 - Unix-user separation is **not** a sandbox for mutually untrusted tenants. ServanaGo does not claim multi-tenant security.

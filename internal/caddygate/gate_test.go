@@ -75,12 +75,12 @@ func gateStore(t *testing.T) (*store.Store, int64, int64) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	acl, err := st.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: "acl", Scheme: "https",
+	acl, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "acl", Scheme: "https",
 		UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true, GateMode: "acl"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	open, err := st.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: "open", Scheme: "https",
+	open, err := st.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "open", Scheme: "https",
 		UpstreamHost: "192.168.1.21", UpstreamPort: 9000, Enabled: true, GateMode: "open"})
 	if err != nil {
 		t.Fatal(err)
@@ -131,7 +131,7 @@ const aclEmail = "alice@example.com"
 func TestGuardBlocksUpstreamWithoutSession(t *testing.T) {
 	st, acl, _ := gateStore(t)
 	s, _ := gateService(t, st)
-	h := Handler{RouteID: acl, Host: "acl.example.com", Mode: "acl"}
+	h := Handler{SiteID: acl, Host: "acl.example.com", Mode: "acl"}
 	w, reached := s.call(t, h, "GET", "/", "", nil, false, nextBody)
 	if reached {
 		t.Fatal("upstream served without a session")
@@ -148,7 +148,7 @@ func TestFullMagicLinkFlowACL(t *testing.T) {
 	if err := st.ReplaceGrants(ctx, acl, []store.Grant{{Mode: "email", Value: aclEmail}}); err != nil {
 		t.Fatal(err)
 	}
-	h := Handler{RouteID: acl, Host: "acl.example.com", Mode: "acl"}
+	h := Handler{SiteID: acl, Host: "acl.example.com", Mode: "acl"}
 
 	// Unknown email: identical page, no mail, no token.
 	w, reached := s.call(t, h, "POST", Prefix+"/request", "email=bob@example.com", nil, false, nextBody)
@@ -202,13 +202,13 @@ func TestFullMagicLinkFlowACL(t *testing.T) {
 func TestTokenIsHostPinned(t *testing.T) {
 	st, acl, open := gateStore(t)
 	s, m := gateService(t, st)
-	h := Handler{RouteID: open, Host: "open.example.com", Mode: "open"}
+	h := Handler{SiteID: open, Host: "open.example.com", Mode: "open"}
 	if _, reached := s.call(t, h, "POST", Prefix+"/request", "email=anyone@x.io", nil, false, nextBody); reached {
 		t.Fatal("upstream reached")
 	}
 	_, token := m.link(t)
 	// The token was pinned to open.example.com; a verify at the ACL host must not mint.
-	aclH := Handler{RouteID: acl, Host: "acl.example.com", Mode: "acl"}
+	aclH := Handler{SiteID: acl, Host: "acl.example.com", Mode: "acl"}
 	w, reached := s.call(t, aclH, "GET", Prefix+"/verify/"+token, "", nil, false, nextBody)
 	if reached {
 		t.Fatal("upstream reached")
@@ -221,7 +221,7 @@ func TestTokenIsHostPinned(t *testing.T) {
 func TestOpenRouteAnyEmail(t *testing.T) {
 	st, _, open := gateStore(t)
 	s, m := gateService(t, st)
-	h := Handler{RouteID: open, Host: "open.example.com", Mode: "open"}
+	h := Handler{SiteID: open, Host: "open.example.com", Mode: "open"}
 	if _, reached := s.call(t, h, "POST", Prefix+"/request", "email=passerby@nowhere.org", nil, false, nextBody); reached {
 		t.Fatal("upstream reached")
 	}
@@ -247,8 +247,8 @@ func TestCrossRouteIsolationAndSharing(t *testing.T) {
 	if err := st.ReplaceGrants(ctx, acl, []store.Grant{{Mode: "email", Value: aclEmail}}); err != nil {
 		t.Fatal(err)
 	}
-	openH := Handler{RouteID: open, Host: "open.example.com", Mode: "open"}
-	aclH := Handler{RouteID: acl, Host: "acl.example.com", Mode: "acl"}
+	openH := Handler{SiteID: open, Host: "open.example.com", Mode: "open"}
+	aclH := Handler{SiteID: acl, Host: "acl.example.com", Mode: "acl"}
 
 	// Session minted at the open route…
 	if _, reached := s.call(t, openH, "POST", Prefix+"/request", "email=other@x.io", nil, false, nextBody); reached {
@@ -278,7 +278,7 @@ func TestCrossRouteIsolationAndSharing(t *testing.T) {
 func TestSecureCookieOverTLS(t *testing.T) {
 	st, _, open := gateStore(t)
 	s, m := gateService(t, st)
-	h := Handler{RouteID: open, Host: "open.example.com", Mode: "open"}
+	h := Handler{SiteID: open, Host: "open.example.com", Mode: "open"}
 	if _, reached := s.call(t, h, "POST", Prefix+"/request", "email=a@b.c", nil, false, nextBody); reached {
 		t.Fatal("upstream reached")
 	}
@@ -293,7 +293,7 @@ func TestSecureCookieOverTLS(t *testing.T) {
 func TestFailClosedOnStoreErrors(t *testing.T) {
 	st, acl, _ := gateStore(t)
 	s, _ := gateService(t, st)
-	h := Handler{RouteID: acl, Host: "acl.example.com", Mode: "acl"}
+	h := Handler{SiteID: acl, Host: "acl.example.com", Mode: "acl"}
 	_ = st.Close()
 	w, reached := s.call(t, h, "GET", "/", "", &http.Cookie{Name: CookieName, Value: "junk"}, false, nextBody)
 	if reached {
@@ -350,7 +350,7 @@ func TestIssuanceRefusedWithoutConfig(t *testing.T) {
 	if err := st.ReplaceGrants(ctx, acl, []store.Grant{{Mode: "email", Value: aclEmail}}); err != nil {
 		t.Fatal(err)
 	}
-	h := Handler{RouteID: acl, Host: "acl.example.com", Mode: "acl"}
+	h := Handler{SiteID: acl, Host: "acl.example.com", Mode: "acl"}
 	s := New(st, nil, "", "", 443) // nothing configured
 	s.now = nowUTC
 	w, reached := s.call(t, h, "POST", Prefix+"/request", "email="+aclEmail, nil, false, nextBody)

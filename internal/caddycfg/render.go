@@ -39,7 +39,7 @@ type Options struct {
 
 type State struct {
 	Domains []store.Domain
-	Routes  []store.Route
+	Sites   []store.Site
 }
 
 type m = map[string]any
@@ -56,27 +56,27 @@ func Render(st State, o Options) ([]byte, error) {
 		domains[d.ID] = d
 	}
 
-	type hostRoute struct {
+	type hostSite struct {
 		host string
-		r    store.Route
+		r    store.Site
 	}
-	var hr []hostRoute
-	for _, r := range st.Routes {
-		if !r.Enabled { // a disabled route is not in Caddy at all: no handler, no certificate work
+	var hr []hostSite
+	for _, r := range st.Sites {
+		if !r.Enabled { // a disabled site is not in Caddy at all: no handler, no certificate work
 			continue
 		}
 		d, ok := domains[r.DomainID]
 		if !ok {
-			return nil, fmt.Errorf("render: route %d references unknown domain %d", r.ID, r.DomainID)
+			return nil, fmt.Errorf("render: site %d references unknown domain %d", r.ID, r.DomainID)
 		}
-		hr = append(hr, hostRoute{r.Subdomain + "." + d.Name, r})
+		hr = append(hr, hostSite{r.Subdomain + "." + d.Name, r})
 	}
 	sort.Slice(hr, func(i, j int) bool { return hr[i].host < hr[j].host })
 
 	routes := []any{hostMatch(o.UIHost, m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": o.UIUpstream}}})}
 	perHost := map[int64][]string{}
 	for _, x := range hr {
-		h, err := routeHandler(x.host, x.r)
+		h, err := siteHandler(x.host, x.r)
 		if err != nil {
 			return nil, err
 		}
@@ -154,7 +154,7 @@ func issuer(o Options) m {
 	return i
 }
 
-func routeHandler(host string, r store.Route) (any, error) {
+func siteHandler(host string, r store.Site) (any, error) {
 	proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
 	if r.Scheme == "https" {
 		tls := m{}
@@ -176,7 +176,7 @@ func routeHandler(host string, r store.Route) (any, error) {
 
 	var sub []any
 	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
-		sub = append(sub, m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "route_id": r.ID}}})
+		sub = append(sub, m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID}}})
 	}
 	if cidrs := strings.Fields(r.Allowlist); len(cidrs) > 0 {
 		sub = append(sub, m{

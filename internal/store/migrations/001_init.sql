@@ -11,7 +11,7 @@ CREATE TABLE domains (
   created_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE routes (
+CREATE TABLE sites (
   id              INTEGER PRIMARY KEY,
   domain_id       INTEGER NOT NULL REFERENCES domains(id) ON DELETE RESTRICT,
   subdomain       TEXT NOT NULL,
@@ -20,7 +20,7 @@ CREATE TABLE routes (
   upstream_port   INTEGER NOT NULL CHECK (upstream_port BETWEEN 1 AND 65535),
   tls_skip_verify INTEGER NOT NULL DEFAULT 0,
   enabled         INTEGER NOT NULL DEFAULT 1,
-  record_ip       TEXT,                       -- IPv4 override for this route's A record; NULL = domain default
+  record_ip       TEXT,                       -- IPv4 override for this site's A record; NULL = domain default
   record_ip6      TEXT,                       -- IPv6 override for its AAAA record; NULL = domain default
   allowlist       TEXT NOT NULL DEFAULT '',
   basic_user      TEXT,
@@ -31,9 +31,9 @@ CREATE TABLE routes (
   UNIQUE (domain_id, subdomain)
 );
 
--- One Cloudflare record per route and family (A or AAAA).
+-- One Cloudflare record per site and family (A or AAAA).
 CREATE TABLE dns_records (
-  route_id     INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+  site_id     INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
   family       TEXT NOT NULL DEFAULT 'A' CHECK (family IN ('A','AAAA')),
   cf_record_id TEXT,
   content      TEXT,
@@ -41,10 +41,10 @@ CREATE TABLE dns_records (
   state        TEXT NOT NULL DEFAULT 'pending' CHECK (state IN ('pending','synced','error','conflict')),
   error        TEXT,
   synced_at    TEXT,
-  PRIMARY KEY (route_id, family)
+  PRIMARY KEY (site_id, family)
 );
 
--- The records for SERVANAGO_HOST itself; not tied to a route, so a twin of dns_records keyed by family only.
+-- The records for SERVANAGO_HOST itself; not tied to a site, so a twin of dns_records keyed by family only.
 CREATE TABLE ui_dns_record (
   family       TEXT PRIMARY KEY CHECK (family IN ('A','AAAA')),
   cf_record_id TEXT,
@@ -79,10 +79,10 @@ CREATE TABLE passkeys (
 
 -- Magic-link site gate (DESIGN.md §18).
 CREATE TABLE gate_grants (
-  route_id INTEGER NOT NULL REFERENCES routes(id) ON DELETE CASCADE,
+  site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
   mode     TEXT NOT NULL CHECK (mode IN ('email', 'domain')),
   value    TEXT NOT NULL,
-  UNIQUE (route_id, mode, value)
+  UNIQUE (site_id, mode, value)
 );
 CREATE TABLE gate_identities (
   email      TEXT PRIMARY KEY,

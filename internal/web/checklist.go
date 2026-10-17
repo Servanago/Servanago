@@ -18,7 +18,7 @@ type checkItem struct {
 
 // checklist reports whether the basics work: token, the UI address (DNS + certificate), a first site.
 // The token and UI-address DNS items show only with Cloudflare configured (host is nil without DNS management).
-func (s *Server) checklist(ctx context.Context, routes []routeRow, host *hostCard) []checkItem {
+func (s *Server) checklist(ctx context.Context, routes []siteRow, host *hostCard) []checkItem {
 	var items []checkItem
 	if s.dnsOn() {
 		items = append(items, s.tokenItem())

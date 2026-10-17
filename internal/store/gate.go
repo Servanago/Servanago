@@ -1,5 +1,5 @@
 // Gate methods: ACL grants, magic-link tokens (hashed, consumed atomically) and session
-// identities for the per-route magic-link gate (DESIGN.md §18). Hashing and clocks live in the
+// identities for the per-site magic-link gate (DESIGN.md §18). Hashing and clocks live in the
 // caller: these methods take already-hashed values and RFC3339 time strings.
 package store
 
@@ -14,21 +14,21 @@ import (
 )
 
 type Grant struct {
-	RouteID int64
-	Mode    string // email | domain
-	Value   string
+	SiteID int64
+	Mode   string // email | domain
+	Value  string
 }
 
-func (s *Store) Grants(ctx context.Context, routeID int64) ([]Grant, error) {
-	rows, err := s.q.QueryContext(ctx, "SELECT route_id, mode, value FROM gate_grants WHERE route_id=? ORDER BY mode, value", routeID)
+func (s *Store) Grants(ctx context.Context, siteID int64) ([]Grant, error) {
+	rows, err := s.q.QueryContext(ctx, "SELECT site_id, mode, value FROM gate_grants WHERE site_id=? ORDER BY mode, value", siteID)
 	if err != nil {
-		return nil, fmt.Errorf("list grants for route %d: %w", routeID, err)
+		return nil, fmt.Errorf("list grants for site %d: %w", siteID, err)
 	}
 	defer rows.Close()
 	var out []Grant
 	for rows.Next() {
 		var g Grant
-		if err := rows.Scan(&g.RouteID, &g.Mode, &g.Value); err != nil {
+		if err := rows.Scan(&g.SiteID, &g.Mode, &g.Value); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
@@ -36,18 +36,18 @@ func (s *Store) Grants(ctx context.Context, routeID int64) ([]Grant, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) setGrants(ctx context.Context, routeID int64, gs []Grant) error {
-	if _, err := s.q.ExecContext(ctx, "DELETE FROM gate_grants WHERE route_id=?", routeID); err != nil {
-		return fmt.Errorf("clear grants for route %d: %w", routeID, err)
+func (s *Store) setGrants(ctx context.Context, siteID int64, gs []Grant) error {
+	if _, err := s.q.ExecContext(ctx, "DELETE FROM gate_grants WHERE site_id=?", siteID); err != nil {
+		return fmt.Errorf("clear grants for site %d: %w", siteID, err)
 	}
 	for _, g := range gs {
-		g.RouteID = routeID
+		g.SiteID = siteID
 		if g.Mode != "email" && g.Mode != "domain" {
 			return fmt.Errorf("grant mode %q is not email or domain", g.Mode)
 		}
-		if _, err := s.q.ExecContext(ctx, "INSERT OR IGNORE INTO gate_grants (route_id, mode, value) VALUES (?,?,?)",
-			routeID, g.Mode, g.Value); err != nil {
-			return fmt.Errorf("add grant for route %d: %w", routeID, err)
+		if _, err := s.q.ExecContext(ctx, "INSERT OR IGNORE INTO gate_grants (site_id, mode, value) VALUES (?,?,?)",
+			siteID, g.Mode, g.Value); err != nil {
+			return fmt.Errorf("add grant for site %d: %w", siteID, err)
 		}
 	}
 	return nil
@@ -55,18 +55,18 @@ func (s *Store) setGrants(ctx context.Context, routeID int64, gs []Grant) error 
 
 // grantsEqual is set membership by (mode, value); ids are irrelevant when comparing before/after.
 func grantsEqual(a, b Grant) bool {
-	return a.RouteID == b.RouteID && a.Mode == b.Mode && a.Value == b.Value
+	return a.SiteID == b.SiteID && a.Mode == b.Mode && a.Value == b.Value
 }
 
-// ReplaceGrants swaps a route's grant set and revokes identities that lose their last
+// ReplaceGrants swaps a site's grant set and revokes identities that lose their last
 // qualifying grant: a session no longer matched by any ACL row is deleted in the same tx.
 // ponytail: O(identities × grants) rescan; homelab ACL counts are trivial.
-func (s *Store) ReplaceGrants(ctx context.Context, routeID int64, gs []Grant) error {
-	old, err := s.Grants(ctx, routeID)
+func (s *Store) ReplaceGrants(ctx context.Context, siteID int64, gs []Grant) error {
+	old, err := s.Grants(ctx, siteID)
 	if err != nil {
 		return err
 	}
-	if err := s.setGrants(ctx, routeID, gs); err != nil {
+	if err := s.setGrants(ctx, siteID, gs); err != nil {
 		return err
 	}
 	removed := make([]gatelogic.Rule, 0, len(old))
@@ -82,7 +82,7 @@ func (s *Store) ReplaceGrants(ctx context.Context, routeID int64, gs []Grant) er
 	if len(removed) == 0 {
 		return nil
 	}
-	all, err := s.allGrants(ctx) // includes the new set for routeID
+	all, err := s.allGrants(ctx) // includes the new set for siteID
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ type GateIdentity struct {
 func (s *Store) GateIdentities(ctx context.Context) ([]GateIdentity, error) {
 	rows, err := s.q.QueryContext(ctx, `SELECT i.email, i.created_at, i.last_seen, i.expire,
 		COALESCE((SELECT GROUP_CONCAT(CASE g.mode WHEN 'email' THEN g.value ELSE '@'||g.value END || ' at ' || (r.subdomain || '.' || d.name))
-			FROM gate_grants g JOIN routes r ON r.id=g.route_id JOIN domains d ON d.id=r.domain_id
+			FROM gate_grants g JOIN sites r ON r.id=g.site_id JOIN domains d ON d.id=r.domain_id
 			WHERE r.gate_mode='acl' AND (
 				(g.mode='email' AND g.value=i.email) OR
 				(g.mode='domain' AND SUBSTR(i.email, INSTR(i.email,'@')) = '@'||g.value))), '') AS rules
@@ -254,7 +254,7 @@ func (s *Store) ConsumeToken(ctx context.Context, tokenHash, host, now string) (
 
 // allGrants is the raw grant set for revoke bookkeeping (every mode).
 func (s *Store) allGrants(ctx context.Context) ([]Grant, error) {
-	rows, err := s.q.QueryContext(ctx, "SELECT route_id, mode, value FROM gate_grants")
+	rows, err := s.q.QueryContext(ctx, "SELECT site_id, mode, value FROM gate_grants")
 	if err != nil {
 		return nil, fmt.Errorf("list all grants: %w", err)
 	}
@@ -262,7 +262,7 @@ func (s *Store) allGrants(ctx context.Context) ([]Grant, error) {
 	var out []Grant
 	for rows.Next() {
 		var g Grant
-		if err := rows.Scan(&g.RouteID, &g.Mode, &g.Value); err != nil {
+		if err := rows.Scan(&g.SiteID, &g.Mode, &g.Value); err != nil {
 			return nil, err
 		}
 		out = append(out, g)

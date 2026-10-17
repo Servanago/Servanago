@@ -23,11 +23,11 @@ func opts() Options {
 }
 
 var (
-	dom   = store.Domain{ID: 1, Name: "example.com", CertMode: "wildcard"}
-	route = store.Route{ID: 1, DomainID: 1, Subdomain: "sonarr", Scheme: "http", UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true}
+	dom  = store.Domain{ID: 1, Name: "example.com", CertMode: "wildcard"}
+	site = store.Site{ID: 1, DomainID: 1, Subdomain: "sonarr", Scheme: "http", UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true}
 )
 
-func with(r store.Route, f func(*store.Route)) store.Route { f(&r); return r }
+func with(r store.Site, f func(*store.Site)) store.Site { f(&r); return r }
 
 func TestRenderGolden(t *testing.T) {
 	staging := opts()
@@ -47,36 +47,36 @@ func TestRenderGolden(t *testing.T) {
 		state State
 	}{
 		{"bootstrap", opts(), State{}},
-		{"one_route", opts(), State{[]store.Domain{dom}, []store.Route{route}}},
-		{"disabled", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.Enabled = false })}}},
-		{"allowlist", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.Allowlist = "192.168.0.0/16\n10.0.0.0/8" })}}},
-		{"basic_auth", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.BasicUser, r.BasicHash = "u", "$2a$14$abc" })}}},
-		{"https_skip_verify", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.Scheme, r.TLSSkipVerify = "https", true })}}},
-		{"https_verify", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.Scheme = "https" })}}},
-		{"stream", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.Stream = true })}}},
-		{"max_body", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.MaxBody = 2 << 30 })}}},
-		{"stream_max_body_basic", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) {
+		{"one_route", opts(), State{[]store.Domain{dom}, []store.Site{site}}},
+		{"disabled", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Enabled = false })}}},
+		{"allowlist", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Allowlist = "192.168.0.0/16\n10.0.0.0/8" })}}},
+		{"basic_auth", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.BasicUser, r.BasicHash = "u", "$2a$14$abc" })}}},
+		{"https_skip_verify", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Scheme, r.TLSSkipVerify = "https", true })}}},
+		{"https_verify", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Scheme = "https" })}}},
+		{"stream", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Stream = true })}}},
+		{"max_body", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.MaxBody = 2 << 30 })}}},
+		{"stream_max_body_basic", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) {
 			r.Stream, r.MaxBody, r.BasicUser, r.BasicHash = true, 2<<30, "u", "$2a$14$abc"
 		})}}},
 		{"staging", staging, State{}},
 		{"prod_default", opts(), State{[]store.Domain{dom}, nil}},
 		{"propagation_set", timed, State{}},
-		{"per_host", opts(), State{[]store.Domain{perHost}, []store.Route{route, with(route, func(r *store.Route) { r.ID, r.Subdomain = 2, "radarr" })}}},
-		{"per_host_one_disabled", opts(), State{[]store.Domain{perHost}, []store.Route{route, with(route, func(r *store.Route) { r.ID, r.Subdomain, r.Enabled = 2, "radarr", false })}}},
-		{"per_host_all_disabled", opts(), State{[]store.Domain{perHost}, []store.Route{with(route, func(r *store.Route) { r.Enabled = false })}}},
+		{"per_host", opts(), State{[]store.Domain{perHost}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Subdomain = 2, "radarr" })}}},
+		{"per_host_one_disabled", opts(), State{[]store.Domain{perHost}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Subdomain, r.Enabled = 2, "radarr", false })}}},
+		{"per_host_all_disabled", opts(), State{[]store.Domain{perHost}, []store.Site{with(site, func(r *store.Site) { r.Enabled = false })}}},
 		{"per_host_empty", opts(), State{[]store.Domain{perHost}, nil}},
-		{"internal_issuer", internal, State{[]store.Domain{dom}, []store.Route{route}}},
-		{"ipv6_upstream_and_allowlist", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) {
+		{"internal_issuer", internal, State{[]store.Domain{dom}, []store.Site{site}}},
+		{"ipv6_upstream_and_allowlist", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) {
 			r.UpstreamHost, r.UpstreamPort, r.Allowlist = "2001:db8::5", 8443, "2001:db8::/32\nfd00::/8\n192.168.0.0/16"
 		})}}},
 		// No Cloudflare: default ACME challenges. A wildcard domain cannot be validated over HTTP-01, so it renders per host.
 		{"http01_bootstrap", http01, State{}},
-		{"http01_wildcard_domain", http01, State{[]store.Domain{dom}, []store.Route{route, with(route, func(r *store.Route) { r.ID, r.Subdomain = 2, "radarr" }), with(route, func(r *store.Route) { r.ID, r.Subdomain, r.Enabled = 3, "off", false })}}},
-		{"http01_per_host_domain", http01, State{[]store.Domain{perHost}, []store.Route{route}}},
-		{"banking_homelab", opts(), State{[]store.Domain{dom}, []store.Route{{ID: 1, DomainID: 1, Subdomain: "banking", Scheme: "http", UpstreamHost: "192.168.25.165", UpstreamPort: 8766, Enabled: true}}}},
-		{"gate_acl", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode = "acl" })}}},
-		{"gate_open", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode = "open" })}}},
-		{"gate_acl_allowlist", opts(), State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode, r.Allowlist = "acl", "192.168.0.0/16" })}}},
+		{"http01_wildcard_domain", http01, State{[]store.Domain{dom}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Subdomain = 2, "radarr" }), with(site, func(r *store.Site) { r.ID, r.Subdomain, r.Enabled = 3, "off", false })}}},
+		{"http01_per_host_domain", http01, State{[]store.Domain{perHost}, []store.Site{site}}},
+		{"banking_homelab", opts(), State{[]store.Domain{dom}, []store.Site{{ID: 1, DomainID: 1, Subdomain: "banking", Scheme: "http", UpstreamHost: "192.168.25.165", UpstreamPort: 8766, Enabled: true}}}},
+		{"gate_acl", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "acl" })}}},
+		{"gate_open", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "open" })}}},
+		{"gate_acl_allowlist", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode, r.Allowlist = "acl", "192.168.0.0/16" })}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,7 +124,7 @@ func acmeIssuers(t *testing.T, b []byte) []map[string]any {
 }
 
 func TestEveryIssuerHasEmail(t *testing.T) {
-	b, err := Render(State{[]store.Domain{dom}, []store.Route{route}}, opts())
+	b, err := Render(State{[]store.Domain{dom}, []store.Site{site}}, opts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -148,9 +148,9 @@ func TestEmptyEmailErrors(t *testing.T) {
 }
 
 func TestDeterministic(t *testing.T) {
-	st := State{[]store.Domain{dom, {ID: 2, Name: "b.org", CertMode: "per_host"}}, []store.Route{
-		route, with(route, func(r *store.Route) { r.ID, r.Subdomain = 2, "radarr" }),
-		with(route, func(r *store.Route) { r.ID, r.DomainID = 3, 2 }),
+	st := State{[]store.Domain{dom, {ID: 2, Name: "b.org", CertMode: "per_host"}}, []store.Site{
+		site, with(site, func(r *store.Site) { r.ID, r.Subdomain = 2, "radarr" }),
+		with(site, func(r *store.Site) { r.ID, r.DomainID = 3, 2 }),
 	}}
 	a, _ := Render(st, opts())
 	for range 20 {
@@ -163,7 +163,7 @@ func TestDeterministic(t *testing.T) {
 
 func TestNoLiteralToken(t *testing.T) {
 	t.Setenv("CLOUDFLARE_API_TOKEN", "SECRET-TOKEN-XYZ")
-	b, err := Render(State{[]store.Domain{dom}, []store.Route{route}}, opts())
+	b, err := Render(State{[]store.Domain{dom}, []store.Site{site}}, opts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,7 +189,7 @@ func TestPropagationOnlyWhenSet(t *testing.T) {
 }
 
 func TestRenderUsesServanagoNames(t *testing.T) {
-	got, err := Render(State{[]store.Domain{dom}, []store.Route{with(route, func(r *store.Route) { r.GateMode = "acl" })}}, opts())
+	got, err := Render(State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "acl" })}}, opts())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestRenderUsesServanagoNames(t *testing.T) {
 func TestHTTP01RendersNoDNSChallengeAndNoWildcards(t *testing.T) {
 	o := opts()
 	o.HTTP01 = true
-	got, err := Render(State{[]store.Domain{dom}, []store.Route{route}}, o)
+	got, err := Render(State{[]store.Domain{dom}, []store.Site{site}}, o)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,7 +1,7 @@
 import { test, expect } from '@playwright/test';
 import { login } from './helpers';
 
-test('toggle a route and edit allowlist and basic auth', async ({ page }) => {
+test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await login(page);
   await page.goto('/domains');
   await page.getByLabel('Domain', { exact: true }).fill('controls.example.net');
@@ -9,7 +9,7 @@ test('toggle a route and edit allowlist and basic auth', async ({ page }) => {
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'controls.example.net' })).toBeVisible();
 
-  await page.goto('/routes/new');
+  await page.goto('/sites/new/full');
   await page.locator('select[name=domain_id]').selectOption('controls.example.net');
   await page.getByLabel('Subdomain').fill('bazarr');
   await page.getByLabel('Upstream port').fill('6767');
@@ -17,7 +17,7 @@ test('toggle a route and edit allowlist and basic auth', async ({ page }) => {
   await page.getByLabel('Allowed sources').fill('192.168.0.0/16');
   await page.getByLabel('User', { exact: true }).fill('alice');
   await page.getByLabel('Password').fill('s3cret');
-  await page.getByRole('button', { name: 'Add route' }).click();
+  await page.getByRole('button', { name: 'Add site' }).click();
   const row = page.getByRole('row', { name: /bazarr\.controls\.example\.net/ });
   await expect(row).toBeVisible();
   await expect(row.getByRole('cell', { name: 'enabled' })).toBeVisible();

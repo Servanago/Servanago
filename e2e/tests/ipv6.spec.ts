@@ -10,12 +10,12 @@ test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA record
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: /2001:db8::10/ })).toBeVisible();
 
-  await page.goto('/routes/new');
+  await page.goto('/sites/new/full');
   await page.locator('select[name=domain_id]').selectOption('dual.example.net');
   await page.getByLabel('Subdomain').fill('web');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.30');
   await page.getByLabel('Upstream port').fill('8080');
-  await page.getByRole('button', { name: 'Add route' }).click();
+  await page.getByRole('button', { name: 'Add site' }).click();
 
   const row = page.getByRole('row', { name: /web\.dual\.example\.net/ });
   await expect(row.getByText('A synced', { exact: true })).toBeVisible();

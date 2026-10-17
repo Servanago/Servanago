@@ -7,9 +7,9 @@ import (
 
 // ServanaGo is not an arr-stack front end: no preset picker, no Docker discovery panel.
 func TestFormsHaveNoPresetOrDockerPanel(t *testing.T) {
-	site, _ := siteServer(t)
-	route, _, _ := newDNSServer(t) // has a domain, so /routes/new renders the form
-	for path, s := range map[string]*Server{"/sites/new": site, "/routes/new": route} {
+	quick, _ := siteServer(t)
+	full, _, _ := newDNSServer(t) // has a domain, so /sites/new/full renders the form
+	for path, s := range map[string]*Server{"/sites/new": quick, "/sites/new/full": full} {
 		body := s.do(req{path: path}).Body.String()
 		if !strings.Contains(body, "<form") {
 			t.Fatalf("%s rendered no form", path)

@@ -8,20 +8,20 @@ import (
 	"github.com/servanago/servanago/internal/store"
 )
 
-func addRoute(t *testing.T, s *Server, d store.Domain, extra ...string) store.Route {
+func addRoute(t *testing.T, s *Server, d store.Domain, extra ...string) store.Site {
 	t.Helper()
 	kv := append([]string{"domain_id", itoa(d.ID), "enabled", "on"}, extra...)
-	w := s.do(req{method: "POST", path: "/routes", body: form(kv...).Encode(), hdr: htmxPost})
+	w := s.do(req{method: "POST", path: "/sites/full", body: form(kv...).Encode(), hdr: htmxPost})
 	if w.Code != 204 {
-		t.Fatalf("create route: %d %q", w.Code, w.Body.String())
+		t.Fatalf("create site: %d %q", w.Code, w.Body.String())
 	}
-	rs, _ := s.deps.Store.ListRoutes(context.Background())
+	rs, _ := s.deps.Store.ListSites(context.Background())
 	return rs[len(rs)-1]
 }
 
-func dnsRow(t *testing.T, s *Server, routeID int64) store.DNSRecord {
+func dnsRow(t *testing.T, s *Server, siteID int64) store.DNSRecord {
 	t.Helper()
-	d, err := s.deps.Store.GetDNS(context.Background(), routeID, store.FamilyA)
+	d, err := s.deps.Store.GetDNS(context.Background(), siteID, store.FamilyA)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -58,8 +58,8 @@ func TestDNSFailureKeepsRouteAndRetryWorks(t *testing.T) {
 	s, cf, d := newDNSServer(t)
 	cf.dns.FailWith("cloudflare is down")
 	r := addRoute(t, s, d)
-	if rs, _ := s.deps.Store.ListRoutes(context.Background()); len(rs) != 1 {
-		t.Fatal("route reverted by DNS failure")
+	if rs, _ := s.deps.Store.ListSites(context.Background()); len(rs) != 1 {
+		t.Fatal("site reverted by DNS failure")
 	}
 	if row := dnsRow(t, s, r.ID); row.State != "error" || !strings.Contains(row.Error, "cloudflare is down") {
 		t.Fatalf("%+v", row)
@@ -68,7 +68,7 @@ func TestDNSFailureKeepsRouteAndRetryWorks(t *testing.T) {
 		t.Errorf("error/retry not shown: %s", body)
 	}
 	cf.dns.FailWith("")
-	if w := s.do(req{method: "POST", path: "/routes/" + itoa(r.ID) + "/dns/resync", hdr: htmxPost}); w.Code != 204 {
+	if w := s.do(req{method: "POST", path: "/sites/" + itoa(r.ID) + "/dns/resync", hdr: htmxPost}); w.Code != 204 {
 		t.Fatalf("resync: %d", w.Code)
 	}
 	if row := dnsRow(t, s, r.ID); row.State != "synced" {
@@ -86,7 +86,7 @@ func TestConflictAndTakeOver(t *testing.T) {
 	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "Take over") {
 		t.Errorf("take over action missing")
 	}
-	if w := s.do(req{method: "POST", path: "/routes/" + itoa(r.ID) + "/dns/takeover", hdr: htmxPost}); w.Code != 204 {
+	if w := s.do(req{method: "POST", path: "/sites/" + itoa(r.ID) + "/dns/takeover", hdr: htmxPost}); w.Code != 204 {
 		t.Fatalf("takeover: %d", w.Code)
 	}
 	if row := dnsRow(t, s, r.ID); row.State != "synced" || !row.Owned || cf.dns.Records()[0].Content != "10.0.0.1" {
@@ -98,10 +98,10 @@ func TestDeleteConfirmationAndRecordHandling(t *testing.T) {
 	// owned: confirmation says the record is deleted, and it is
 	s, cf, d := newDNSServer(t)
 	r := addRoute(t, s, d)
-	if body := s.do(req{path: "/routes/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "also deletes the A record sonarr.example.com") {
+	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "also deletes the A record sonarr.example.com") {
 		t.Errorf("owned confirmation: %s", body)
 	}
-	if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID) + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
+	if w := s.do(req{method: "DELETE", path: "/sites/" + itoa(r.ID) + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
 		t.Fatal(w.Code)
 	}
 	if len(cf.dns.Records()) != 0 {
@@ -112,10 +112,10 @@ func TestDeleteConfirmationAndRecordHandling(t *testing.T) {
 	s, cf, d = newDNSServer(t)
 	cf.dns.Seed("sonarr.example.com", "10.0.0.1")
 	r = addRoute(t, s, d)
-	if body := s.do(req{path: "/routes/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "left in place") {
+	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "left in place") {
 		t.Errorf("adopted confirmation: %s", body)
 	}
-	s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID), hdr: htmxPost})
+	s.do(req{method: "DELETE", path: "/sites/" + itoa(r.ID), hdr: htmxPost})
 	if len(cf.dns.Records()) != 1 {
 		t.Error("adopted record deleted")
 	}
@@ -125,8 +125,8 @@ func TestDeleteReportsDNSFailure(t *testing.T) {
 	s, cf, d := newDNSServer(t)
 	r := addRoute(t, s, d)
 	cf.dns.FailWith("nope")
-	if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(r.ID) + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
-		t.Fatalf("route delete must still succeed: %d", w.Code)
+	if w := s.do(req{method: "DELETE", path: "/sites/" + itoa(r.ID) + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("site delete must still succeed: %d", w.Code)
 	}
 	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "could not be removed") {
 		t.Errorf("flash missing: %s", body)
@@ -140,7 +140,7 @@ func TestRenameMovesRecord(t *testing.T) {
 	s, cf, d := newDNSServer(t)
 	r := addRoute(t, s, d)
 	e := form("domain_id", itoa(d.ID), "subdomain", "tv", "enabled", "on")
-	if w := s.do(req{method: "PUT", path: "/routes/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 204 {
+	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 204 {
 		t.Fatalf("%d %q", w.Code, w.Body.String())
 	}
 	recs := cf.dns.Records()
@@ -152,11 +152,11 @@ func TestRenameMovesRecord(t *testing.T) {
 func TestDeleteRecordOnlyWhenAskedAndOwned(t *testing.T) {
 	del := func(s *Server, id int64, q string) {
 		t.Helper()
-		if w := s.do(req{method: "DELETE", path: "/routes/" + itoa(id) + q, hdr: htmxPost}); w.Code != 204 {
+		if w := s.do(req{method: "DELETE", path: "/sites/" + itoa(id) + q, hdr: htmxPost}); w.Code != 204 {
 			t.Fatalf("delete: %d %q", w.Code, w.Body.String())
 		}
 	}
-	// owned, not asked: the route goes, the record stays
+	// owned, not asked: the site goes, the record stays
 	s, cf, d := newDNSServer(t)
 	del(s, addRoute(t, s, d).ID, "")
 	if len(cf.dns.Records()) != 1 {
@@ -178,7 +178,7 @@ func TestDeleteRecordOnlyWhenAskedAndOwned(t *testing.T) {
 }
 
 func TestListRowDeletePanel(t *testing.T) {
-	// One dialog for the whole page, outside the polled #routes fragment so a refresh cannot close it.
+	// One dialog for the whole page, outside the polled #sites fragment so a refresh cannot close it.
 	s, _, d := newDNSServer(t)
 	addRoute(t, s, d)
 	body := s.do(req{path: "/"}).Body.String()
@@ -204,7 +204,7 @@ func TestRowActionsAreLabelledIcons(t *testing.T) {
 	s, cf, d := newDNSServer(t)
 	addRoute(t, s, d)
 	cf.dns.FailWith("down")
-	s.do(req{method: "POST", path: "/routes/1/dns/resync", hdr: htmxPost}) // row ends in DNS error: Retry button
+	s.do(req{method: "POST", path: "/sites/1/dns/resync", hdr: htmxPost}) // row ends in DNS error: Retry button
 	body := s.do(req{path: "/status"}).Body.String()
 	for _, label := range []string{"Edit", "Disable", "Delete", "Retry"} {
 		if !strings.Contains(body, `aria-label="`+label+`"`) {

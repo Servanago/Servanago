@@ -6,11 +6,11 @@
 <article>
 {{if .Rows}}
 <table>
-<thead><tr><th>Domain</th>{{if .DNSOn}}<th>Default IPs</th>{{end}}<th>Certificates</th><th>Routes</th><th></th></tr></thead>
+<thead><tr><th>Domain</th>{{if .DNSOn}}<th>Default IPs</th>{{end}}<th>Certificates</th><th>Sites</th><th></th></tr></thead>
 <tbody>
 {{range .Rows}}
 <tr>
-<td>{{.Name}}</td>{{if $.Data.DNSOn}}<td>{{.DefaultIP}}{{if .DefaultIP6}}<br>{{.DefaultIP6}}{{end}}</td>{{end}}<td>{{.CertMode}}</td><td>{{.Routes}}</td>
+<td>{{.Name}}</td>{{if $.Data.DNSOn}}<td>{{.DefaultIP}}{{if .DefaultIP6}}<br>{{.DefaultIP6}}{{end}}</td>{{end}}<td>{{.CertMode}}</td><td>{{.Sites}}</td>
 <td><button class="outline danger" hx-delete="/domains/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}? {{if $.Data.DNSOn}}Its DNS records and certificates are not touched.{{else}}Its certificates are not touched.{{end}}">Remove</button></td>
 </tr>
 {{end}}
@@ -31,7 +31,7 @@
 <label>Certificates
 <select name="cert_mode">
 <option value="wildcard">Wildcard (one *.domain certificate)</option>
-<option value="per_host">Per host (one certificate per route)</option>
+<option value="per_host">Per host (one certificate per site)</option>
 </select></label>
 {{hint "cert_mode"}} {{helplink "certificates"}}{{end}}
 <button type="submit">Add domain</button>

@@ -60,7 +60,7 @@ func certStatus(info CertInfo, handshakeErr error, logErr string, now time.Time)
 type Upstream struct {
 	Up      bool
 	Checked time.Time
-	addr    string // route ids are reused by SQLite, so state is only valid for the address it probed
+	addr    string // site ids are reused by SQLite, so state is only valid for the address it probed
 }
 
 // Monitor keeps upstream state in memory and probes certificates on demand.
@@ -82,14 +82,14 @@ func NewMonitor(st *store.Store, httpsAddr string) *Monitor {
 
 const dialTimeout = 2 * time.Second
 
-func (m *Monitor) dialRoute(ctx context.Context, r store.Route) Upstream {
+func (m *Monitor) dialSite(ctx context.Context, r store.Site) Upstream {
 	addr := upstreamAddr(r)
 	return Upstream{Up: m.Dial(ctx, addr, dialTimeout) == nil, Checked: time.Now(), addr: addr}
 }
 
-// Check probes one route now, so a new route shows a real state before the next sweep.
-func (m *Monitor) Check(ctx context.Context, r store.Route) Upstream {
-	u := m.dialRoute(ctx, r)
+// Check probes one site now, so a new site shows a real state before the next sweep.
+func (m *Monitor) Check(ctx context.Context, r store.Site) Upstream {
+	u := m.dialSite(ctx, r)
 	if ctx.Err() != nil {
 		return u // cancelled, not a real result: do not cache "down"
 	}
@@ -99,20 +99,20 @@ func (m *Monitor) Check(ctx context.Context, r store.Route) Upstream {
 	return u
 }
 
-// Sweep dials every enabled route's upstream once.
+// Sweep dials every enabled site's upstream once.
 func (m *Monitor) Sweep(ctx context.Context) {
-	routes, err := m.store.ListRoutes(ctx)
+	routes, err := m.store.ListSites(ctx)
 	if err != nil {
 		return
 	}
-	var enabled []store.Route
+	var enabled []store.Site
 	for _, r := range routes {
 		if r.Enabled {
 			enabled = append(enabled, r)
 		}
 	}
 	results := make([]Upstream, len(enabled))
-	Parallel(len(enabled), func(i int) { results[i] = m.dialRoute(ctx, enabled[i]) })
+	Parallel(len(enabled), func(i int) { results[i] = m.dialSite(ctx, enabled[i]) })
 	next := make(map[int64]Upstream, len(enabled))
 	for i, r := range enabled {
 		next[r.ID] = results[i]
@@ -138,14 +138,14 @@ func (m *Monitor) Run(ctx context.Context, interval time.Duration) {
 }
 
 // Upstream returns the last probe of r's current upstream address, if there is one.
-func (m *Monitor) Upstream(r store.Route) (Upstream, bool) {
+func (m *Monitor) Upstream(r store.Site) (Upstream, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	u, ok := m.up[r.ID]
 	return u, ok && u.addr == upstreamAddr(r)
 }
 
-func upstreamAddr(r store.Route) string {
+func upstreamAddr(r store.Site) string {
 	return net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))
 }
 

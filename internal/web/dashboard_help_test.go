@@ -128,7 +128,7 @@ func TestChecklist(t *testing.T) {
 		t.Errorf("no sites: %s", got)
 	}
 	addRoute(t, s, d)
-	rows, _ := s.routeRows(newReq(t))
+	rows, _ := s.siteRows(newReq(t))
 	if got := state(s.checklist(ctx, rows, nil), "first site"); got != "ok" {
 		t.Errorf("with a site: %s", got)
 	}

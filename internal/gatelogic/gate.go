@@ -81,7 +81,7 @@ func ParseACL(text string) ([]Rule, error) {
 	return rules, nil
 }
 
-// Qualify is the ACL check: does email match any of the route's rules.
+// Qualify is the ACL check: does email match any of the site's rules.
 func Qualify(email string, rules []Rule) bool {
 	for _, r := range rules {
 		if r.Mode == "email" {
@@ -98,7 +98,7 @@ func Qualify(email string, rules []Rule) bool {
 }
 
 // Window is the sliding session window for a mode: allowlisted identities are trusted longer
-// than open-route ones. Unknown modes get the short window (fail closed).
+// than open-site ones. Unknown modes get the short window (fail closed).
 func Window(mode string) time.Duration {
 	if mode == "acl" {
 		return 30 * 24 * time.Hour

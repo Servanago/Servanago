@@ -49,9 +49,9 @@ func TestAddSiteCreatesZoneDomainRouteAndRecord(t *testing.T) {
 	if len(ds) != 1 || ds[0].Name != "example.com" || ds[0].ZoneID != "zone123" || ds[0].DefaultIP != "192.168.25.165" || ds[0].CertMode != "wildcard" {
 		t.Fatalf("domain: %+v", ds)
 	}
-	rs, _ := s.deps.Store.ListRoutes(ctx)
+	rs, _ := s.deps.Store.ListSites(ctx)
 	if len(rs) != 1 || rs[0].Subdomain != "oc" || rs[0].UpstreamHost != "192.168.25.165" || rs[0].UpstreamPort != 9200 || rs[0].Scheme != "http" || !rs[0].Enabled {
-		t.Fatalf("route: %+v", rs)
+		t.Fatalf("site: %+v", rs)
 	}
 	recs := cf.dns.Records()
 	if len(recs) != 1 || recs[0].Name != "oc.example.com" || recs[0].Content != "192.168.25.165" {
@@ -81,7 +81,7 @@ func TestAddSiteReusesExistingDomain(t *testing.T) {
 		t.Errorf("zone looked up again for a managed domain: %d calls", cf.calls.Load()-before)
 	}
 	ds, _ := s.deps.Store.ListDomains(ctx)
-	rs, _ := s.deps.Store.ListRoutes(ctx)
+	rs, _ := s.deps.Store.ListSites(ctx)
 	if len(ds) != 1 || ds[0].DefaultIP != "10.0.0.9" || ds[0].CertMode != "per_host" || len(rs) != 1 || rs[0].DomainID != d.ID {
 		t.Fatalf("%+v %+v", ds, rs)
 	}
@@ -103,7 +103,7 @@ func TestAddSiteLongestManagedDomainWins(t *testing.T) {
 	if code, body := postSite(s, siteForm("hostname", "oc.lab.example.com")); code != 204 {
 		t.Fatalf("%d %q", code, body)
 	}
-	rs, _ := s.deps.Store.ListRoutes(ctx)
+	rs, _ := s.deps.Store.ListSites(ctx)
 	if len(rs) != 1 || rs[0].DomainID != lab.ID || rs[0].Subdomain != "oc" {
 		t.Fatalf("%+v", rs)
 	}
@@ -135,7 +135,7 @@ func TestAddSiteValidation(t *testing.T) {
 				t.Fatalf("%d %q", code, body)
 			}
 			ds, _ := s.deps.Store.ListDomains(context.Background())
-			rs, _ := s.deps.Store.ListRoutes(context.Background())
+			rs, _ := s.deps.Store.ListSites(context.Background())
 			if len(ds) != 0 || len(rs) != 0 {
 				t.Errorf("invalid input left rows behind: %+v %+v", ds, rs)
 			}

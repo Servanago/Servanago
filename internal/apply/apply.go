@@ -95,11 +95,11 @@ func (s *Service) render(ctx context.Context, q *store.Store) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	rs, err := q.ListRoutes(ctx)
+	rs, err := q.ListSites(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return caddycfg.Render(caddycfg.State{Domains: ds, Routes: rs}, s.opts)
+	return caddycfg.Render(caddycfg.State{Domains: ds, Sites: rs}, s.opts)
 }
 
 // loadCfg skips Caddy when the config is byte-identical to the live one.

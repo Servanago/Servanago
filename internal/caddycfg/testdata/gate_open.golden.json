@@ -46,7 +46,7 @@
                           "handler": "servanago_gate",
                           "host": "sonarr.example.com",
                           "mode": "open",
-                          "route_id": 1
+                          "site_id": 1
                         }
                       ]
                     },

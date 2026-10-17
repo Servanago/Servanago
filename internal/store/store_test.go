@@ -25,8 +25,8 @@ func mustDomain(t *testing.T, s *Store, name string) Domain {
 	return d
 }
 
-func route(domainID int64, sub string) Route {
-	return Route{DomainID: domainID, Subdomain: sub, Scheme: "http", UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true}
+func site(domainID int64, sub string) Site {
+	return Site{DomainID: domainID, Subdomain: sub, Scheme: "http", UpstreamHost: "192.168.1.20", UpstreamPort: 8989, Enabled: true}
 }
 
 func TestMigrationsIdempotent(t *testing.T) {
@@ -84,47 +84,47 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	d := mustDomain(t, s, "example.com")
 
-	r := route(d.ID, "sonarr")
+	r := site(d.ID, "sonarr")
 	r.RecordIP, r.Allowlist, r.BasicUser, r.BasicHash = "10.9.9.9", "192.168.0.0/16", "u", "h"
 	r.Stream, r.MaxBody = true, 2<<30
-	r, err := s.CreateRoute(ctx, r)
+	r, err := s.CreateSite(ctx, r)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.GetRoute(ctx, r.ID)
+	got, err := s.GetSite(ctx, r.ID)
 	if err != nil || got != r {
 		t.Fatalf("round trip: %+v vs %+v (%v)", got, r, err)
 	}
 
-	if _, err := s.CreateRoute(ctx, route(d.ID, "sonarr")); err == nil {
+	if _, err := s.CreateSite(ctx, site(d.ID, "sonarr")); err == nil {
 		t.Error("duplicate (domain, subdomain) accepted")
 	}
 	for _, p := range []int{0, 65536} {
-		bad := route(d.ID, "p")
+		bad := site(d.ID, "p")
 		bad.UpstreamPort = p
-		if _, err := s.CreateRoute(ctx, bad); err == nil {
+		if _, err := s.CreateSite(ctx, bad); err == nil {
 			t.Errorf("port %d accepted", p)
 		}
 	}
-	bad := route(d.ID, "s")
+	bad := site(d.ID, "s")
 	bad.Scheme = "ftp"
-	if _, err := s.CreateRoute(ctx, bad); err == nil {
+	if _, err := s.CreateSite(ctx, bad); err == nil {
 		t.Error("bad scheme accepted")
 	}
 
 	got.Enabled, got.RecordIP, got.BasicUser, got.BasicHash = false, "", "", ""
-	if err := s.UpdateRoute(ctx, got); err != nil {
+	if err := s.UpdateSite(ctx, got); err != nil {
 		t.Fatal(err)
 	}
-	after, _ := s.GetRoute(ctx, r.ID)
+	after, _ := s.GetSite(ctx, r.ID)
 	if after.Enabled || after.RecordIP != "" || after.BasicUser != "" {
 		t.Errorf("update/NULL round trip: %+v", after)
 	}
 
-	if _, err := s.CreateRoute(ctx, route(d.ID, "radarr")); err != nil {
+	if _, err := s.CreateSite(ctx, site(d.ID, "radarr")); err != nil {
 		t.Fatal(err)
 	}
-	rs, err := s.ListRoutes(ctx)
+	rs, err := s.ListSites(ctx)
 	if err != nil || len(rs) != 2 || rs[0].Subdomain != "radarr" {
 		t.Fatalf("list (ordered by domain, subdomain): %+v %v", rs, err)
 	}
@@ -132,7 +132,7 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 	if err := s.DeleteDomain(ctx, d.ID); err == nil {
 		t.Error("domain with routes deleted (FK restrict)")
 	}
-	if err := s.DeleteRoute(ctx, r.ID); err != nil {
+	if err := s.DeleteSite(ctx, r.ID); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -140,11 +140,11 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 func TestDNSRecordCascade(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	d := mustDomain(t, s, "example.com")
-	r, _ := s.CreateRoute(ctx, route(d.ID, "sonarr"))
+	r, _ := s.CreateSite(ctx, site(d.ID, "sonarr"))
 	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err == nil {
 		t.Error("want not found before upsert")
 	}
-	rec := DNSRecord{RouteID: r.ID, CFRecordID: "cf1", Content: "10.0.0.1", Owned: true, State: "synced"}
+	rec := DNSRecord{SiteID: r.ID, CFRecordID: "cf1", Content: "10.0.0.1", Owned: true, State: "synced"}
 	if err := s.UpsertDNS(ctx, rec); err != nil {
 		t.Fatal(err)
 	}
@@ -156,14 +156,14 @@ func TestDNSRecordCascade(t *testing.T) {
 	if err != nil || got.State != "error" || got.Error != "boom" || !got.Owned || got.Family != FamilyA {
 		t.Fatalf("%+v %v", got, err)
 	}
-	if err := s.UpsertDNS(ctx, DNSRecord{RouteID: r.ID, State: "weird"}); err == nil {
+	if err := s.UpsertDNS(ctx, DNSRecord{SiteID: r.ID, State: "weird"}); err == nil {
 		t.Error("bad state accepted")
 	}
-	if err := s.DeleteRoute(ctx, r.ID); err != nil {
+	if err := s.DeleteSite(ctx, r.ID); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := s.GetDNS(ctx, r.ID, FamilyA); err == nil {
-		t.Error("dns record survived route delete")
+		t.Error("dns record survived site delete")
 	}
 }
 
@@ -186,10 +186,10 @@ func TestTxRollback(t *testing.T) {
 func TestListAndDeleteDNS(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	d := mustDomain(t, s, "example.com")
-	a, _ := s.CreateRoute(ctx, route(d.ID, "a"))
-	b, _ := s.CreateRoute(ctx, route(d.ID, "b"))
-	for _, r := range []Route{a, b} {
-		if err := s.UpsertDNS(ctx, DNSRecord{RouteID: r.ID, State: "synced", Owned: true}); err != nil {
+	a, _ := s.CreateSite(ctx, site(d.ID, "a"))
+	b, _ := s.CreateSite(ctx, site(d.ID, "b"))
+	for _, r := range []Site{a, b} {
+		if err := s.UpsertDNS(ctx, DNSRecord{SiteID: r.ID, State: "synced", Owned: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -200,7 +200,7 @@ func TestListAndDeleteDNS(t *testing.T) {
 	if err := s.DeleteDNS(ctx, a.ID); err != nil {
 		t.Fatal(err)
 	}
-	if all, _ := s.ListDNS(ctx); len(all) != 1 || all[0].RouteID != b.ID {
+	if all, _ := s.ListDNS(ctx); len(all) != 1 || all[0].SiteID != b.ID {
 		t.Fatalf("%v", all)
 	}
 }
@@ -320,9 +320,9 @@ func TestPasskeysAndResetAuth(t *testing.T) {
 func TestDNSRecordsPerFamily(t *testing.T) {
 	s, ctx := open(t), context.Background()
 	d := mustDomain(t, s, "example.com")
-	r, _ := s.CreateRoute(ctx, route(d.ID, "app"))
-	a := DNSRecord{RouteID: r.ID, Family: FamilyA, CFRecordID: "a1", Content: "203.0.113.5", Owned: true, State: "synced"}
-	aaaa := DNSRecord{RouteID: r.ID, Family: FamilyAAAA, CFRecordID: "q1", Content: "2001:db8::5", Owned: false, State: "conflict", Error: "x"}
+	r, _ := s.CreateSite(ctx, site(d.ID, "app"))
+	a := DNSRecord{SiteID: r.ID, Family: FamilyA, CFRecordID: "a1", Content: "203.0.113.5", Owned: true, State: "synced"}
+	aaaa := DNSRecord{SiteID: r.ID, Family: FamilyAAAA, CFRecordID: "q1", Content: "2001:db8::5", Owned: false, State: "conflict", Error: "x"}
 	for _, rec := range []DNSRecord{a, aaaa} {
 		if err := s.UpsertDNS(ctx, rec); err != nil {
 			t.Fatal(err)
@@ -339,7 +339,7 @@ func TestDNSRecordsPerFamily(t *testing.T) {
 	if all, _ := s.ListDNS(ctx); len(all) != 2 || all[0].Family != FamilyA || all[1].Family != FamilyAAAA {
 		t.Fatalf("list must give A then AAAA: %+v", all)
 	}
-	if err := s.UpsertDNS(ctx, DNSRecord{RouteID: r.ID, Family: "MX", State: "synced"}); err == nil {
+	if err := s.UpsertDNS(ctx, DNSRecord{SiteID: r.ID, Family: "MX", State: "synced"}); err == nil {
 		t.Error("an unknown family was accepted")
 	}
 	if err := s.DeleteDNSRecord(ctx, r.ID, FamilyAAAA); err != nil {
@@ -360,11 +360,11 @@ func TestDNSRecordsPerFamily(t *testing.T) {
 	}
 	_ = s.UpsertDNS(ctx, a)
 	_ = s.UpsertDNS(ctx, aaaa)
-	if err := s.DeleteRoute(ctx, r.ID); err != nil {
+	if err := s.DeleteSite(ctx, r.ID); err != nil {
 		t.Fatal(err)
 	}
 	if all, _ := s.ListDNS(ctx); len(all) != 0 {
-		t.Errorf("rows survived the route: %+v", all)
+		t.Errorf("rows survived the site: %+v", all)
 	}
 }
 
@@ -402,17 +402,17 @@ func TestIPv6FieldsRoundTrip(t *testing.T) {
 	if got, _ := s.GetDomain(ctx, d.ID); got.DefaultIP6 != "" {
 		t.Errorf("default_ip6 not cleared: %+v", got)
 	}
-	r := route(d.ID, "app")
+	r := site(d.ID, "app")
 	r.RecordIP6 = "2001:db8::77"
-	r, err = s.CreateRoute(ctx, r)
+	r, err = s.CreateSite(ctx, r)
 	if err != nil || r.RecordIP6 != "2001:db8::77" {
 		t.Fatalf("%+v %v", r, err)
 	}
 	r.RecordIP6 = ""
-	if err := s.UpdateRoute(ctx, r); err != nil {
+	if err := s.UpdateSite(ctx, r); err != nil {
 		t.Fatal(err)
 	}
-	if got, _ := s.GetRoute(ctx, r.ID); got.RecordIP6 != "" {
+	if got, _ := s.GetSite(ctx, r.ID); got.RecordIP6 != "" {
 		t.Errorf("record_ip6 not cleared: %+v", got)
 	}
 }

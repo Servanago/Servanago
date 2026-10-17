@@ -63,7 +63,7 @@ func TestNoDNSAddSiteUnderManagedDomain(t *testing.T) {
 	if code != 204 {
 		t.Fatalf("add site: %d %q", code, body)
 	}
-	rs, _ := s.deps.Store.ListRoutes(context.Background())
+	rs, _ := s.deps.Store.ListSites(context.Background())
 	if len(rs) != 1 || rs[0].Subdomain != "app" {
 		t.Fatalf("%+v", rs)
 	}
@@ -84,7 +84,7 @@ func TestNoDNSPagesHideCloudflare(t *testing.T) {
 	s := noCFServer(t)
 	addDomainNoDNS(s)
 	postSite(s, siteForm("hostname", "app.example.com"))
-	for _, path := range []string{"/", "/domains", "/sites/new", "/routes/new"} {
+	for _, path := range []string{"/", "/domains", "/sites/new", "/sites/new/full"} {
 		w := s.do(req{path: path})
 		if w.Code != 200 {
 			t.Fatalf("%s: %d", path, w.Code)
@@ -107,15 +107,15 @@ func TestNoDNSRouteLifecycleDoesNotPanic(t *testing.T) {
 	if code, body := postSite(s, siteForm("hostname", "app.example.com")); code != 204 {
 		t.Fatalf("%d %q", code, body)
 	}
-	rs, _ := s.deps.Store.ListRoutes(context.Background())
+	rs, _ := s.deps.Store.ListSites(context.Background())
 	id := itoa(rs[0].ID)
-	if w := s.do(req{method: "POST", path: "/routes/" + id + "/toggle", hdr: htmxPost}); w.Code != 204 {
+	if w := s.do(req{method: "POST", path: "/sites/" + id + "/toggle", hdr: htmxPost}); w.Code != 204 {
 		t.Errorf("toggle: %d %q", w.Code, w.Body.String())
 	}
-	if w := s.do(req{method: "DELETE", path: "/routes/" + id + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
+	if w := s.do(req{method: "DELETE", path: "/sites/" + id + "?delete_dns=on", hdr: htmxPost}); w.Code != 204 {
 		t.Errorf("delete with delete_dns: %d %q", w.Code, w.Body.String())
 	}
-	for _, p := range []string{"/routes/1/dns/resync", "/routes/1/dns/takeover", "/host/dns/resync", "/host/dns/takeover"} {
+	for _, p := range []string{"/sites/1/dns/resync", "/sites/1/dns/takeover", "/host/dns/resync", "/host/dns/takeover"} {
 		if w := s.do(req{method: "POST", path: p, hdr: htmxPost}); w.Code != 404 {
 			t.Errorf("%s with no DNS management: %d, want 404", p, w.Code)
 		}

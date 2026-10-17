@@ -147,14 +147,14 @@ func TestLoadReloadAndRollback(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, body := get(t, e.httpsPort); body != "two" {
-		t.Fatalf("new route not live: %q", body)
+		t.Fatalf("new site not live: %q", body)
 	}
 
 	if err := caddy.Load([]byte(`{"apps":{"http":{"servers":{"s":{"routes":[{"handle":[{"handler":"nope"}]}]}}}}}`), true); err == nil {
 		t.Fatal("invalid config accepted")
 	}
 	if _, body := get(t, e.httpsPort); body != "two" {
-		t.Fatalf("old route lost after rejected load: %q", body)
+		t.Fatalf("old site lost after rejected load: %q", body)
 	}
 }
 

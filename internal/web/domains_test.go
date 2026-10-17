@@ -138,15 +138,15 @@ func TestDeleteDomain(t *testing.T) {
 	ctx := context.Background()
 	postDomain(s, "example.com", "10.0.0.1", "wildcard")
 	d, _ := s.deps.Store.ListDomains(ctx)
-	r, _ := s.deps.Store.CreateRoute(ctx, store.Route{DomainID: d[0].ID, Subdomain: "a", Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
+	r, _ := s.deps.Store.CreateSite(ctx, store.Site{DomainID: d[0].ID, Subdomain: "a", Scheme: "http", UpstreamHost: "h", UpstreamPort: 1, Enabled: true})
 
 	del := func() *httptest.ResponseRecorder {
 		return s.do(req{method: "DELETE", path: "/domains/" + itoa(d[0].ID), hdr: htmxPost})
 	}
-	if w := del(); w.Code != 409 || !strings.Contains(w.Body.String(), "route") {
+	if w := del(); w.Code != 409 || !strings.Contains(w.Body.String(), "site") {
 		t.Fatalf("with routes: %d %q", w.Code, w.Body.String())
 	}
-	if err := s.deps.Store.DeleteRoute(ctx, r.ID); err != nil {
+	if err := s.deps.Store.DeleteSite(ctx, r.ID); err != nil {
 		t.Fatal(err)
 	}
 	if w := del(); w.Code != 204 {

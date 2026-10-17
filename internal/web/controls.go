@@ -16,7 +16,7 @@ import (
 
 // applyControls sets the allowlist and basic-auth fields on r from the form.
 // r's current BasicHash is kept when the user stays and no new password is given.
-func applyControls(r *store.Route, v url.Values) error {
+func applyControls(r *store.Site, v url.Values) error {
 	var cidrs []string
 	for _, line := range strings.Split(strings.ReplaceAll(v.Get("allowlist"), "\r\n", "\n"), "\n") {
 		line = strings.TrimSpace(line)
@@ -75,19 +75,19 @@ func applyControls(r *store.Route, v url.Values) error {
 	return nil
 }
 
-func (s *Server) toggleRoute(w http.ResponseWriter, r *http.Request) {
+func (s *Server) toggleSite(w http.ResponseWriter, r *http.Request) {
 	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if err != nil {
-		fail(w, http.StatusBadRequest, "bad route id")
+		fail(w, http.StatusBadRequest, "bad site id")
 		return
 	}
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
-		cur, err := tx.GetRoute(r.Context(), id)
+		cur, err := tx.GetSite(r.Context(), id)
 		if err != nil {
-			return userError{http.StatusNotFound, "route not found"}
+			return userError{http.StatusNotFound, "site not found"}
 		}
 		cur.Enabled = !cur.Enabled
-		return tx.UpdateRoute(r.Context(), cur)
+		return tx.UpdateSite(r.Context(), cur)
 	})
 	if err != nil {
 		failErr(w, err)

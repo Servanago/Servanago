@@ -10,9 +10,9 @@ import (
 	"github.com/servanago/servanago/internal/store"
 )
 
-// parseGate reads the route form's protection block. Gate-off clears the grants; other modes
+// parseGate reads the site form's protection block. Gate-off clears the grants; other modes
 // need email delivery and the session key configured, and acl needs at least one rule.
-func (s *Server) parseGate(rt store.Route, v url.Values) ([]store.Grant, error) {
+func (s *Server) parseGate(rt store.Site, v url.Values) ([]store.Grant, error) {
 	if err := s.gateNeedsHelp(rt); err != nil {
 		return nil, err
 	}
@@ -33,7 +33,7 @@ func (s *Server) parseGate(rt store.Route, v url.Values) ([]store.Grant, error) 
 	return gs, nil
 }
 
-// gateACLText is the textarea content for an existing route's allowlist.
+// gateACLText is the textarea content for an existing site's allowlist.
 func gateACLText(gs []store.Grant) string {
 	lines := make([]string, 0, len(gs))
 	for _, g := range gs {
@@ -47,7 +47,7 @@ func gateACLText(gs []store.Grant) string {
 }
 
 // gateNeedsHelp refuses a gate when the app cannot honor it (checked once, both save paths).
-func (s *Server) gateNeedsHelp(rt store.Route) error {
+func (s *Server) gateNeedsHelp(rt store.Site) error {
 	if rt.GateMode == "" {
 		return nil
 	}

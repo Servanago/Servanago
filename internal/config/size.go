@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-// MaxBodyLimit is the largest upload limit a route may set.
+// MaxBodyLimit is the largest upload limit a site may set.
 const MaxBodyLimit = 100 << 30
 
 var sizeUnits = []struct {

@@ -15,7 +15,7 @@ type Domain struct {
 	CreatedAt  string
 }
 
-type Route struct {
+type Site struct {
 	ID            int64
 	DomainID      int64
 	Subdomain     string
@@ -25,7 +25,7 @@ type Route struct {
 	TLSSkipVerify bool
 	Enabled       bool
 	RecordIP      string // "" = domain default
-	RecordIP6     string // IPv6 override for this route's AAAA record; "" = domain default
+	RecordIP6     string // IPv6 override for this site's AAAA record; "" = domain default
 	Allowlist     string // newline-separated CIDRs
 	BasicUser     string
 	BasicHash     string // bcrypt
@@ -34,14 +34,14 @@ type Route struct {
 	GateMode      string // "" | acl | open: the magic-link gate (gate.go)
 }
 
-// Record families: one DNS row per route (and one for the UI host) per family.
+// Record families: one DNS row per site (and one for the UI host) per family.
 const (
 	FamilyA    = "A"
 	FamilyAAAA = "AAAA"
 )
 
 type DNSRecord struct {
-	RouteID    int64
+	SiteID     int64
 	Family     string // FamilyA | FamilyAAAA; "" means FamilyA
 	CFRecordID string
 	Content    string
@@ -110,47 +110,47 @@ func (s *Store) DeleteDomain(ctx context.Context, id int64) error {
 	return nil
 }
 
-const routeCols = "id, domain_id, subdomain, scheme, upstream_host, upstream_port, tls_skip_verify, enabled, " +
+const siteCols = "id, domain_id, subdomain, scheme, upstream_host, upstream_port, tls_skip_verify, enabled, " +
 	"COALESCE(record_ip,''), COALESCE(record_ip6,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), stream, max_body, gate_mode"
 
-func scanRoute(r interface{ Scan(...any) error }) (Route, error) {
-	var x Route
+func scanSite(r interface{ Scan(...any) error }) (Site, error) {
+	var x Site
 	err := r.Scan(&x.ID, &x.DomainID, &x.Subdomain, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.TLSSkipVerify,
 		&x.Enabled, &x.RecordIP, &x.RecordIP6, &x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode)
 	return x, err
 }
 
-func (s *Store) CreateRoute(ctx context.Context, r Route) (Route, error) {
-	res, err := s.q.ExecContext(ctx, `INSERT INTO routes (domain_id, subdomain, scheme, upstream_host, upstream_port,
+func (s *Store) CreateSite(ctx context.Context, r Site) (Site, error) {
+	res, err := s.q.ExecContext(ctx, `INSERT INTO sites (domain_id, subdomain, scheme, upstream_host, upstream_port,
 		tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode)
 		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		r.DomainID, r.Subdomain, r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled,
 		nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode)
 	if err != nil {
-		return Route{}, fmt.Errorf("create route %s: %w", r.Subdomain, err)
+		return Site{}, fmt.Errorf("create site %s: %w", r.Subdomain, err)
 	}
 	id, _ := res.LastInsertId()
-	return s.GetRoute(ctx, id)
+	return s.GetSite(ctx, id)
 }
 
-func (s *Store) GetRoute(ctx context.Context, id int64) (Route, error) {
-	r, err := scanRoute(s.q.QueryRowContext(ctx, "SELECT "+routeCols+" FROM routes WHERE id=?", id))
+func (s *Store) GetSite(ctx context.Context, id int64) (Site, error) {
+	r, err := scanSite(s.q.QueryRowContext(ctx, "SELECT "+siteCols+" FROM sites WHERE id=?", id))
 	if err != nil {
-		return Route{}, fmt.Errorf("get route %d: %w", id, err)
+		return Site{}, fmt.Errorf("get site %d: %w", id, err)
 	}
 	return r, nil
 }
 
-// ListRoutes returns all routes ordered by domain then subdomain.
-func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
-	rows, err := s.q.QueryContext(ctx, "SELECT "+routeCols+" FROM routes ORDER BY domain_id, subdomain")
+// ListSites returns all routes ordered by domain then subdomain.
+func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
+	rows, err := s.q.QueryContext(ctx, "SELECT "+siteCols+" FROM sites ORDER BY domain_id, subdomain")
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var out []Route
+	var out []Site
 	for rows.Next() {
-		r, err := scanRoute(rows)
+		r, err := scanSite(rows)
 		if err != nil {
 			return nil, err
 		}
@@ -159,20 +159,20 @@ func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
 	return out, rows.Err()
 }
 
-func (s *Store) UpdateRoute(ctx context.Context, r Route) error {
-	_, err := s.q.ExecContext(ctx, `UPDATE routes SET subdomain=?, scheme=?, upstream_host=?, upstream_port=?,
+func (s *Store) UpdateSite(ctx context.Context, r Site) error {
+	_, err := s.q.ExecContext(ctx, `UPDATE sites SET subdomain=?, scheme=?, upstream_host=?, upstream_port=?,
 		tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=? WHERE id=?`,
 		r.Subdomain, r.Scheme, r.UpstreamHost, r.UpstreamPort, r.TLSSkipVerify, r.Enabled, nullStr(r.RecordIP), nullStr(r.RecordIP6),
 		r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ID)
 	if err != nil {
-		return fmt.Errorf("update route %d: %w", r.ID, err)
+		return fmt.Errorf("update site %d: %w", r.ID, err)
 	}
 	return nil
 }
 
-func (s *Store) DeleteRoute(ctx context.Context, id int64) error {
-	if _, err := s.q.ExecContext(ctx, "DELETE FROM routes WHERE id=?", id); err != nil {
-		return fmt.Errorf("delete route %d: %w", id, err)
+func (s *Store) DeleteSite(ctx context.Context, id int64) error {
+	if _, err := s.q.ExecContext(ctx, "DELETE FROM sites WHERE id=?", id); err != nil {
+		return fmt.Errorf("delete site %d: %w", id, err)
 	}
 	return nil
 }
@@ -184,35 +184,35 @@ func familyOf(f string) string {
 	return f
 }
 
-// GetDNS returns the route's record of one family (FamilyA or FamilyAAAA).
-func (s *Store) GetDNS(ctx context.Context, routeID int64, family string) (DNSRecord, error) {
+// GetDNS returns the site's record of one family (FamilyA or FamilyAAAA).
+func (s *Store) GetDNS(ctx context.Context, siteID int64, family string) (DNSRecord, error) {
 	d := DNSRecord{Family: familyOf(family)}
-	err := s.q.QueryRowContext(ctx, `SELECT route_id, COALESCE(cf_record_id,''), COALESCE(content,''), owned, state,
-		COALESCE(error,''), COALESCE(synced_at,'') FROM dns_records WHERE route_id=? AND family=?`, routeID, d.Family).
-		Scan(&d.RouteID, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt)
+	err := s.q.QueryRowContext(ctx, `SELECT site_id, COALESCE(cf_record_id,''), COALESCE(content,''), owned, state,
+		COALESCE(error,''), COALESCE(synced_at,'') FROM dns_records WHERE site_id=? AND family=?`, siteID, d.Family).
+		Scan(&d.SiteID, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt)
 	if err != nil {
-		return DNSRecord{}, fmt.Errorf("get %s record for route %d: %w", d.Family, routeID, err)
+		return DNSRecord{}, fmt.Errorf("get %s record for site %d: %w", d.Family, siteID, err)
 	}
 	return d, nil
 }
 
 func (s *Store) UpsertDNS(ctx context.Context, d DNSRecord) error {
 	d.Family = familyOf(d.Family)
-	_, err := s.q.ExecContext(ctx, `INSERT INTO dns_records (route_id, family, cf_record_id, content, owned, state, error, synced_at)
-		VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(route_id, family) DO UPDATE SET cf_record_id=excluded.cf_record_id,
+	_, err := s.q.ExecContext(ctx, `INSERT INTO dns_records (site_id, family, cf_record_id, content, owned, state, error, synced_at)
+		VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(site_id, family) DO UPDATE SET cf_record_id=excluded.cf_record_id,
 		content=excluded.content, owned=excluded.owned, state=excluded.state, error=excluded.error, synced_at=excluded.synced_at`,
-		d.RouteID, d.Family, nullStr(d.CFRecordID), nullStr(d.Content), d.Owned, d.State, nullStr(d.Error), nullStr(d.SyncedAt))
+		d.SiteID, d.Family, nullStr(d.CFRecordID), nullStr(d.Content), d.Owned, d.State, nullStr(d.Error), nullStr(d.SyncedAt))
 	if err != nil {
-		return fmt.Errorf("upsert %s record for route %d: %w", d.Family, d.RouteID, err)
+		return fmt.Errorf("upsert %s record for site %d: %w", d.Family, d.SiteID, err)
 	}
 	return nil
 }
 
-const dnsCols = "route_id, family, COALESCE(cf_record_id,''), COALESCE(content,''), owned, state, COALESCE(error,''), COALESCE(synced_at,'')"
+const dnsCols = "site_id, family, COALESCE(cf_record_id,''), COALESCE(content,''), owned, state, COALESCE(error,''), COALESCE(synced_at,'')"
 
-// ListDNS returns every record, ordered by route then family (A before AAAA).
+// ListDNS returns every record, ordered by site then family (A before AAAA).
 func (s *Store) ListDNS(ctx context.Context) ([]DNSRecord, error) {
-	rows, err := s.q.QueryContext(ctx, "SELECT "+dnsCols+" FROM dns_records ORDER BY route_id, family")
+	rows, err := s.q.QueryContext(ctx, "SELECT "+dnsCols+" FROM dns_records ORDER BY site_id, family")
 	if err != nil {
 		return nil, err
 	}
@@ -220,7 +220,7 @@ func (s *Store) ListDNS(ctx context.Context) ([]DNSRecord, error) {
 	var out []DNSRecord
 	for rows.Next() {
 		var d DNSRecord
-		if err := rows.Scan(&d.RouteID, &d.Family, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt); err != nil {
+		if err := rows.Scan(&d.SiteID, &d.Family, &d.CFRecordID, &d.Content, &d.Owned, &d.State, &d.Error, &d.SyncedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, d)
@@ -228,23 +228,23 @@ func (s *Store) ListDNS(ctx context.Context) ([]DNSRecord, error) {
 	return out, rows.Err()
 }
 
-// DeleteDNS removes every record row of the route, whatever the family.
-func (s *Store) DeleteDNS(ctx context.Context, routeID int64) error {
-	if _, err := s.q.ExecContext(ctx, "DELETE FROM dns_records WHERE route_id=?", routeID); err != nil {
-		return fmt.Errorf("delete dns records for route %d: %w", routeID, err)
+// DeleteDNS removes every record row of the site, whatever the family.
+func (s *Store) DeleteDNS(ctx context.Context, siteID int64) error {
+	if _, err := s.q.ExecContext(ctx, "DELETE FROM dns_records WHERE site_id=?", siteID); err != nil {
+		return fmt.Errorf("delete dns records for site %d: %w", siteID, err)
 	}
 	return nil
 }
 
-// DeleteDNSRecord removes one family's row, for example the AAAA row when the route's IPv6 address is cleared.
-func (s *Store) DeleteDNSRecord(ctx context.Context, routeID int64, family string) error {
-	if _, err := s.q.ExecContext(ctx, "DELETE FROM dns_records WHERE route_id=? AND family=?", routeID, familyOf(family)); err != nil {
-		return fmt.Errorf("delete %s record for route %d: %w", familyOf(family), routeID, err)
+// DeleteDNSRecord removes one family's row, for example the AAAA row when the site's IPv6 address is cleared.
+func (s *Store) DeleteDNSRecord(ctx context.Context, siteID int64, family string) error {
+	if _, err := s.q.ExecContext(ctx, "DELETE FROM dns_records WHERE site_id=? AND family=?", siteID, familyOf(family)); err != nil {
+		return fmt.Errorf("delete %s record for site %d: %w", familyOf(family), siteID, err)
 	}
 	return nil
 }
 
-// The UI host's records live in ui_dns_record, one row per family (RouteID is unused).
+// The UI host's records live in ui_dns_record, one row per family (SiteID is unused).
 
 func (s *Store) GetUIDNS(ctx context.Context, family string) (DNSRecord, error) {
 	d := DNSRecord{Family: familyOf(family)}

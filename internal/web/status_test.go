@@ -29,8 +29,8 @@ func TestStatusFragment(t *testing.T) {
 	s, _, d := newDNSServer(t)
 	ctx := context.Background()
 	upPort := openPort(t)
-	mk := func(sub string, port int) store.Route {
-		r, err := s.deps.Store.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: sub, Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: port, Enabled: true})
+	mk := func(sub string, port int) store.Site {
+		r, err := s.deps.Store.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: sub, Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: port, Enabled: true})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +38,7 @@ func TestStatusFragment(t *testing.T) {
 	}
 	mk("alive", upPort)
 	mk("dead", 1)
-	if _, err := s.deps.Store.CreateRoute(ctx, store.Route{DomainID: d.ID, Subdomain: "off", Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: 1}); err != nil {
+	if _, err := s.deps.Store.CreateSite(ctx, store.Site{DomainID: d.ID, Subdomain: "off", Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: 1}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -69,7 +69,7 @@ func TestStatusFragment(t *testing.T) {
 		t.Errorf("dead row: %s", r)
 	}
 	if r := row("off.example.com"); strings.Contains(r, "cert-") || strings.Contains(r, "up-") {
-		t.Errorf("disabled route probed: %s", r)
+		t.Errorf("disabled site probed: %s", r)
 	}
 }
 
@@ -94,7 +94,7 @@ func TestStatusProbesUnknownRoutesInParallel(t *testing.T) {
 	s, _, d := newDNSServer(t)
 	const n = 8
 	for i := range n {
-		if _, err := s.deps.Store.CreateRoute(context.Background(), store.Route{DomainID: d.ID, Subdomain: "r" + strconv.Itoa(i), Scheme: "http", UpstreamHost: "10.9.9.9", UpstreamPort: 2000 + i, Enabled: true}); err != nil {
+		if _, err := s.deps.Store.CreateSite(context.Background(), store.Site{DomainID: d.ID, Subdomain: "r" + strconv.Itoa(i), Scheme: "http", UpstreamHost: "10.9.9.9", UpstreamPort: 2000 + i, Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}

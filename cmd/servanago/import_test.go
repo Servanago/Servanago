@@ -52,11 +52,11 @@ func TestImportSites(t *testing.T) {
 	if len(ds) != 1 || ds[0].Name != "example.com" || ds[0].ZoneID != "z1" || ds[0].DefaultIP != "10.0.0.5" {
 		t.Fatalf("domains = %+v", ds)
 	}
-	rs, _ := st.ListRoutes(ctx)
+	rs, _ := st.ListSites(ctx)
 	if len(rs) != 2 {
 		t.Fatalf("routes = %+v, want kept + secure only\n%s", rs, out.String())
 	}
-	var secure store.Route
+	var secure store.Site
 	for _, r := range rs {
 		if r.Subdomain == "secure" {
 			secure = r
@@ -97,7 +97,7 @@ func TestImportIsRerunnable(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if rs, _ := st.ListRoutes(context.Background()); len(rs) != 1 {
+	if rs, _ := st.ListSites(context.Background()); len(rs) != 1 {
 		t.Errorf("routes = %+v", rs)
 	}
 }

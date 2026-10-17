@@ -9,7 +9,7 @@ test('UI host record card shows synced', async ({ page }) => {
   await expect(card.getByText('synced')).toBeVisible();
 });
 
-test('a route named like the UI host is rejected', async ({ page }) => {
+test('a site named like the UI host is rejected', async ({ page }) => {
   await login(page);
   await page.goto('/domains');
   await page.getByLabel('Domain', { exact: true }).fill('example.com');
@@ -17,12 +17,12 @@ test('a route named like the UI host is rejected', async ({ page }) => {
   await page.getByRole('button', { name: 'Add domain' }).click();
   await expect(page.getByRole('cell', { name: 'example.com', exact: true })).toBeVisible();
 
-  await page.goto('/routes/new');
+  await page.goto('/sites/new/full');
   await page.locator('select[name=domain_id]').selectOption('example.com');
   await page.getByLabel('Subdomain').fill('servanago');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.20');
   await page.getByLabel('Upstream port').fill('8080');
-  await page.getByRole('button', { name: 'Add route' }).click();
+  await page.getByRole('button', { name: 'Add site' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'ServanaGo UI host' })).toBeVisible();
 });
 
