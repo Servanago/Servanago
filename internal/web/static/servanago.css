@@ -138,13 +138,13 @@ body > header nav a:not(.brand):hover { color: var(--sg-accent); }
 .login-box { max-width: 26rem; margin-inline: auto; }
 
 /* ---- Cards, tables, forms -------------------------------------------------------------------- */
-article { border: 1px solid var(--sg-border); border-radius: var(--sg-radius-lg); box-shadow: var(--sg-shadow-panel); overflow-x: auto; }
+article { border: 1px solid var(--sg-border); border-radius: var(--sg-radius-lg); box-shadow: var(--sg-shadow-panel); }
 article > header { background: var(--sg-surface-raised); border-bottom: 1px solid var(--sg-border); color: var(--sg-text-secondary); font-weight: 600; }
 article > h2:first-child, article > h1:first-child { margin-top: 0; }
 article:has(> table, > #routes) { padding-inline: 0.5rem; }
-article table { min-width: 44rem; margin-bottom: 0; } /* scrolls inside the card on narrow screens instead of crushing columns */
-article th, article td { padding: 0.55rem 0.6rem; }
-article td:first-child { overflow-wrap: anywhere; }
+article table { width: 100%; margin-bottom: 0; } /* columns squeeze and wrap on narrow screens; no card scrollbar anywhere */
+article th, article td { padding: 0.55rem 0.6rem; } /* desktop: columns read like columns, no mid-word wraps */
+@media (max-width: 640px) { article th, article td { overflow-wrap: anywhere; } } /* phone: squeeze inside the card instead */
 article td:last-child { white-space: nowrap; }
 article td:last-child a:not(.icon-btn) { display: block; margin-bottom: 0.3rem; }
 td small { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; line-clamp: 3; overflow: hidden; width: 9.5rem; overflow-wrap: anywhere; }
