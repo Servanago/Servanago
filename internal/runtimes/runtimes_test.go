@@ -98,6 +98,16 @@ func TestDetectFrankenPHP(t *testing.T) {
 	}
 }
 
+func TestDetectFCGIWrap(t *testing.T) {
+	r := Detect(context.Background(), &fakeExec{globs: map[string][]string{"/usr/bin/fcgiwrap": {"/usr/bin/fcgiwrap"}, "/usr/local/bin/fcgiwrap": {"/usr/local/bin/fcgiwrap"}}})
+	if f := r.FCGIWrap; !f.Installed || f.Path != "/usr/bin/fcgiwrap" {
+		t.Errorf("first searched path must win: %+v", f)
+	}
+	if r := Detect(context.Background(), &fakeExec{}); r.FCGIWrap.Installed || r.FCGIWrap.Install == "" {
+		t.Errorf("absent fcgiwrap: %+v", r.FCGIWrap)
+	}
+}
+
 func TestPHPPDupesSortedNewestFirst(t *testing.T) {
 	ex := &fakeExec{globs: map[string][]string{
 		"/usr/sbin/php-fpm*": {"/usr/sbin/php-fpm7.4", "/usr/sbin/php-fpm8.2"},

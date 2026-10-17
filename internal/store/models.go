@@ -20,12 +20,12 @@ type Domain struct {
 type Site struct {
 	ID             int64
 	Slug           string   // immutable; derived from the first hostname on create
-	Kind           string   // proxy | static | node | php | frankenphp; "" means proxy on create
+	Kind           string   // proxy | static | node | php | frankenphp | fastcgi | cgi; "" means proxy on create
 	Hostnames      []string // primary first; each is a free FQDN, unique across sites
 	Scheme         string   // http | https (proxy)
-	UpstreamHost   string   // proxy only
+	UpstreamHost   string   // proxy; fastcgi: a host, or an absolute socket path (then UpstreamPort is 0)
 	UpstreamPort   int      // proxy only; node and frankenphp: the app's port (upstream_host stores 127.0.0.1)
-	StaticRoot     string   // static, node, php and frankenphp: absolute directory served
+	StaticRoot     string   // static, node, php, frankenphp, fastcgi and cgi: absolute directory served
 	StartCommand   string   // node: the long-running start command, run by systemd as the site user
 	InstallCommand string   // node: shown to the admin, who runs it by hand on the server
 	BuildCommand   string   // node: same
@@ -48,8 +48,10 @@ func (s Site) HasUpstream() bool {
 	return s.Kind == "" || s.Kind == "proxy" || s.Kind == "node" || s.Kind == "frankenphp"
 }
 
-// IsRuntime is true for kinds ServanaGo supervises as a unit under a site user (node, php, frankenphp).
-func (s Site) IsRuntime() bool { return s.Kind == "node" || s.Kind == "php" || s.Kind == "frankenphp" }
+// IsRuntime is true for kinds ServanaGo supervises as a unit under a site user (node, php, frankenphp, cgi).
+func (s Site) IsRuntime() bool {
+	return s.Kind == "node" || s.Kind == "php" || s.Kind == "frankenphp" || s.Kind == "cgi"
+}
 
 // Record families: one DNS row per site (and one for the UI host) per family.
 const (

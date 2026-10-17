@@ -70,6 +70,53 @@ WantedBy=multi-user.target
 `, user, user, user, root, bin, root, port, root))
 }
 
+// cgiServiceTemplate runs fcgiwrap as the site user. It is socket-activated: systemd (root) creates and owns the
+// socket below, so the unprivileged service never needs to write into /run/servanago.
+func cgiServiceTemplate(slug, bin, root string) []byte {
+	user := "sg-" + slug
+	return []byte(fmt.Sprintf(`[Unit]
+Description=ServanaGo site %s (CGI via fcgiwrap)
+Requires=servanago-%s.socket
+After=servanago-%s.socket
+
+[Service]
+User=%s
+Group=%s
+WorkingDirectory=%s
+ExecStart=%s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=%s
+`, user, slug, slug, user, user, root, bin, root))
+}
+
+// cgiSocketTemplate is the socket Caddy dials: owned by the servanago user, mode 0660.
+func cgiSocketTemplate(slug string) []byte {
+	return []byte(fmt.Sprintf(`[Unit]
+Description=ServanaGo site %s (fcgiwrap socket)
+
+[Socket]
+ListenStream=/run/servanago/%s.sock
+SocketUser=servanago
+SocketGroup=servanago
+SocketMode=0660
+
+[Install]
+WantedBy=sockets.target
+`, slug, slug))
+}
+
+// socketUnit is the .socket unit beside a service, when the site has one (kind cgi): its file exists.
+func (a Actions) socketUnit(service string) (name, path string, ok bool) {
+	name = strings.TrimSuffix(service, ".service") + ".socket"
+	path = filepath.Join(systemdUnitDir, name)
+	_, err := a.s.Lstat(path)
+	return name, path, err == nil
+}
+
 // poolTemplate is the per-site php-fpm pool; the socket is what Caddy dials.
 func poolTemplate(slug, user string) []byte {
 	return []byte(fmt.Sprintf(`; per-site pool for ServanaGo site %s; written by the helper
@@ -186,8 +233,15 @@ func validateKindSpec(s Spec) error {
 		if !slices.Contains(runtimes.FrankenPaths, s.FrankenBin) {
 			return fmt.Errorf("frankenphp binary %q must be one of %v", s.FrankenBin, runtimes.FrankenPaths)
 		}
+	case "cgi":
+		if err := validateRoot(s.Root, false); err != nil {
+			return err
+		}
+		if !slices.Contains(runtimes.FCGIWrapPaths, s.FCGIBin) {
+			return fmt.Errorf("fcgiwrap binary %q must be one of %v", s.FCGIBin, runtimes.FCGIWrapPaths)
+		}
 	default:
-		return fmt.Errorf("kind %q must be node, php or frankenphp", s.Kind)
+		return fmt.Errorf("kind %q must be node, php, frankenphp or cgi", s.Kind)
 	}
 	return nil
 }
@@ -247,6 +301,8 @@ func (a Actions) unitFor(s Spec) (unitPath string, content []byte) {
 		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), nodeUnitTemplate(user, s.Root, s.Start)
 	case "frankenphp":
 		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), frankenUnitTemplate(user, s.FrankenBin, s.Root, s.Port)
+	case "cgi":
+		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), cgiServiceTemplate(s.Slug, s.FCGIBin, s.Root)
 	}
 	conf := filepath.Join("/etc/servanago/fpm", s.Slug+".conf")
 	return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), phpUnitTemplate(user, s.FPMBin, conf, s.Root)
@@ -264,9 +320,10 @@ func (a Actions) UnitInstall(r Request) Response {
 		return Response{Error: err.Error()}
 	}
 	s := r.Vals
-	if s.Kind == "frankenphp" { // the unit runs this binary; refuse one the site user could have swapped
-		if err := a.s.CheckBinary(s.FrankenBin); err != nil {
-			return Response{Error: fmt.Sprintf("frankenphp binary: %v", err)}
+	// The unit runs this binary; refuse one the site user could have swapped.
+	if bin := map[string]string{"frankenphp": s.FrankenBin, "cgi": s.FCGIBin}[s.Kind]; bin != "" {
+		if err := a.s.CheckBinary(bin); err != nil {
+			return Response{Error: fmt.Sprintf("%s binary: %v", s.Kind, err)}
 		}
 	}
 
@@ -287,6 +344,13 @@ func (a Actions) UnitInstall(r Request) Response {
 		return resp
 	}
 	name := "servanago-" + slug + ".service"
+	if s.Kind == "cgi" { // the socket is what is enabled and started; the service is activated by it
+		sockName := "servanago-" + slug + ".socket"
+		if resp := a.put(filepath.Join(systemdUnitDir, sockName), cgiSocketTemplate(slug), a.s.VerifyUnit); !resp.OK {
+			return resp
+		}
+		name = sockName
+	}
 	if err := a.s.DaemonReload(); err != nil {
 		return Response{Error: fmt.Sprintf("systemctl daemon-reload: %v", err)}
 	}
@@ -304,6 +368,12 @@ func (a Actions) UnitRemove(r Request) Response {
 		return Response{Error: err.Error()}
 	}
 	name := "servanago-" + slug + ".service"
+	if sock, path, ok := a.socketUnit(name); ok { // a cgi site: the socket goes first, or it would restart the service
+		_ = a.s.StopUnit(sock)
+		_ = a.s.StopUnit(name)
+		_ = a.s.DisableUnit(sock)
+		_ = a.s.Remove(path)
+	}
 	_ = a.s.DisableUnit(name)
 	_ = a.s.Remove(filepath.Join(systemdUnitDir, name))
 	_ = a.s.Remove("/etc/servanago/fpm/" + slug + ".conf")
@@ -319,6 +389,9 @@ func (a Actions) UnitStart(r Request) Response {
 	if err != nil {
 		return Response{Error: err.Error()}
 	}
+	if sock, _, ok := a.socketUnit(name); ok { // cgi: listening is "started"; fcgiwrap runs on demand
+		name = sock
+	}
 	if err := a.s.StartUnit(name); err != nil {
 		return Response{Error: fmt.Sprintf("systemctl start %s: %v", name, err)}
 	}
@@ -330,6 +403,11 @@ func (a Actions) UnitStop(r Request) Response {
 	name, err := a.unit(r)
 	if err != nil {
 		return Response{Error: err.Error()}
+	}
+	if sock, _, ok := a.socketUnit(name); ok {
+		if err := a.s.StopUnit(sock); err != nil {
+			return Response{Error: fmt.Sprintf("systemctl stop %s: %v", sock, err)}
+		}
 	}
 	if err := a.s.StopUnit(name); err != nil {
 		return Response{Error: fmt.Sprintf("systemctl stop %s: %v", name, err)}

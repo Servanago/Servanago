@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -51,9 +52,9 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 		r.Kind = "proxy"
 	}
 	switch r.Kind {
-	case "proxy", "static", "node", "php", "frankenphp":
+	case "proxy", "static", "node", "php", "frankenphp", "fastcgi", "cgi":
 	default:
-		return r, fmt.Errorf("kind %q must be proxy, static, node, php or frankenphp", r.Kind)
+		return r, fmt.Errorf("kind %q must be proxy, static, node, php, frankenphp, fastcgi or cgi", r.Kind)
 	}
 	if r.Hostnames, err = parseHostnames(v.Get("hostnames")); err != nil {
 		return r, err
@@ -92,6 +93,19 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 		if r.UpstreamPort, err = parseAppPort(v); err != nil {
 			return r, err
 		}
+	case "fastcgi":
+		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+			return r, err
+		}
+		r.Scheme = "http"
+		if r.UpstreamHost, r.UpstreamPort, err = parseFCGIAddr(v.Get("fcgi_addr")); err != nil {
+			return r, err
+		}
+	case "cgi":
+		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+			return r, err
+		}
+		r.Scheme = "http"
 	case "php":
 		r.FPMVersion = strings.TrimSpace(v.Get("fpm_version"))
 		if r.FPMVersion == "" {
@@ -126,6 +140,28 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 	}
 	r.Enabled = v.Get("enabled") != ""
 	return r, nil
+}
+
+// parseFCGIAddr reads the FastCGI upstream: an absolute socket path (port 0) or host:port.
+func parseFCGIAddr(text string) (host string, port int, err error) {
+	a := strings.TrimSpace(text)
+	if strings.HasPrefix(a, "/") {
+		if err := helper.ValidateRoot(a); err != nil { // same clean-path rules; the path is data in Caddy's JSON
+			return "", 0, fmt.Errorf("FastCGI socket: %w", err)
+		}
+		return a, 0, nil
+	}
+	h, p, serr := net.SplitHostPort(a)
+	if serr != nil {
+		return "", 0, fmt.Errorf("FastCGI address %q must be an absolute socket path or host:port", a)
+	}
+	if _, ipErr := netip.ParseAddr(h); ipErr != nil && !hostnameRE.MatchString(h) {
+		return "", 0, fmt.Errorf("FastCGI host %q must be an IP address or a hostname", h)
+	}
+	if port, err = strconv.Atoi(p); err != nil || port < 1 || port > 65535 {
+		return "", 0, fmt.Errorf("FastCGI port %q must be 1-65535", p)
+	}
+	return h, port, nil
 }
 
 // parseAppPort reads the loopback port a node or frankenphp app listens on.
@@ -187,6 +223,9 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	if in.Kind == "frankenphp" && !s.detect(r.Context()).Franken.Installed {
 		return in, nil, userError{http.StatusUnprocessableEntity, "frankenphp is not installed on this host; install it, then save again"}
 	}
+	if in.Kind == "cgi" && !s.detect(r.Context()).FCGIWrap.Installed {
+		return in, nil, userError{http.StatusUnprocessableEntity, "fcgiwrap is not installed on this host; install it, then save again"}
+	}
 	// Overlay only the fields this form owns onto the stored site (base is the zero Site on create).
 	base.Kind, base.Hostnames, base.Scheme = in.Kind, in.Hostnames, in.Scheme
 	base.UpstreamHost, base.UpstreamPort, base.StaticRoot = in.UpstreamHost, in.UpstreamPort, in.StaticRoot
@@ -197,7 +236,7 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
 	}
-	if base.Kind == "static" || base.Kind == "php" {
+	if base.Kind == "static" || base.Kind == "php" || base.Kind == "fastcgi" || base.Kind == "cgi" {
 		base.Stream, base.MaxBody = false, 0
 	}
 	grants, err := s.parseGate(r.Context(), base, r.PostForm)
@@ -388,6 +427,7 @@ type siteEditForm struct {
 	PHPInstall  string         // install command to show when none is installed
 	Node        runtimes.NodeReport
 	Franken     runtimes.FrankenReport
+	FCGIWrap    runtimes.FCGIWrapReport
 	Unit        *unitPanel // node and php sites: state and journal tail; nil otherwise
 }
 
@@ -407,7 +447,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 	title := "Add site"
 	rep := s.detect(r.Context())
 	form := siteEditForm{Site: rt, Edit: edit, HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
-		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPInstall: rep.PHPInstall, Node: rep.Node, Franken: rep.Franken}
+		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPInstall: rep.PHPInstall, Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
 	}

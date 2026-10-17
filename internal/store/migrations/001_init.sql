@@ -14,10 +14,10 @@ CREATE TABLE domains (
 CREATE TABLE sites (
   id              INTEGER PRIMARY KEY,
   slug            TEXT NOT NULL UNIQUE,       -- immutable, derived once from the first hostname: ^[a-z][a-z0-9-]{1,31}$
-  kind            TEXT NOT NULL DEFAULT 'proxy' CHECK (kind IN ('proxy','static','node','php','frankenphp')),
+  kind            TEXT NOT NULL DEFAULT 'proxy' CHECK (kind IN ('proxy','static','node','php','frankenphp','fastcgi','cgi')),
   scheme          TEXT NOT NULL DEFAULT 'http' CHECK (scheme IN ('http','https')),
-  upstream_host   TEXT,                       -- proxy, node and frankenphp; proxy stores the upstream, the others 127.0.0.1
-  upstream_port   INTEGER CHECK (upstream_port BETWEEN 1 AND 65535), -- proxy only; node and frankenphp: the app's port
+  upstream_host   TEXT,                       -- proxy, node, frankenphp and fastcgi; node/frankenphp store 127.0.0.1, fastcgi a host or an absolute socket path
+  upstream_port   INTEGER CHECK (upstream_port BETWEEN 1 AND 65535), -- proxy only; node and frankenphp: the app's port; fastcgi: NULL when the upstream is a socket path
   static_root     TEXT,                       -- static, node and php: absolute directory
   start_command   TEXT NOT NULL DEFAULT '',   -- node: the long-running start command (systemd ExecStart)
   install_command TEXT NOT NULL DEFAULT '',   -- node: shown to the admin, who runs it by hand on the server
@@ -43,6 +43,11 @@ CREATE TABLE sites (
    OR (kind = 'php'    AND static_root IS NOT NULL AND upstream_host IS NULL AND upstream_port IS NULL
                       AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version != '')
    OR (kind = 'frankenphp' AND static_root IS NOT NULL AND upstream_host = '127.0.0.1' AND upstream_port IS NOT NULL
+                      AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')
+   OR (kind = 'fastcgi' AND static_root IS NOT NULL AND upstream_host IS NOT NULL
+                      AND (upstream_port IS NULL) = (substr(upstream_host, 1, 1) = '/')
+                      AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')
+   OR (kind = 'cgi'    AND static_root IS NOT NULL AND upstream_host IS NULL AND upstream_port IS NULL
                       AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')
   )
 );

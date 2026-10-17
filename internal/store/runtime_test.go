@@ -61,6 +61,24 @@ func TestRuntimeSiteKinds(t *testing.T) {
 		t.Errorf("frankenphp with a start command: %v", err)
 	}
 
+	// fastcgi: a host needs a port, a socket path must not have one; cgi has no upstream at all.
+	for _, tt := range []struct {
+		name string
+		site Site
+		ok   bool
+	}{
+		{"fastcgi socket", Site{Hostnames: []string{"f1.example.com"}, Kind: "fastcgi", StaticRoot: "/srv/f", UpstreamHost: "/run/f.sock"}, true},
+		{"fastcgi tcp", Site{Hostnames: []string{"f2.example.com"}, Kind: "fastcgi", StaticRoot: "/srv/f", UpstreamHost: "10.0.0.5", UpstreamPort: 9000}, true},
+		{"fastcgi host without port", Site{Hostnames: []string{"f3.example.com"}, Kind: "fastcgi", StaticRoot: "/srv/f", UpstreamHost: "10.0.0.5"}, false},
+		{"fastcgi socket with port", Site{Hostnames: []string{"f4.example.com"}, Kind: "fastcgi", StaticRoot: "/srv/f", UpstreamHost: "/run/f.sock", UpstreamPort: 9000}, false},
+		{"cgi", Site{Hostnames: []string{"c1.example.com"}, Kind: "cgi", StaticRoot: "/srv/c"}, true},
+		{"cgi with upstream", Site{Hostnames: []string{"c2.example.com"}, Kind: "cgi", StaticRoot: "/srv/c", UpstreamHost: "127.0.0.1", UpstreamPort: 1}, false},
+	} {
+		if _, err := st.CreateSite(ctx, tt.site); (err == nil) != tt.ok {
+			t.Errorf("%s: err=%v, want ok=%v", tt.name, err, tt.ok)
+		}
+	}
+
 	// CHECK violations: node without a start command, php without a version, node with an fpm version.
 	for _, tt := range []struct {
 		name string

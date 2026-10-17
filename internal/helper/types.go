@@ -51,13 +51,14 @@ func unitName(slug string) (string, error) {
 type Spec struct {
 	Slug       string `json:"slug,omitempty"`
 	Lines      int    `json:"lines,omitempty"`
-	Kind       string `json:"kind,omitempty"`        // unit-install: node | php | frankenphp
+	Kind       string `json:"kind,omitempty"`        // unit-install: node | php | frankenphp | cgi
 	Root       string `json:"root,omitempty"`        // node | php | frankenphp | user-add: site directory
 	Port       int    `json:"port,omitempty"`        // node | frankenphp: the app's port
 	Start      string `json:"start,omitempty"`       // node: the start command (runs as the site user)
 	FPMBin     string `json:"fpm_bin,omitempty"`     // php: detected binary
 	FPMVersion string `json:"fpm_version,omitempty"` // php: label matching FPMBin's suffix
 	FrankenBin string `json:"franken_bin,omitempty"` // frankenphp: detected binary (one of a fixed set)
+	FCGIBin    string `json:"fcgi_bin,omitempty"`    // cgi: detected fcgiwrap (one of a fixed set)
 }
 
 // Request is one newline-delimited action from the control plane. Spec is mandatory, even

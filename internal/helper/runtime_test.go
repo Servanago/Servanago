@@ -111,7 +111,7 @@ func TestRuntimeUnitInstallRejections(t *testing.T) {
 	const frankenBin = "/usr/bin/frankenphp"
 	const frankenHead = `{"kind":"frankenphp","slug":"site1","port":8100,`
 	tests := []struct{ name, spec, want string }{
-		{"unknown kind", `{"kind":"cgi","slug":"site1"}`, "kind"},
+		{"unknown kind", `{"kind":"ruby","slug":"site1"}`, "kind"},
 		{"bad slug", `{"kind":"node","slug":"../x","root":"/srv/x","port":3000,"start":"node a"}`, "slug"},
 		{"node no start", nodeHead + `"root":"/srv/x","start":""}`, "start"},
 		{"node NUL start", nodeHead + `"root":"/srv/x","start":"a\u0000b"}`, "start"},
@@ -133,6 +133,10 @@ func TestRuntimeUnitInstallRejections(t *testing.T) {
 		{"franken traversal binary", frankenHead + `"root":"/srv/x","franken_bin":"/usr/bin/../../tmp/frankenphp"}`, "frankenphp binary"},
 		{"franken no binary", frankenHead + `"root":"/srv/x"}`, "frankenphp binary"},
 		{"franken bad port", `{"kind":"frankenphp","slug":"site1","port":80,"root":"/srv/x","franken_bin":"` + frankenBin + `"}`, "port"},
+		{"cgi unknown binary", `{"kind":"cgi","slug":"site1","root":"/srv/x","fcgi_bin":"/bin/sh"}`, "fcgiwrap binary"},
+		{"cgi no binary", `{"kind":"cgi","slug":"site1","root":"/srv/x"}`, "fcgiwrap binary"},
+		{"cgi newline root", `{"kind":"cgi","slug":"site1","root":"/srv/x\nUser=root","fcgi_bin":"/usr/sbin/fcgiwrap"}`, "root"},
+		{"cgi space root", `{"kind":"cgi","slug":"site1","root":"/srv/x /etc","fcgi_bin":"/usr/sbin/fcgiwrap"}`, "root"},
 		{"franken newline root", frankenHead + `"root":"/srv/x\nUser=root","franken_bin":"` + frankenBin + `"}`, "root"},
 		{"franken space root", frankenHead + `"root":"/srv/x /etc","franken_bin":"` + frankenBin + `"}`, "root"},
 		{"franken relative root", frankenHead + `"root":"srv/x","franken_bin":"` + frankenBin + `"}`, "root"},
@@ -256,4 +260,59 @@ func keys(m map[string][]byte) []string {
 		out = append(out, k)
 	}
 	return out
+}
+
+func TestCGIUnitInstall(t *testing.T) {
+	seam := newFakeSeam()
+	req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":{"kind":"cgi","slug":"legacy","root":"/home/brian/legacy","fcgi_bin":"/usr/sbin/fcgiwrap"}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resp := NewActions(seam).UnitInstall(req); !resp.OK {
+		t.Fatalf("install: %+v", resp)
+	}
+	svc := string(seam.written["/etc/systemd/system/servanago-legacy.service"])
+	sock := string(seam.written["/etc/systemd/system/servanago-legacy.socket"])
+	for _, want := range []string{"User=sg-legacy", "ExecStart=/usr/sbin/fcgiwrap\n", "ReadWritePaths=/home/brian/legacy", "Requires=servanago-legacy.socket"} {
+		if !strings.Contains(svc, want) {
+			t.Errorf("service missing %q:\n%s", want, svc)
+		}
+	}
+	if strings.Contains(svc, "[Install]") {
+		t.Errorf("the service is socket-activated, not enabled:\n%s", svc)
+	}
+	for _, want := range []string{"ListenStream=/run/servanago/legacy.sock", "SocketUser=servanago", "SocketMode=0660"} {
+		if !strings.Contains(sock, want) {
+			t.Errorf("socket missing %q:\n%s", want, sock)
+		}
+	}
+	// The socket is what gets enabled; the binary is checked first.
+	if seam.enabled != "servanago-legacy.socket" || seam.binChecked != "/usr/sbin/fcgiwrap" || len(seam.written) != 2 {
+		t.Errorf("enabled=%q binChecked=%q files=%v", seam.enabled, seam.binChecked, keys(seam.written))
+	}
+}
+
+// For a cgi site start, stop, status and remove act on the socket unit as well as the service.
+func TestCGILifecycleUsesSocket(t *testing.T) {
+	seam := newFakeSeam()
+	seam.atUnit = "/etc/systemd/system/servanago-legacy.socket"
+	acts := NewActions(seam)
+	start, _ := DecodeRequest([]byte(`{"action":"unit-start","spec":{"slug":"legacy"}}`))
+	if resp := acts.UnitStart(start); !resp.OK || seam.started != "servanago-legacy.socket" {
+		t.Fatalf("start: %+v %q", resp, seam.started)
+	}
+	stat, _ := DecodeRequest([]byte(`{"action":"unit-status","spec":{"slug":"legacy"}}`))
+	if resp := acts.UnitStatus(stat); !resp.OK || seam.statusName != "servanago-legacy.socket" {
+		t.Fatalf("status: %+v %q", resp, seam.statusName)
+	}
+	rm, _ := DecodeRequest([]byte(`{"action":"unit-remove","spec":{"slug":"legacy"}}`))
+	if resp := acts.UnitRemove(rm); !resp.OK || seam.disabled != "servanago-legacy.service" || seam.stopped != "servanago-legacy.service" {
+		t.Fatalf("remove: %+v disabled=%q stopped=%q", resp, seam.disabled, seam.stopped)
+	}
+	// A site without a socket keeps acting on the service.
+	plain := newFakeSeam()
+	start2, _ := DecodeRequest([]byte(`{"action":"unit-start","spec":{"slug":"app11"}}`))
+	if resp := NewActions(plain).UnitStart(start2); !resp.OK || plain.started != "servanago-app11.service" {
+		t.Fatalf("plain start: %+v %q", resp, plain.started)
+	}
 }

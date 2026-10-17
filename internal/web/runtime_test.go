@@ -37,7 +37,7 @@ func (f *fakeHost) log() string {
 }
 
 // runtimeExec is the runtime detector's view of the fake host: node 20 and php-fpm 8.2.
-type runtimeExec struct{ noFranken bool }
+type runtimeExec struct{ noFranken, noFCGI bool }
 
 func (runtimeExec) LookupPath(string) (string, error) { return "/usr/bin/node", nil }
 func (runtimeExec) Run(context.Context, string, ...string) ([]byte, error) {
@@ -47,7 +47,7 @@ func (e runtimeExec) Glob(p string) ([]string, error) {
 	switch {
 	case p == "/usr/sbin/php-fpm*":
 		return []string{"/usr/sbin/php-fpm8.2"}, nil
-	case p == "/usr/bin/frankenphp" && !e.noFranken:
+	case p == "/usr/bin/frankenphp" && !e.noFranken, p == "/usr/sbin/fcgiwrap" && !e.noFCGI:
 		return []string{p}, nil
 	}
 	return nil, nil
@@ -336,5 +336,63 @@ func TestFrankenPHPRejections(t *testing.T) {
 	}
 	if host.log() != "" {
 		t.Errorf("rejected forms reached the helper: %q", host.log())
+	}
+}
+
+func fastcgiForm(root, addr string, kv ...string) []string {
+	return append([]string{"kind", "fastcgi", "static_root", root, "hostnames", "legacy.example.com", "fcgi_addr", addr, "enabled", "on"}, kv...)
+}
+
+func TestFastCGISites(t *testing.T) {
+	s, host := runtimeServer(t)
+	root := t.TempDir()
+	for i, tt := range []struct {
+		addr, host string
+		port       int
+	}{{"/run/myapp/fcgi.sock", "/run/myapp/fcgi.sock", 0}, {"10.0.0.5:9000", "10.0.0.5", 9000}} {
+		name := []string{"a.example.com", "b.example.com"}[i]
+		if w := s.do(req{method: "POST", path: "/sites", body: form(fastcgiForm(root, tt.addr, "hostnames", name)...).Encode(), hdr: htmxPost}); w.Code != 204 {
+			t.Fatalf("create %s: %d %q", tt.addr, w.Code, w.Body.String())
+		}
+		rs, _ := s.deps.Store.ListSites(context.Background())
+		got := rs[i]
+		if got.Kind != "fastcgi" || got.UpstreamHost != tt.host || got.UpstreamPort != tt.port || got.HasUpstream() || got.IsRuntime() {
+			t.Errorf("fastcgi %s stored wrong: %+v", tt.addr, got)
+		}
+	}
+	if host.log() != "" { // ServanaGo supervises nothing for this kind
+		t.Errorf("fastcgi reached the helper: %q", host.log())
+	}
+	for name, addr := range map[string]string{
+		"relative path": "run/app.sock", "traversal": "/run/../etc/x.sock", "space in path": "/run/my app.sock",
+		"no port": "10.0.0.5", "port zero": "10.0.0.5:0", "port too big": "10.0.0.5:70000", "bad host": "bad host:9000", "empty": "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			if w := s.do(req{method: "POST", path: "/sites", body: form(fastcgiForm(root, addr, "hostnames", "c.example.com")...).Encode(), hdr: htmxPost}); w.Code != 422 {
+				t.Fatalf("%q accepted: %d %q", addr, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+func TestCreateCGISite(t *testing.T) {
+	s, host := runtimeServer(t)
+	root := t.TempDir()
+	form := form("kind", "cgi", "static_root", root, "hostnames", "cgi.example.com", "enabled", "on")
+	if w := s.do(req{method: "POST", path: "/sites", body: form.Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("create: %d %q", w.Code, w.Body.String())
+	}
+	rs, _ := s.deps.Store.ListSites(context.Background())
+	if len(rs) != 1 || rs[0].Kind != "cgi" || rs[0].UpstreamHost != "" || !rs[0].IsRuntime() {
+		t.Fatalf("cgi site stored wrong: %+v", rs)
+	}
+	slug := rs[0].Slug
+	if want := "user-add " + slug + " |unit-install " + slug + " cgi|unit-start " + slug + " "; host.log() != want {
+		t.Errorf("helper calls\n got %q\nwant %q", host.log(), want)
+	}
+	s.deps.Exec = runtimeExec{noFCGI: true}
+	form.Set("hostnames", "other.example.com")
+	if w := s.do(req{method: "POST", path: "/sites", body: form.Encode(), hdr: htmxPost}); w.Code != 422 || !strings.Contains(w.Body.String(), "fcgiwrap") {
+		t.Fatalf("fcgiwrap missing: %d %q", w.Code, w.Body.String())
 	}
 }

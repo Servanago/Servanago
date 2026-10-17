@@ -29,6 +29,16 @@ type Report struct {
 	PHP        []PHPVersion // newest version first
 	PHPInstall string       // shown when empty, unless overridden
 	Franken    FrankenReport
+	FCGIWrap   FCGIWrapReport
+}
+
+// FCGIWrapPaths are where fcgiwrap is looked for (the helper accepts exactly these).
+var FCGIWrapPaths = []string{"/usr/sbin/fcgiwrap", "/usr/bin/fcgiwrap", "/usr/local/bin/fcgiwrap"}
+
+type FCGIWrapReport struct {
+	Installed bool
+	Path      string // the first of FCGIWrapPaths that exists
+	Install   string // the command for the admin to run
 }
 
 // FrankenPaths are where a frankenphp binary is looked for (the helper accepts exactly these).
@@ -99,6 +109,13 @@ func Detect(ctx context.Context, ex RunExec) Report {
 					r.Franken.Version = strings.TrimPrefix(f[1], "v")
 				}
 			}
+			break
+		}
+	}
+	r.FCGIWrap.Install = "sudo apt install fcgiwrap"
+	for _, p := range FCGIWrapPaths {
+		if m, _ := ex.Glob(p); len(m) == 1 {
+			r.FCGIWrap.Installed, r.FCGIWrap.Path = true, p
 			break
 		}
 	}

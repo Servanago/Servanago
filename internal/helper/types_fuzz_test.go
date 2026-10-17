@@ -17,6 +17,8 @@ func FuzzUnitInstallNoInjection(f *testing.F) {
 	f.Add("php", "/srv/blog\r\nUser=root", "")
 	f.Add("frankenphp", "/srv/shop\nUser=root", "")
 	f.Add("frankenphp", "/srv/shop %h", "")
+	f.Add("cgi", "/srv/legacy\nUser=root", "")
+	f.Add("cgi", "/srv/legacy $HOME", "")
 	benign := func(kind string) int {
 		seam := newFakeSeam()
 		spec := `{"kind":"node","slug":"site1","root":"/srv/app","port":3000,"start":"node server.js"}`
@@ -25,6 +27,8 @@ func FuzzUnitInstallNoInjection(f *testing.F) {
 			spec = `{"kind":"php","slug":"site1","root":"/srv/app","fpm_bin":"/usr/sbin/php-fpm8.2","fpm_version":"8.2"}`
 		case "frankenphp":
 			spec = `{"kind":"frankenphp","slug":"site1","root":"/srv/app","port":8100,"franken_bin":"/usr/bin/frankenphp"}`
+		case "cgi":
+			spec = `{"kind":"cgi","slug":"site1","root":"/srv/app","fcgi_bin":"/usr/sbin/fcgiwrap"}`
 		}
 		req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":` + spec + `}`))
 		if err != nil {
@@ -35,7 +39,7 @@ func FuzzUnitInstallNoInjection(f *testing.F) {
 		}
 		return strings.Count(string(seam.written["/etc/systemd/system/servanago-site1.service"]), "\n")
 	}
-	lines := map[string]int{"node": benign("node"), "php": benign("php"), "frankenphp": benign("frankenphp")}
+	lines := map[string]int{"node": benign("node"), "php": benign("php"), "frankenphp": benign("frankenphp"), "cgi": benign("cgi")}
 	f.Fuzz(func(t *testing.T, kind, root, start string) {
 		want, ok := lines[kind]
 		if !ok {
@@ -49,6 +53,8 @@ func FuzzUnitInstallNoInjection(f *testing.F) {
 			spec.FPMBin, spec.FPMVersion = "/usr/sbin/php-fpm8.2", "8.2"
 		case "frankenphp":
 			spec.Port, spec.FrankenBin = 8100, "/usr/bin/frankenphp"
+		case "cgi":
+			spec.FCGIBin = "/usr/sbin/fcgiwrap"
 		}
 		seam := newFakeSeam()
 		if resp := NewActions(seam).UnitInstall(Request{Action: ActionUnitInstall, Vals: spec}); !resp.OK {

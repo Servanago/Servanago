@@ -113,6 +113,10 @@ func TestRenderGolden(t *testing.T) {
 		{"node_gated", opts(), State{[]store.Domain{dom}, []store.Site{with(asNode(site, "app11", 3000, "node server.js"), func(r *store.Site) { r.GateMode = "open" })}}},
 		// FrankenPHP sites are a reverse proxy to the site's own loopback port, like node.
 		{"frankenphp", opts(), State{[]store.Domain{dom}, []store.Site{with(asNode(site, "shop", 8100, ""), func(r *store.Site) { r.Kind = "frankenphp" })}}},
+		// FastCGI sites send every request to an admin-run upstream (socket or host:port); cgi sites run /cgi-bin/* through their own fcgiwrap socket.
+		{"fastcgi_socket", opts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/srv/www/app"), func(r *store.Site) { r.Kind, r.UpstreamHost = "fastcgi", "/run/app/fcgi.sock" })}}},
+		{"fastcgi_tcp", opts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/srv/www/app"), func(r *store.Site) { r.Kind, r.UpstreamHost, r.UpstreamPort = "fastcgi", "10.0.0.5", 9000 })}}},
+		{"cgi", opts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/srv/www/legacy"), func(r *store.Site) { r.Kind, r.Slug = "cgi", "legacy" })}}},
 		// PHP sites render the documented php_fastcgi expansion over the per-site socket.
 		{"php", opts(), State{[]store.Domain{dom}, []store.Site{asPHP(site, "blog", "8.2")}}},
 		{"php_gate_basic", opts(), State{[]store.Domain{dom}, []store.Site{with(asPHP(site, "blog", "8.2"), func(r *store.Site) {

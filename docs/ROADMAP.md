@@ -2,7 +2,7 @@
 
 ServanaGo is becoming a lightweight, self-hosted web runtime manager: a Go control plane with a web UI, one embedded Caddy ingress, SQLite state and systemd supervision for application processes. It is not a hosting control panel: no billing, resellers, database admin, container orchestration or CI/CD platform.
 
-Today (after M8) it runs reverse-proxy, static, Node.js, PHP-FPM and FrankenPHP sites behind one embedded Caddy, with optional Cloudflare integration (DNS-01 certificates and A/AAAA records), packaged as a `.deb` with a root helper service. Everything marked Planned, New or Deferred in the table is not shipped.
+Today (after M9) it runs reverse-proxy, static, Node.js, PHP-FPM, FrankenPHP, FastCGI and CGI sites behind one embedded Caddy, with optional Cloudflare integration (DNS-01 certificates and A/AAAA records), packaged as a `.deb` with a root helper service. Everything marked Planned, New or Deferred in the table is not shipped.
 
 ## Decisions
 
@@ -49,7 +49,7 @@ validate spec (runtime provider) -> write SQLite in a transaction -> helper writ
 | M6 | Node.js provider: dedicated user, sandboxed unit, port or socket allocation, explicit install/build/start commands, health check | Done: `sg-<slug>` user, sandboxed unit, admin-chosen loopback port (unique across node and FrankenPHP sites), start command run by systemd; install/build commands are recorded and shown, never run; health = the upstream probe; unit state and journal on the edit page |
 | M7 | PHP-FPM provider: per-site pool and socket, `php_fastcgi` JSON expansion, multiple installed versions | Done: one pool and socket per site, Caddy 2.11's `php_fastcgi` expansion rendered as JSON, version picked from the detected binaries |
 | M8 | FrankenPHP: per-site process | Done: kind `frankenphp`; one `frankenphp php-server` unit per site as `sg-<slug>` on an admin-chosen loopback port (shared port space with node), Caddy reverse-proxies to it; binary detected in `/usr/local/bin`, `/usr/bin`, `/opt/frankenphp` and accepted by the helper only if root-owned and not group/world-writable; Caddy answers dotfile paths (`.env`, `.git`) with 404 before the proxy, because FrankenPHP serves them itself; classic mode only, worker mode not wired. Checked by hand against FrankenPHP 1.13.1: `php-server --listen 127.0.0.1:PORT` serves plain HTTP, opens no admin port and writes nothing into the webroot when `XDG_DATA_HOME`/`XDG_CONFIG_HOME` point at the unit's private `/tmp`; the helper-driven unit install has not been run on a real host yet |
-| M9 | CGI/FastCGI: per-site pool and socket | New |
+| M9 | CGI/FastCGI: per-site pool and socket | Done as two kinds. `fastcgi`: Caddy's fastcgi transport to a socket path or host:port the admin runs (nothing supervised; the folder is the document root; dotfiles 404). `cgi`: one socket-activated fcgiwrap per site: `servanago-<slug>.socket` (root-created, owned by `servanago`, mode 0660, `/run/servanago/<slug>.sock`) starts `servanago-<slug>.service` as `sg-<slug>`; `/cgi-bin/*` runs through it, the rest is a plain file; the fcgiwrap binary must be root-owned and not group/world-writable; start, stop, status and remove act on the socket. Not run against a real fcgiwrap yet (not installed on the dev host) |
 | M10 | MCP Server | New |
 | M11 | Hardening: privilege boundaries, paths, sockets, secrets, crash and interrupted-update tests, backup and restore docs | Planned |
 | M12+ | Gate re-keyed to sites; Ruby, Python, Go services | Deferred |

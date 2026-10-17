@@ -45,7 +45,11 @@ func (a Actions) UnitStatus(r Request) Response {
 	if err != nil {
 		return Response{Error: err.Error()}
 	}
-	st, err := a.s.UnitStatus(name)
+	unit := name
+	if sock, _, ok := a.socketUnit(name); ok { // cgi: the socket is what stays up ("active (listening)")
+		unit = sock
+	}
+	st, err := a.s.UnitStatus(unit)
 	if err != nil {
 		return Response{Error: fmt.Sprintf("%s: %v", name, err)}
 	}

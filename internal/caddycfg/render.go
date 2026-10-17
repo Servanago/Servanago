@@ -184,6 +184,13 @@ func siteHandler(host string, r store.Site) (any, error) {
 		}}}
 	case "php":
 		handlers = []any{phpRoute(r)}
+	case "fastcgi": // every request goes to the FastCGI upstream; the script path is root + the request path
+		handlers = []any{m{"handler": "subroute", "routes": []any{dotfile404(), m{"handle": []any{fastcgiProxy(fastcgiDial(r), r.StaticRoot)}}}}}
+	case "cgi": // /cgi-bin/* runs through the site's own fcgiwrap; everything else is a plain file
+		handlers = []any{m{"handler": "subroute", "routes": []any{dotfile404(),
+			m{"match": []any{m{"path": []any{"/cgi-bin/*"}}}, "handle": []any{fastcgiProxy("unix//run/servanago/"+r.Slug+".sock", r.StaticRoot)}, "terminal": true},
+			m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
+		}}}
 	default:
 		proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
 		if r.Scheme == "https" {
@@ -201,10 +208,7 @@ func siteHandler(host string, r store.Site) (any, error) {
 			handlers = []any{m{"handler": "request_body", "max_size": r.MaxBody}, proxy}
 		}
 		if r.Kind == "frankenphp" { // FrankenPHP serves .env and .git itself: answer dotfiles here, as for static and php
-			handlers = []any{m{"handler": "subroute", "routes": []any{
-				m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true},
-				m{"handle": handlers},
-			}}}
+			handlers = []any{m{"handler": "subroute", "routes": []any{dotfile404(), m{"handle": handlers}}}}
 		}
 	}
 	if r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(handlers) == 1 {
@@ -230,6 +234,23 @@ func siteHandler(host string, r store.Site) (any, error) {
 	}
 	sub = append(sub, m{"handle": handlers})
 	return m{"handler": "subroute", "routes": sub}, nil
+}
+
+// dotfile404 answers any dotfile or dot-directory path (.env, .git) with 404; the upstream never sees it.
+func dotfile404() m {
+	return m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true}
+}
+
+// fastcgiDial is the Caddy dial string for a fastcgi site: an absolute socket path or host:port.
+func fastcgiDial(r store.Site) string {
+	if strings.HasPrefix(r.UpstreamHost, "/") {
+		return "unix/" + r.UpstreamHost
+	}
+	return net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))
+}
+
+func fastcgiProxy(dial, root string) m {
+	return m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": dial}}, "transport": m{"protocol": "fastcgi", "root": root}}
 }
 
 // phpRoute is the JSON form of the documented php_fastcgi expansion, pointed at the site's own

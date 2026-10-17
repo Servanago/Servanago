@@ -26,6 +26,8 @@
 <option value="node"{{if eq .Site.Kind "node"}} selected{{end}}>Node.js: an app ServanaGo supervises</option>
 <option value="php"{{if eq .Site.Kind "php"}} selected{{end}}>PHP: a folder with php-fpm</option>
 <option value="frankenphp"{{if eq .Site.Kind "frankenphp"}} selected{{end}}>PHP: a folder with FrankenPHP</option>
+<option value="fastcgi"{{if eq .Site.Kind "fastcgi"}} selected{{end}}>FastCGI: an app you run, over a socket or port</option>
+<option value="cgi"{{if eq .Site.Kind "cgi"}} selected{{end}}>CGI: scripts in cgi-bin run by fcgiwrap</option>
 </select></label>
 {{hintid "kind"}}
 <div data-for="proxy"{{if ne .Site.Kind "proxy"}} hidden{{end}}>
@@ -42,7 +44,7 @@
 </div>
 {{hintid "scheme"}} {{hintid "upstream_host"}} {{hintid "upstream_port"}}
 </div>
-<div data-for="static node php frankenphp"{{if eq .Site.Kind "proxy"}} hidden{{end}}>
+<div data-for="static node php frankenphp fastcgi cgi"{{if eq .Site.Kind "proxy"}} hidden{{end}}>
 <label>Folder
 <input name="static_root" id="static_root" value="{{.Site.StaticRoot}}" placeholder="/srv/www/blog" autocomplete="off" required aria-describedby="hint-static_root"></label>
 {{hintid "static_root"}}
@@ -69,6 +71,17 @@
 {{hintid "franken_port"}}
 <p class="explain">You set the folder above to the webroot. ServanaGo runs <code>frankenphp php-server</code> there as the site user on <code>127.0.0.1</code>; static files and PHP are both served by it.</p>
 {{else}}<p>FrankenPHP not found on this host. Install it, then reload this form: <a href="{{.Franken.Install}}">{{.Franken.Install}}</a>.</p>{{end}}
+</div>
+<div data-for="fastcgi"{{if ne .Site.Kind "fastcgi"}} hidden{{end}}>
+<label>FastCGI address (an absolute socket path or host:port)
+<input name="fcgi_addr" id="fcgi_addr" value="{{if .Site.UpstreamPort}}{{.Site.UpstreamHost}}:{{.Site.UpstreamPort}}{{else}}{{.Site.UpstreamHost}}{{end}}" placeholder="/run/myapp/fcgi.sock" autocomplete="off" required aria-describedby="hint-fcgi_addr"></label>
+{{hintid "fcgi_addr"}}
+<p class="explain">You run the FastCGI app yourself; ServanaGo only connects to it. Every request goes to it, with the folder above as its document root.</p>
+</div>
+<div data-for="cgi"{{if ne .Site.Kind "cgi"}} hidden{{end}}>
+{{if .FCGIWrap.Installed}}<p>fcgiwrap at <code>{{.FCGIWrap.Path}}</code></p>
+<p class="explain">Executable scripts under <code>cgi-bin/</code> in the folder run through fcgiwrap as the site user, started on demand. Everything else is served as a plain file.</p>
+{{else}}<p>fcgiwrap not found on this host. Install it, then reload this form: <code>{{.FCGIWrap.Install}}</code>.</p>{{end}}
 </div>
 <div data-for="php"{{if ne .Site.Kind "php"}} hidden{{end}}>
 {{if .PHPVersions}}<label>php-fpm version
@@ -159,6 +172,8 @@
     if (kind === 'static') { backend = field('static_root').value.trim(); what = 'Caddy serves the files in '; }
     else if (kind === 'node') { backend = 'the app on 127.0.0.1:' + $('port').value.trim() + ' (' + (field('start_command').value.trim() || 'start command') + ')'; what = 'Caddy forwards to '; }
     else if (kind === 'frankenphp') { backend = 'FrankenPHP on 127.0.0.1:' + $('franken_port').value.trim() + ' (' + field('static_root').value.trim() + ')'; what = 'Caddy forwards to '; }
+    else if (kind === 'fastcgi') { backend = 'the FastCGI app at ' + $('fcgi_addr').value.trim() + ' (' + field('static_root').value.trim() + ')'; what = 'Caddy forwards to '; }
+    else if (kind === 'cgi') { backend = 'fcgiwrap for cgi-bin in ' + field('static_root').value.trim(); what = 'Caddy runs scripts through '; }
     else if (kind === 'php') { backend = 'php-fpm ' + field('fpm_version').value + ' via its own socket (' + field('static_root').value.trim() + ')'; what = 'Caddy forwards PHP to '; }
     else { backend = field('upstream_host').value.trim() && $('upstream_port').value.trim() ? field('scheme').value + '://' + field('upstream_host').value.trim() + ':' + $('upstream_port').value.trim() : ''; what = 'Caddy forwards to '; }
     if (!h || !backend) { out.textContent = 'Fill in the hostnames and the ' + (kind === 'proxy' ? 'backend' : 'folder') + ' to see what will be created.'; return; }
@@ -168,7 +183,7 @@
     var note = $('rename-note');
     if (note) note.hidden = first() === $('hostnames').dataset.initial;
   }
-  ['hostnames', 'upstream_port', 'static_root', 'port', 'franken_port'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('input', preview); });
+  ['hostnames', 'upstream_port', 'static_root', 'port', 'franken_port', 'fcgi_addr'].forEach(function (id) { var e = $(id); if (e) e.addEventListener('input', preview); });
   ['upstream_host', 'scheme', 'fpm_version'].forEach(function (n) { if (field(n)) field(n).addEventListener('input', preview); });
   $('kind').addEventListener('change', sync);
   sync();

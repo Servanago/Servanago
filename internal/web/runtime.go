@@ -51,6 +51,12 @@ func (s *Server) runtimeApply(r *http.Request, rt store.Site) error {
 			return errors.New("frankenphp is not installed on this host")
 		}
 		install.Port, install.FrankenBin = rt.UpstreamPort, fr.Path
+	case "cgi":
+		fw := s.detect(ctx).FCGIWrap
+		if !fw.Installed {
+			return errors.New("fcgiwrap is not installed on this host")
+		}
+		install.FCGIBin = fw.Path
 	default: // the helper needs the exact binary; the version label was validated against detection
 		rep := s.detect(ctx)
 		for _, v := range rep.PHP {
