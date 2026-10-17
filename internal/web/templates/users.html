@@ -1,0 +1,52 @@
+{{define "reauth"}}<input type="password" name="password" placeholder="Your password" aria-label="Your password to confirm" autocomplete="current-password" required>
+{{if .}}<input type="text" name="code" placeholder="Your code" aria-label="Your code to confirm" autocomplete="one-time-code" required>{{end}}{{end}}
+
+{{define "content"}}
+<h1>Users {{helplink "users"}}</h1>
+<p>Every administrator has the same powers. Actions here ask for your own password{{if .Data.NeedCode}} and a code from your authenticator{{end}}: {{hint "reauth"}}</p>
+<article>
+<table>
+<thead><tr><th>User</th><th>Second factor</th><th>Last sign-in</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Users}}
+<tr>
+<td>{{.Username}}{{if .You}} <small>(you)</small>{{end}}</td>
+<td>{{if .TOTP}}authenticator{{end}}{{if and .TOTP .Passkeys}}, {{end}}{{if .Passkeys}}{{.Passkeys}} passkey{{if ne .Passkeys 1}}s{{end}}{{end}}{{if not (or .TOTP .Passkeys)}}none{{end}}</td>
+<td>{{if .LastLoginAt}}{{.LastLoginAt}}{{else}}never{{end}}</td>
+<td>
+{{if .You}}<a href="/security">Change your password and second factor</a>
+{{else}}<details><summary>Manage</summary>
+<form hx-post="/users/{{.ID}}/password" hx-target="#users-msg">
+<input type="password" name="new_password" placeholder="New password" aria-label="New password for {{.Username}}" autocomplete="new-password" required>
+{{template "reauth" $.Data.NeedCode}}
+<button type="submit" class="outline">Set password</button>
+</form>
+{{if or .TOTP .Passkeys}}<form hx-post="/users/{{.ID}}/reset-2fa" hx-target="#users-msg" hx-confirm="Remove {{.Username}}'s authenticator and passkeys? They will sign in with the password alone.">
+{{template "reauth" $.Data.NeedCode}}
+<button type="submit" class="outline secondary">Reset second factor</button>
+</form>{{end}}
+<form hx-post="/users/{{.ID}}/delete" hx-target="#users-msg" hx-confirm="Remove {{.Username}}? Their sessions end immediately.">
+{{template "reauth" $.Data.NeedCode}}
+<button type="submit" class="outline danger">Remove</button>
+</form>
+</details>{{end}}
+</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+<p id="users-msg" role="alert"></p>
+</article>
+<article>
+<header>Add administrator</header>
+<form hx-post="/users" hx-target="#add-msg">
+<label>Username <input name="username" placeholder="bob" autocomplete="off" autocapitalize="none" required aria-describedby="hint-username"></label>
+{{hintid "username"}}
+<label>Password <input type="password" name="new_password" autocomplete="new-password" required aria-describedby="hint-new_password"></label>
+{{hintid "new_password"}}
+{{template "reauth" .Data.NeedCode}}
+<button type="submit">Add administrator</button>
+<p id="add-msg" role="alert"></p>
+</form>
+</article>
+{{end}}

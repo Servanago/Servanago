@@ -75,3 +75,29 @@ func TestValidateIP6(t *testing.T) {
 		t.Error("ValidateIP must stay IPv4-only")
 	}
 }
+
+func TestValidateUsername(t *testing.T) {
+	for _, s := range []string{"admin", "a", "bob.smith", "k_9-x", "0day", strings.Repeat("a", 32)} {
+		if err := ValidateUsername(s); err != nil {
+			t.Errorf("%q rejected: %v", s, err)
+		}
+	}
+	for _, s := range []string{"", "Admin", "-bob", ".bob", "_bob", "bob smith", "bob@x.io", "bób", strings.Repeat("a", 33), "a/b", "a\x00b"} {
+		if err := ValidateUsername(s); err == nil {
+			t.Errorf("%q accepted", s)
+		}
+	}
+}
+
+func TestValidatePassword(t *testing.T) {
+	for _, s := range []string{"12345678", "correct horse battery", strings.Repeat("x", 72), "pässwörd1"} {
+		if err := ValidatePassword(s); err != nil {
+			t.Errorf("%q rejected: %v", s, err)
+		}
+	}
+	for _, s := range []string{"", "short", "1234567", strings.Repeat("x", 73), "has\x00nul-byte", strings.Repeat("é", 37)} { // 37 x 2 bytes = 74
+		if err := ValidatePassword(s); err == nil {
+			t.Errorf("%q accepted", s)
+		}
+	}
+}

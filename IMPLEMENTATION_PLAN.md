@@ -25,7 +25,7 @@ Decisions (settled in discussion; no deployed installs, so no migration or compa
 **Goal**: Users page (list, add, remove, set password, reset 2FA for any admin, with confirmation), change-own-password on Security, and the CLI `user add`, `user passwd`, `2fa-reset <name>`.
 **Success Criteria**: an admin can onboard and offboard another admin without a shell; removing or resetting a user ends their sessions; CLI recovers a locked-out last admin using only `DATA_DIR`.
 **Tests**: web handler tests for each action and for the guards (last admin, self-delete); CLI tests with a temp DB; help text defined for every new hint.
-**Status**: Not started
+**Status**: Complete. `/users` (list with each admin's factors; add, set password, reset second factor, remove) and a Password card on Security; both go through one handler, so changing your own password reissues this browser's session while other devices are signed out. Every action re-authenticates the acting admin (own password, plus a code when they have an authenticator), because a stolen session must not be able to mint a second way in. You cannot remove yourself or reset your own factors from `/users`; the last-admin guard lives in the store. Passwords are 8-72 bytes (`config.ValidatePassword`). CLI: `servanago user add NAME` and `user passwd NAME` read the password from a no-echo prompt or one line on stdin and need only `DATA_DIR`.
 
 ## Stage 4: audit log
 **Goal**: `audit_log` table and `store.Audit`; every mutating admin handler records actor, action and target (sites, domains, settings, users, security changes, logins and logouts); Audit page lists the latest entries.

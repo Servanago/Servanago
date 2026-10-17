@@ -232,7 +232,8 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 }
 
 type securityData struct {
-	Limited        bool // REQUIRE_2FA session that must enroll TOTP first
+	UserID         int64 // the signed-in admin, for the change-password form
+	Limited        bool  // REQUIRE_2FA session that must enroll TOTP first
 	Require2FA     bool
 	HasKey         bool
 	TOTPEnabled    bool
@@ -255,7 +256,7 @@ func (s *Server) securityPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	left, _ := s.deps.Store.CountBackupCodes(ctx, u.ID)
-	d := securityData{Limited: s.auth.level(r) == levelEnroll, Require2FA: s.deps.Cfg.Require2FA,
+	d := securityData{UserID: u.ID, Limited: s.auth.level(r) == levelEnroll, Require2FA: s.deps.Cfg.Require2FA,
 		HasKey: s.deps.Cfg.SecretKey != "", TOTPEnabled: ok && t.Enabled, BackupLeft: left}
 	if gs, err := s.gateIdentitiesData(ctx); err == nil {
 		d.GateIdentities = gs

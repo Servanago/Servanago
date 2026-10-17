@@ -41,6 +41,8 @@ func main() {
 		switch os.Args[1] {
 		case "import":
 			cmd = func() error { return runImport(os.Args[2:], os.Stdout) }
+		case "user":
+			cmd = func() error { return runUser(os.Args[2:], terminalPassword, os.Stdout) }
 		case "2fa-reset":
 			cmd = func() error { return runReset(os.Args[2:], os.Stdout) }
 		}

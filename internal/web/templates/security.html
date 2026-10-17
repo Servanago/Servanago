@@ -35,6 +35,19 @@
 
 {{if not .Data.Limited}}
 <article>
+<h2>Password</h2>
+<form hx-post="/users/{{.Data.UserID}}/password" hx-target="#password-msg">
+<input type="password" name="password" placeholder="Current password" aria-label="Current password" autocomplete="current-password" required>
+{{if .Data.TOTPEnabled}}<input type="text" name="code" placeholder="Code" aria-label="Code to change password" autocomplete="one-time-code" required>{{end}}
+<input type="password" name="new_password" placeholder="New password" aria-label="New password" autocomplete="new-password" required aria-describedby="hint-new_password">
+{{hintid "new_password"}}
+<button type="submit">Change password</button>
+<p id="password-msg" role="alert"></p>
+</form>
+<p><small>Changing it signs you out everywhere else. Other administrators are managed on the <a href="/users">Users</a> page.</small></p>
+</article>
+
+<article>
 <h2>Site access sessions</h2>
 {{if .Data.GateIdentities}}
 <table>

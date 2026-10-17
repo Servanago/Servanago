@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"net/netip"
 	"regexp"
@@ -41,6 +42,20 @@ var usernameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,31}$`)
 func ValidateUsername(name string) error {
 	if !usernameRE.MatchString(name) {
 		return fmt.Errorf("username %q: use 1-32 lower-case letters, digits, '.', '_' or '-', starting with a letter or digit", name)
+	}
+	return nil
+}
+
+// ValidatePassword accepts a password an admin may set in the UI or CLI: 8 to 72 bytes (bcrypt ignores the rest,
+// so longer would be silently truncated) and no NUL byte. The ADMIN_PASSWORD seed is exempt: it is the operator's call.
+func ValidatePassword(pw string) error {
+	switch {
+	case len(pw) < 8:
+		return errors.New("password must be at least 8 characters")
+	case len(pw) > 72:
+		return errors.New("password must be at most 72 bytes")
+	case strings.ContainsRune(pw, 0):
+		return errors.New("password must not contain a NUL byte")
 	}
 	return nil
 }
