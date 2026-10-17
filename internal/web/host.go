@@ -58,6 +58,11 @@ func (s *Server) hostDNS(takeOver bool) http.HandlerFunc {
 			fail(w, http.StatusUnprocessableEntity, err.Error())
 			return
 		}
+		action := "host.dns_resynced"
+		if takeOver {
+			action = "host.dns_taken_over"
+		}
+		s.audit(r, action, s.deps.Cfg.Host)
 		w.Header().Set("HX-Redirect", "/")
 		w.WriteHeader(http.StatusNoContent)
 	}

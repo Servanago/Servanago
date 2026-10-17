@@ -46,6 +46,7 @@ func (s *Server) revokeGateIdentity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("gate revoke", "event", "gate.revoke")
+	s.audit(r, "gate.revoked", email)
 	w.Header().Set("HX-Redirect", "/security")
 	w.WriteHeader(http.StatusNoContent)
 }

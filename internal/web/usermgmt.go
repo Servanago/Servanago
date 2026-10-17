@@ -109,6 +109,7 @@ func (s *Server) addUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("user added", "event", "user.added", "actor", me.Username, "user", name)
+	s.audit(r, "user.added", name)
 	hxRedirect(w, "/users")
 }
 
@@ -132,6 +133,7 @@ func (s *Server) setPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	me, _ := currentUser(r)
 	slog.Info("password set", "event", "user.password", "actor", me.Username, "user", t.Username)
+	s.audit(r, "user.password", t.Username)
 	if t.ID == me.ID {
 		fresh, err := s.deps.Store.GetUser(r.Context(), me.ID)
 		if err != nil {
@@ -169,6 +171,7 @@ func (s *Server) resetSecondFactor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("second factor reset", "event", "user.2fa_reset", "actor", me.Username, "user", t.Username)
+	s.audit(r, "user.2fa_reset", t.Username)
 	hxRedirect(w, "/users")
 }
 
@@ -195,5 +198,6 @@ func (s *Server) removeUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("user removed", "event", "user.removed", "actor", me.Username, "user", t.Username)
+	s.audit(r, "user.removed", t.Username)
 	hxRedirect(w, "/users")
 }

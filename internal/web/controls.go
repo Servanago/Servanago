@@ -81,11 +81,13 @@ func (s *Server) toggleSite(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "bad site id")
 		return
 	}
+	host := ""
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		cur, err := tx.GetSite(r.Context(), id)
 		if err != nil {
 			return userError{http.StatusNotFound, "site not found"}
 		}
+		host = cur.Hostnames[0]
 		cur.Enabled = !cur.Enabled
 		return tx.UpdateSite(r.Context(), cur)
 	})
@@ -93,6 +95,7 @@ func (s *Server) toggleSite(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
+	s.audit(r, "site.toggled", host)
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)
 }

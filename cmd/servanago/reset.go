@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/servanago/servanago/internal/store"
 )
@@ -20,6 +21,15 @@ func openDataStore() (*store.Store, error) {
 		dir = "/data"
 	}
 	return store.Open(filepath.Join(dir, "servanago.db"))
+}
+
+// auditCLI records a command-line action; it runs on the server, so the actor is "cli" and there is no client address.
+// A failure to write the row does not undo the action.
+func auditCLI(ctx context.Context, st *store.Store, action, target string) {
+	e := store.AuditEntry{At: time.Now().UTC().Format(time.RFC3339), Actor: "cli", Action: action, Target: target}
+	if err := st.AddAudit(ctx, e); err != nil {
+		fmt.Fprintf(os.Stderr, "warning: could not write the audit row: %v\n", err)
+	}
 }
 
 // runReset implements `servanago 2fa-reset <username>`: wipes that user's authenticator, backup codes and
@@ -48,6 +58,7 @@ func runReset(args []string, out io.Writer) error {
 	if err := st.BumpEpoch(ctx, u.ID); err != nil {
 		return err
 	}
+	auditCLI(ctx, st, "user.2fa_reset", u.Username)
 	_, err = fmt.Fprintf(out, "2fa reset for %s: totp=%v backup_codes=%d passkeys=%d. Their open sessions have ended.\n", u.Username, totp, codes, keys)
 	return err
 }

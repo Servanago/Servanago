@@ -42,6 +42,9 @@ func TestResetWipesOneUsersFactorsWithoutOtherEnv(t *testing.T) {
 	if _, ok, _ := st.GetTOTP(ctx, bob.ID); !ok {
 		t.Error("bob's totp was removed by alice's reset")
 	}
+	if rows, _ := st.ListAudit(ctx, 5); len(rows) != 1 || rows[0].Actor != "cli" || rows[0].Action != "user.2fa_reset" || rows[0].Target != "alice" {
+		t.Errorf("audit after reset: %+v", rows)
+	}
 	if got, _ := st.GetUser(ctx, alice.ID); got.SessionEpoch != alice.SessionEpoch+1 {
 		t.Errorf("alice's sessions not ended: epoch %d (was %d)", got.SessionEpoch, alice.SessionEpoch)
 	}

@@ -408,6 +408,7 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	if !checkPassword(u, found, r.PostFormValue("password")) { // same cost and answer for an unknown name
 		slog.Warn("login failed", "event", "login", "method", "password", "user", name, "ip", ip)
+		s.auditAs(r, name, "login.failed", "password")
 		http.Error(w, "Wrong username or password.", http.StatusUnauthorized)
 		return
 	}
@@ -425,11 +426,13 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 	s.auth.clear(ip)
 	if s.deps.Cfg.Require2FA {
 		slog.Info("login", "event", "login", "method", "password", "session", "enroll-only", "user", u.Username, "ip", ip)
+		s.auditAs(r, u.Username, "login", "password")
 		s.setSession(w, r, levelEnroll, u)
 		hxRedirect(w, "/security")
 		return
 	}
 	slog.Info("login", "event", "login", "method", "password", "user", u.Username, "ip", ip)
+	s.auditAs(r, u.Username, "login", "password")
 	s.setSession(w, r, levelFull, u)
 	hxRedirect(w, "/")
 }
@@ -438,6 +441,9 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 func normalizeUsername(s string) string { return strings.ToLower(strings.TrimSpace(s)) }
 
 func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
+	if _, u := s.auth.session(r); u.Username != "" {
+		s.auditAs(r, u.Username, "logout", "")
+	}
 	http.SetCookie(w, &http.Cookie{Name: sessionCookieName, Path: "/", MaxAge: -1, HttpOnly: true, Secure: secureRequest(r), SameSite: http.SameSiteStrictMode})
 	hxRedirect(w, "/login")
 }

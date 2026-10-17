@@ -42,6 +42,9 @@ func TestUserAddCreatesAnAdminFromDataDirAlone(t *testing.T) {
 	if !ok || bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte("carols-password")) != nil {
 		t.Fatalf("stored user: %+v %v", u, ok)
 	}
+	if rows, _ := st.ListAudit(context.Background(), 5); len(rows) != 1 || rows[0].Actor != "cli" || rows[0].Action != "user.added" || rows[0].Target != "carol" {
+		t.Fatalf("audit after add: %+v", rows)
+	}
 	for name, args := range map[string][]string{
 		"duplicate":      {"add", "CAROL"},
 		"bad name":       {"add", "no spaces"},
@@ -86,6 +89,9 @@ func TestUserPasswdChangesThePasswordAndEndsSessions(t *testing.T) {
 	got, _ := reopened.GetUser(ctx, u.ID)
 	if bcrypt.CompareHashAndPassword([]byte(got.PasswordHash), []byte("new-password-1")) != nil || got.SessionEpoch != u.SessionEpoch+1 {
 		t.Fatalf("after passwd: %+v", got)
+	}
+	if rows, _ := reopened.ListAudit(ctx, 5); len(rows) != 1 || rows[0].Actor != "cli" || rows[0].Action != "user.password" || rows[0].Target != "erin" {
+		t.Fatalf("audit after passwd: %+v", rows)
 	}
 	if err := runUser([]string{"passwd", "nobody"}, pw("new-password-1"), &out); err == nil {
 		t.Error("unknown user accepted")

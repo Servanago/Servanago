@@ -31,7 +31,7 @@ Decisions (settled in discussion; no deployed installs, so no migration or compa
 **Goal**: `audit_log` table and `store.Audit`; every mutating admin handler records actor, action and target (sites, domains, settings, users, security changes, logins and logouts); Audit page lists the latest entries.
 **Success Criteria**: each action above leaves exactly one row with the acting username; failed logins are recorded with the attempted username and IP; no secret, code or token is ever written.
 **Tests**: one table-driven web test per action family asserting the row; page renders and escapes values; retention is capped.
-**Status**: Not started
+**Status**: Complete. `store.AddAudit`/`ListAudit` (capped at 10,000 rows, trimmed in the same transaction) and `Server.audit`/`auditAs`, which clean control characters and bound the text; a database error is logged, never fatal. Recorded: login (target = method) and login.failed (actor = the name typed, or `unknown` for passkeys), logout, reauth.failed, site created/updated/deleted/toggled/dns_resynced/dns_taken_over, host DNS, domain added/updated/deleted, settings.smtp, user added/password/2fa_reset/removed, totp enabled/disabled, backup codes regenerated, passkey added/removed, gate revoked; the CLI writes rows with actor `cli`. Rows are written after the action succeeds. The Audit page (`/audit`, latest 200) is behind the normal session gate, so it works in open mode too.
 
 ## Stage 5: docs and e2e
 **Goal**: README, llms.txt, help text and DESIGN updated; Playwright specs for two admins and the Users and Audit pages in both projects.

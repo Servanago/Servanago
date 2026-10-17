@@ -90,5 +90,6 @@ func (s *Server) saveSMTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("settings saved", "event", "settings.smtp", "ready", host != "")
+	s.audit(r, "settings.smtp", "")
 	hxRedirect(w, "/settings")
 }

@@ -202,6 +202,7 @@ func (s *Server) createSite(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
+	s.audit(r, "site.created", created.Hostnames[0])
 	s.reconcile(r, created.ID)
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)
@@ -253,6 +254,7 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
+	s.audit(r, "site.updated", in.Hostnames[0])
 	s.reconcile(r, id) // adds records for new hostnames and removes the owned ones of hostnames that went
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = fmt.Fprint(w, "Saved and applied.")

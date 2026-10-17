@@ -92,9 +92,11 @@ func (s *Server) deleteSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var target dnsTarget
+	host := ""
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		if cur, err := tx.GetSite(r.Context(), id); err == nil {
 			target, _ = dnsTargetOf(r, tx, cur)
+			host = cur.Hostnames[0]
 		}
 		return tx.DeleteSite(r.Context(), id)
 	})
@@ -102,6 +104,7 @@ func (s *Server) deleteSite(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
+	s.audit(r, "site.deleted", host)
 	if r.FormValue("delete_dns") != "" { // the A record is kept unless the user asked; Remove skips adopted records
 		s.removeRecord(r, target)
 	}
@@ -168,13 +171,13 @@ func (s *Server) removeRecord(r *http.Request, t dnsTarget) {
 }
 
 func (s *Server) resyncDNS(w http.ResponseWriter, r *http.Request) {
-	s.dnsAction(w, r, s.deps.DNS.Reconcile)
+	s.dnsAction(w, r, "site.dns_resynced", s.deps.DNS.Reconcile)
 }
 func (s *Server) takeOverDNS(w http.ResponseWriter, r *http.Request) {
-	s.dnsAction(w, r, s.deps.DNS.TakeOver)
+	s.dnsAction(w, r, "site.dns_taken_over", s.deps.DNS.TakeOver)
 }
 
-func (s *Server) dnsAction(w http.ResponseWriter, r *http.Request, act func(context.Context, int64) error) {
+func (s *Server) dnsAction(w http.ResponseWriter, r *http.Request, action string, act func(context.Context, int64) error) {
 	if !s.dnsOn() {
 		http.NotFound(w, r)
 		return
@@ -187,6 +190,9 @@ func (s *Server) dnsAction(w http.ResponseWriter, r *http.Request, act func(cont
 	if err := act(r.Context(), id); err != nil {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return
+	}
+	if rt, err := s.deps.Store.GetSite(r.Context(), id); err == nil {
+		s.audit(r, action, rt.Hostnames[0])
 	}
 	w.Header().Set("HX-Redirect", "/")
 	w.WriteHeader(http.StatusNoContent)

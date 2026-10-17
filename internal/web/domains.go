@@ -126,6 +126,7 @@ func (s *Server) addDomain(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
+	s.audit(r, "domain.added", name)
 	w.Header().Set("HX-Redirect", "/domains")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -174,11 +175,13 @@ func (s *Server) updateDomain(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	var name string
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		d, err := tx.GetDomain(r.Context(), id)
 		if err != nil {
 			return userError{http.StatusNotFound, "domain not found"}
 		}
+		name = d.Name
 		d.DefaultIP, d.DefaultIP6, d.CertMode = ip, ip6, mode
 		if zoneID != "" {
 			d.ZoneID = zoneID
@@ -189,6 +192,7 @@ func (s *Server) updateDomain(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
+	s.audit(r, "domain.updated", name)
 	w.Header().Set("HX-Redirect", "/domains")
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -199,6 +203,7 @@ func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, "bad domain id")
 		return
 	}
+	var name string
 	err = s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
 		rs, err := tx.ListSites(r.Context())
 		if err != nil {
@@ -207,6 +212,11 @@ func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
 		ds, err := tx.ListDomains(r.Context())
 		if err != nil {
 			return err
+		}
+		for _, d := range ds {
+			if d.ID == id {
+				name = d.Name
+			}
 		}
 		n := 0
 		for _, x := range rs {
@@ -223,6 +233,7 @@ func (s *Server) deleteDomain(w http.ResponseWriter, r *http.Request) {
 		failErr(w, err)
 		return
 	}
+	s.audit(r, "domain.deleted", name)
 	w.Header().Set("HX-Redirect", "/domains")
 	w.WriteHeader(http.StatusNoContent)
 }

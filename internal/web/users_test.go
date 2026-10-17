@@ -268,4 +268,18 @@ func TestPasskeyLoginPicksTheOwner(t *testing.T) {
 	if w := signIn(forged); w.Code != 401 {
 		t.Fatalf("a credential under another user's handle was accepted: %d", w.Code)
 	}
+
+	// The trail names who registered and who signed in, and records the refused attempt.
+	count := map[string]int{}
+	for _, e := range auditRows(t, s) {
+		switch {
+		case e.Action == "passkey.added", e.Action == "login" && e.Target == "passkey", e.Action == "login.failed" && e.Target == "passkey":
+			count[e.Actor+" "+e.Action]++
+		}
+	}
+	for want, n := range map[string]int{"admin passkey.added": 1, "bob passkey.added": 1, "admin login": 1, "bob login": 1, "unknown login.failed": 1} {
+		if count[want] != n {
+			t.Errorf("audit %q: %d rows, want %d (all: %v)", want, count[want], n, count)
+		}
+	}
 }

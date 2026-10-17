@@ -1,0 +1,16 @@
+{{define "content"}}
+<h1>Audit {{helplink "audit"}}</h1>
+<p>The latest 200 administrator actions, newest first. ServanaGo keeps the last 10,000.</p>
+<article>
+{{if .Data}}
+<table>
+<thead><tr><th>Time (UTC)</th><th>Who</th><th>What</th><th>Target</th><th>From</th></tr></thead>
+<tbody>
+{{range .Data}}
+<tr><td>{{.At}}</td><td>{{.Actor}}</td><td>{{.Action}}</td><td>{{.Target}}</td><td>{{.IP}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p>Nothing recorded yet.</p>{{end}}
+</article>
+{{end}}

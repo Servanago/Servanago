@@ -185,6 +185,7 @@ func (s *Server) loginTOTPSubmit(w http.ResponseWriter, r *http.Request) {
 	}
 	if !ok {
 		slog.Warn("login failed", "event", "login", "method", "totp", "user", u.Username, "ip", ip)
+		s.auditAs(r, u.Username, "login.failed", "totp")
 		http.Error(w, "Wrong code.", http.StatusUnauthorized)
 		return
 	}
@@ -193,6 +194,7 @@ func (s *Server) loginTOTPSubmit(w http.ResponseWriter, r *http.Request) {
 		method = "backup-code"
 	}
 	slog.Info("login", "event", "login", "method", method, "user", u.Username, "ip", ip)
+	s.auditAs(r, u.Username, "login", method)
 	s.auth.endPending(c.Value)
 	s.auth.clear(ip)
 	s.setPending(w, r, "", -1)
@@ -210,6 +212,7 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 	}
 	u, signedIn := currentUser(r)
 	if !signedIn || !checkPassword(u, true, r.PostFormValue("password")) {
+		s.audit(r, "reauth.failed", r.URL.Path)
 		fail(w, http.StatusUnauthorized, "Wrong password.")
 		return false
 	}
@@ -223,6 +226,7 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 			return false
 		}
 		if err != nil || !good {
+			s.audit(r, "reauth.failed", r.URL.Path)
 			fail(w, http.StatusUnauthorized, "Wrong code.")
 			return false
 		}
@@ -356,6 +360,7 @@ func (s *Server) totpConfirm(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auth.clear(ip)
 	slog.Info("totp enabled", "event", "totp.enabled", "user", u.Username)
+	s.audit(r, "totp.enabled", "")
 	if s.auth.level(r) == levelEnroll {
 		s.setSession(w, r, levelFull, u)
 	}
@@ -376,6 +381,7 @@ func (s *Server) totpDisable(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("totp disabled", "event", "totp.disabled", "user", u.Username)
+	s.audit(r, "totp.disabled", "")
 	hxRedirect(w, "/security")
 }
 
@@ -397,6 +403,7 @@ func (s *Server) backupRegenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("backup codes regenerated", "event", "backup_codes.regenerated", "user", u.Username)
+	s.audit(r, "backup_codes.regenerated", "")
 	s.fragment(w, "backup_codes", map[string]any{"Codes": shown})
 }
 

@@ -59,12 +59,14 @@ func runUser(args []string, askPassword func() (string, error), out io.Writer) e
 		if _, err := st.CreateUser(ctx, name, string(hash)); err != nil {
 			return err
 		}
+		auditCLI(ctx, st, "user.added", name)
 		_, err = fmt.Fprintf(out, "added administrator %s\n", name)
 		return err
 	}
 	if err := st.SetPassword(ctx, u.ID, string(hash)); err != nil {
 		return err
 	}
+	auditCLI(ctx, st, "user.password", name)
 	_, err = fmt.Fprintf(out, "password set for %s; their open sessions have ended\n", name)
 	return err
 }

@@ -207,6 +207,7 @@ func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("passkey added", "event", "passkey.added", "user", cu.Username, "rp", rp)
+	s.audit(r, "passkey.added", name)
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -222,6 +223,7 @@ func (s *Server) passkeyDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("passkey removed", "event", "passkey.removed", "user", cu.Username)
+	s.audit(r, "passkey.removed", r.PathValue("id"))
 	hxRedirect(w, "/security")
 }
 
@@ -253,6 +255,7 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	ip := clientIP(r)
 	deny := func(why string, err error) {
 		slog.Warn("login failed", "event", "login", "method", "passkey", "ip", ip, "why", why, "error", err)
+		s.auditAs(r, "unknown", "login.failed", "passkey")
 		http.Error(w, "Passkey sign-in failed.", http.StatusUnauthorized)
 	}
 	wa, rp, err := s.relyingParty(r)
@@ -307,6 +310,7 @@ func (s *Server) passkeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	s.auth.clear("pk:" + ip)
 	slog.Info("login", "event", "login", "method", "passkey", "user", user.Username, "ip", ip)
+	s.auditAs(r, user.Username, "login", "passkey")
 	s.setSession(w, r, levelFull, user)
 	hxRedirect(w, "/")
 }
