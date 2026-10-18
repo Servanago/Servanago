@@ -11,7 +11,7 @@ import (
 // TestPHPRouteLoads: the rendered php config parses and loads in-process Caddy (the pool socket
 // does not need to exist for the config to load; a dial failure is a per-request 502).
 func TestPHPRouteLoads(t *testing.T) {
-	storage := t.TempDir() // before Cleanup so it is removed after Caddy stops
+	storage := caddytest.TempDir(t) // before Cleanup so it is removed after Caddy stops
 	caddytest.Cleanup(t)
 	t.Cleanup(func() { _ = caddy.Stop() })
 	site := asPHP(store.Site{ID: 2, Hostnames: []string{"php.test"}, Enabled: true}, "phpt", "8.2")

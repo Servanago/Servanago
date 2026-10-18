@@ -153,7 +153,7 @@ func TestSweepSkipsPHPDialsNode(t *testing.T) {
 }
 
 func TestCertProbeAgainstRealCaddy(t *testing.T) {
-	storage := t.TempDir()
+	storage := caddytest.TempDir(t)
 	caddytest.Cleanup(t)
 	st, err := store.Open(":memory:")
 	if err != nil {

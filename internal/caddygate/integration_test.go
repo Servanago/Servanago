@@ -21,7 +21,7 @@ import (
 )
 
 func TestGateBehindRealCaddy(t *testing.T) {
-	storage := t.TempDir() // before Cleanup so it is removed after Caddy stops
+	storage := caddytest.TempDir(t) // before Cleanup so it is removed after Caddy stops
 	caddytest.Cleanup(t)
 	st, err := store.Open(":memory:")
 	if err != nil {

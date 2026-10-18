@@ -16,7 +16,7 @@ import (
 // A real ACME issuer pointed at a dead CA must fail issuance and surface it in the log ring.
 func TestACMEFailureAppearsInLogRing(t *testing.T) {
 	t.Setenv("CLOUDFLARE_API_TOKEN", strings.Repeat("a", 40))
-	storage := t.TempDir()
+	storage := caddytest.TempDir(t)
 	caddytest.Cleanup(t)
 	st, err := store.Open(":memory:")
 	if err != nil {
@@ -43,7 +43,7 @@ func TestACMEFailureAppearsInLogRing(t *testing.T) {
 // With no Cloudflare token the default ACME challenges are used. Real Caddy must accept that config
 // (no env token, no DNS provider) and a dead CA must still surface in the log ring.
 func TestHTTP01IssuerLoadsAndFailsVisibly(t *testing.T) {
-	storage := t.TempDir()
+	storage := caddytest.TempDir(t)
 	caddytest.Cleanup(t)
 	st, err := store.Open(":memory:")
 	if err != nil {

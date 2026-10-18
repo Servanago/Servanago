@@ -10,6 +10,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -135,4 +137,30 @@ func Post(t testing.TB, httpsPort int, host, body string) int {
 	}
 	defer resp.Body.Close()
 	return resp.StatusCode
+}
+
+// TempDir is t.TempDir for Caddy storage. Call it before Cleanup, so it is removed after Caddy stops. Caddy's
+// certificate job can still be writing for a moment after Stop, which makes t.TempDir's one-shot removal flaky
+// ("directory not empty"), so the removal retries. The directory returned is a child of the one removed, like
+// t.TempDir's "001": apply keeps caddy-last-good.json beside the storage dir, so a shared parent leaks it between tests.
+func TempDir(t testing.TB) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "caddytest")
+	if err != nil {
+		t.Fatal(err)
+	}
+	storage := filepath.Join(dir, "001")
+	if err := os.Mkdir(storage, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		for i := 0; i < 50; i++ {
+			if os.RemoveAll(dir) == nil {
+				return
+			}
+			time.Sleep(100 * time.Millisecond)
+		}
+		t.Errorf("remove %s: still busy after Caddy stopped", dir)
+	})
+	return storage
 }

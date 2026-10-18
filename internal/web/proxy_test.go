@@ -23,7 +23,7 @@ import (
 // The Turnstile exemption (Host == SERVANAGO_HOST), Secure cookies (X-Forwarded-Proto) and the login throttle
 // (X-Forwarded-For) all depend on what Caddy's reverse_proxy hands the UI. This pins it against a real Caddy.
 func TestUIBehindRealCaddyKeepsHostAndSetsForwardedHeaders(t *testing.T) {
-	storage := t.TempDir() // before Cleanup so it is removed after Caddy stops
+	storage := caddytest.TempDir(t) // before Cleanup so it is removed after Caddy stops
 	caddytest.Cleanup(t)
 	st, err := store.Open(":memory:")
 	if err != nil {
