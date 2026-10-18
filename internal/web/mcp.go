@@ -31,7 +31,9 @@ var mcpActor = store.User{Username: "mcp token"}
 func (s *Server) mcpHandler() http.Handler {
 	token := sha256.Sum256([]byte(s.deps.Cfg.MCPToken))
 	h := mcp.NewStreamableHTTPHandler(func(r *http.Request) *mcp.Server { return s.mcpServer(clientIP(r)) },
-		&mcp.StreamableHTTPOptions{Stateless: true})
+		// The SDK's localhost guard refuses a non-local Host from a loopback peer, which is every request via Caddy.
+		// The bearer token covers what it protects against: a rebinding page cannot send it.
+		&mcp.StreamableHTTPOptions{Stateless: true, DisableLocalhostProtection: true})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if s.deps.Cfg.MCPToken == "" {
 			http.NotFound(w, r)

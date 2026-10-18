@@ -204,3 +204,26 @@ func TestMCPToolErrors(t *testing.T) {
 		t.Errorf("refused calls left state: sites=%v helper=%q", rs, host.log())
 	}
 }
+
+// Caddy forwards from loopback with the public Host header: the SDK's localhost DNS-rebinding guard would
+// refuse every real request. The bearer token already stops a rebinding page, which cannot send it.
+func TestMCPAcceptsPublicHostBehindProxy(t *testing.T) {
+	s, _ := runtimeServer(t)
+	s.deps.Cfg.MCPToken = mcpToken
+	ts := httptest.NewServer(s.Handler()) // the client connects from loopback, like Caddy
+	t.Cleanup(ts.Close)
+	body := `{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`
+	r, _ := http.NewRequest("POST", ts.URL+"/mcp", strings.NewReader(body))
+	r.Host = "panel.example.com"
+	r.Header.Set("Authorization", "Bearer "+mcpToken)
+	r.Header.Set("Content-Type", "application/json")
+	r.Header.Set("Accept", "application/json, text/event-stream")
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		t.Fatalf("public Host header refused: %d", resp.StatusCode)
+	}
+}
