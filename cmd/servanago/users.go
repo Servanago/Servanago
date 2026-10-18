@@ -48,6 +48,7 @@ func runUser(args []string, askPassword func() (string, error), out io.Writer) e
 	if err != nil {
 		return err
 	}
+	pw = strings.TrimSpace(pw) // the sign-in forgives stray whitespace, so what is stored must not contain it
 	if err := config.ValidatePassword(pw); err != nil {
 		return err
 	}

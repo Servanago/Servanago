@@ -220,13 +220,19 @@ func (a *authn) level(r *http.Request) string {
 // dummyHash makes a login for an unknown username cost one bcrypt comparison, like a wrong password does.
 var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("servanago-no-such-user"), bcrypt.DefaultCost)
 
-// checkPassword compares pw with the user's hash; with ok=false it still burns one comparison.
+// checkPassword compares pw with the user's hash; with ok=false it still burns one comparison. Passwords are
+// stored trimmed, so stray whitespace from a paste is forgiven; the text exactly as typed is tried first so an
+// account whose password was set with edge whitespace (before that rule) still signs in.
 func checkPassword(u store.User, found bool, pw string) bool {
 	hash := []byte(dummyHash)
 	if found {
 		hash = []byte(u.PasswordHash)
 	}
-	return bcrypt.CompareHashAndPassword(hash, []byte(pw)) == nil && found
+	ok := bcrypt.CompareHashAndPassword(hash, []byte(pw)) == nil
+	if t := strings.TrimSpace(pw); !ok && t != pw {
+		ok = bcrypt.CompareHashAndPassword(hash, []byte(t)) == nil
+	}
+	return ok && found
 }
 
 type userCtxKey struct{}

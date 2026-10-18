@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -67,8 +68,9 @@ func (s *Server) target(w http.ResponseWriter, r *http.Request) (store.User, boo
 	return u, true
 }
 
-// hashPassword checks the password rules and returns the bcrypt hash; on failure it has answered 422.
+// hashPassword checks the password rules and returns the bcrypt hash of the trimmed password; on failure it has answered 422.
 func hashPassword(w http.ResponseWriter, pw string) (string, bool) {
+	pw = strings.TrimSpace(pw)
 	if err := config.ValidatePassword(pw); err != nil {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return "", false

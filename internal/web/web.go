@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 
@@ -100,7 +101,7 @@ func (s *Server) initUsers() {
 		slog.Error("count users", "error", err)
 		return
 	}
-	pw := s.deps.Cfg.AdminPassword
+	pw := strings.TrimSpace(s.deps.Cfg.AdminPassword) // like every stored password: no edge whitespace
 	switch {
 	case n == 0 && pw != "":
 		name := normalizeUsername(s.deps.Cfg.AdminUser)

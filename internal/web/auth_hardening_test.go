@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 // S1: the budget must hold under parallel attempts (check-then-record raced).
@@ -98,5 +100,35 @@ func TestSecureRequestWhenServedOverTLS(t *testing.T) {
 	r.TLS = &tls.ConnectionState{}
 	if !secureRequest(r) {
 		t.Fatal("TLS request not treated as secure")
+	}
+}
+
+// Stray whitespace around a password (a paste, a trailing newline) must not lock anyone out. The stored hash may be of
+// the trimmed text (every password set now) or, for an older account, of the text exactly as typed: both still sign in.
+func TestPasswordWhitespaceIsForgiven(t *testing.T) {
+	s := newServer(t, "pw-pw-pw-pw")
+	for n, pw := range map[string]string{"trimmed": "pw-pw-pw-pw", "pasted": " pw-pw-pw-pw\r\n"} {
+		if w := login(s, pw, map[string]string{"X-Forwarded-For": "10.9.0." + map[string]string{"trimmed": "1", "pasted": "2"}[n]}, ""); w.Code != 204 {
+			t.Errorf("%s sign-in: %d", n, w.Code)
+		}
+	}
+	addUser(t, s, "oldie", " spaced pw ") // hash of the text with its spaces, as before this rule
+	if w := loginAs(s, "oldie", " spaced pw ", map[string]string{"X-Forwarded-For": "10.9.0.3"}, ""); w.Code != 204 {
+		t.Errorf("legacy untrimmed password: %d", w.Code)
+	}
+	if w := loginAs(s, "oldie", "spaced pw", map[string]string{"X-Forwarded-For": "10.9.0.4"}, ""); w.Code == 204 {
+		t.Error("a different password signed in")
+	}
+}
+
+// A password set with whitespace around it is stored trimmed, so it signs in however it is typed later.
+func TestSetPasswordTrims(t *testing.T) {
+	w := httptest.NewRecorder()
+	h, ok := hashPassword(w, "  new-password-1 \n")
+	if !ok || bcrypt.CompareHashAndPassword([]byte(h), []byte("new-password-1")) != nil {
+		t.Errorf("hash is not of the trimmed password (ok=%v)", ok)
+	}
+	if _, ok := hashPassword(httptest.NewRecorder(), "   short  "); ok {
+		t.Error("length rule must apply to the trimmed text")
 	}
 }
