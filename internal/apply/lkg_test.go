@@ -6,6 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/servanago/servanago/internal/caddytest"
+	"github.com/servanago/servanago/internal/store"
 )
 
 // TestLastKnownGoodStart writes a good config, breaks it (rejected render), then verifies Start
@@ -85,4 +88,63 @@ func auditHas(t *testing.T, f *fixture, action string) bool {
 		}
 	}
 	return false
+}
+
+// The LKG file holds basic-auth hashes: it must not be readable by other users.
+func TestLastKnownGoodIsPrivate(t *testing.T) {
+	f := newFixture(t)
+	if err := f.svc.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(filepath.Dir(f.svc.opts.StoragePath), "caddy-last-good.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if fi.Mode().Perm() != 0o600 {
+		t.Errorf("last-known-good mode %v, want 0600", fi.Mode().Perm())
+	}
+}
+
+// A crash mid-save leaves a half-written .tmp beside the real file. The next start ignores it, serves the
+// stored config, and the following save replaces it.
+func TestStartAfterInterruptedLKGSave(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	lkg := filepath.Join(filepath.Dir(f.svc.opts.StoragePath), "caddy-last-good.json")
+	if err := os.WriteFile(lkg+".tmp", []byte(`{"apps":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if f.svc.StartupError() != nil {
+		t.Fatalf("stale temp file broke startup: %v", f.svc.StartupError())
+	}
+	if b, _ := os.ReadFile(lkg); !strings.Contains(string(b), uiHost) {
+		t.Errorf("last-known-good not replaced: %q", b)
+	}
+	if _, err := os.Stat(lkg + ".tmp"); !os.IsNotExist(err) {
+		t.Errorf("temp file left behind: %v", err)
+	}
+}
+
+// A torn LKG (truncated by something outside the atomic rename) plus a rejected stored config falls through to
+// bootstrap-only instead of failing Start.
+func TestStartWithTornLKGAndBadConfig(t *testing.T) {
+	f := newFixture(t)
+	ctx := context.Background()
+	if _, err := f.st.CreateSite(ctx, store.Site{Hostnames: []string{"bad.example.com"}, Scheme: "http",
+		UpstreamHost: "127.0.0.1", UpstreamPort: 9, Enabled: true, Allowlist: "garbage"}); err != nil {
+		t.Fatal(err)
+	}
+	lkg := filepath.Join(filepath.Dir(f.svc.opts.StoragePath), "caddy-last-good.json")
+	if err := os.WriteFile(lkg, []byte(`{"apps":`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.svc.Start(ctx); err != nil {
+		t.Fatalf("Start must fall back to bootstrap: %v", err)
+	}
+	if code, body := caddytest.Get(t, f.httpsPort, uiHost); code != 200 || body != "ui" {
+		t.Fatalf("bootstrap UI site: %d %q", code, body)
+	}
 }

@@ -18,8 +18,32 @@ type RealSeam struct{}
 
 func (RealSeam) Lstat(path string) (fs.FileInfo, error) { return os.Lstat(path) }
 func (RealSeam) ReadFile(path string) ([]byte, error)   { return os.ReadFile(path) }
+
+// WriteFile writes a temp file beside path and renames it over, so a crash leaves the old file or the new
+// one, never a torn unit.
 func (RealSeam) WriteFile(path string, data []byte, perm fs.FileMode) error {
-	return os.WriteFile(path, data, perm)
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(data)
+	if err == nil {
+		err = f.Sync()
+	}
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err == nil {
+		err = os.Chmod(tmp, perm) // OpenFile applies the umask; a stale temp keeps its old mode
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+	}
+	return err
 }
 func (RealSeam) Remove(path string) error { return os.Remove(path) }
 func (RealSeam) MkdirAll(path string, perm fs.FileMode) error {

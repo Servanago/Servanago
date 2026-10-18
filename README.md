@@ -120,7 +120,13 @@ scoped to the zones you want to manage. The same token is used for certificate i
 
 **Data directory permissions.** The user running ServanaGo must be able to write `DATA_DIR` (the database and Caddy's certificate storage). Keep it private to that user.
 
-**Backups.** Copy `DATA_DIR` (SQLite database and Caddy's certificate storage).
+**Backups.** Three things carry state:
+
+- `DATA_DIR` (`/var/lib/servanago`): `servanago.db` (every site, user, passkey and sealed secret), `caddy/` (certificates and the ACME account) and `caddy-last-good.json`. Take a consistent copy of the live database with `sqlite3 /var/lib/servanago/servanago.db ".backup /backup/servanago.db"`; a plain `cp` of a running database can miss the `-wal` file.
+- `/etc/servanago/servanago.env`: holds `SERVANAGO_SECRET_KEY`. Without that exact key the authenticator seeds, the SMTP password and site environment values in the database cannot be read. Keep it in a different place than the database backup.
+- Your sites' own files (their roots) are not touched or backed up by ServanaGo.
+
+**Restore.** On the new or repaired host install the package, then `systemctl stop servanago`, put the `.env` back, copy `servanago.db` (and `caddy/`, to keep certificates and avoid re-issuing) into `DATA_DIR` owned by `servanago` with mode 0600/0750, delete any stale `servanago.db-wal` and `-shm`, and `systemctl start servanago`. Check `PRAGMA integrity_check` on the copy first. Sites, users and domains return at once and the proxy and static sites serve again. Node, PHP, FrankenPHP and CGI sites need their unit and system user back: open each one and save it (the unit files live in `/etc/systemd/system/servanago-<slug>.*` and `/etc/servanago/fpm/`, so a restore on the same host that kept `/etc` needs nothing). A passkey only works again on the same `SERVANAGO_HOST`.
 
 ## How it works
 

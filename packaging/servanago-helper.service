@@ -12,6 +12,13 @@ RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=yes
 Restart=on-failure
 NoNewPrivileges=yes
+# Root, but it only edits unit files, pool files and users: no kernel, namespace or realtime access needed.
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target

@@ -147,7 +147,7 @@ func (s *Service) loadCfg(cfg []byte) error {
 // a lost file costs only the bootstrap fallback.
 func (s *Service) saveLKG(cfg []byte) {
 	tmp := s.lastGood + ".tmp"
-	if err := os.WriteFile(tmp, cfg, 0o644); err != nil {
+	if err := os.WriteFile(tmp, cfg, 0o600); err != nil { // basic-auth hashes live in it
 		slog.Error("write last-known-good", "path", s.lastGood, "error", err)
 		return
 	}
