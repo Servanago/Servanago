@@ -203,3 +203,13 @@ func TestAuditPageListsRowsEscapedAndNewestFirst(t *testing.T) {
 		t.Errorf("audit page without a session: %d", w.Code)
 	}
 }
+
+// A failed re-authentication says why in the audit row, so "it won't take my password" can be told apart from
+// "the form sent no password". Only the byte length of a wrong password is recorded, never its text.
+func TestReauthFailureRowSaysWhy(t *testing.T) {
+	s := newServer(t, "pw")
+	ck := cookiesOf(t, login(s, "pw", map[string]string{"X-Forwarded-For": "10.8.1.1"}, ""))
+	p := stepper{t, s, "admin", ck}
+	p.do("reauth.failed", "/users: no password sent", 401, postTo("/users", "username", "carol", "new_password", "x"))
+	p.do("reauth.failed", "/users: password mismatch, 7 bytes", 401, postTo("/users", "password", "nope123", "username", "carol", "new_password", "x"))
+}

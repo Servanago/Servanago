@@ -211,8 +211,17 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 		return false
 	}
 	u, signedIn := currentUser(r)
-	if !signedIn || !checkPassword(u, true, r.PostFormValue("password")) {
-		s.audit(r, "reauth.failed", r.URL.Path)
+	pw := r.PostFormValue("password")
+	if !signedIn || !checkPassword(u, true, pw) {
+		// The reason separates a form that sent nothing from a wrong password; only the length of the latter is kept.
+		why := "no password sent"
+		switch {
+		case !signedIn:
+			why = "not signed in"
+		case pw != "":
+			why = fmt.Sprintf("password mismatch, %d bytes", len(pw))
+		}
+		s.audit(r, "reauth.failed", r.URL.Path+": "+why)
 		fail(w, http.StatusUnauthorized, "Wrong password.")
 		return false
 	}
@@ -226,7 +235,7 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 			return false
 		}
 		if err != nil || !good {
-			s.audit(r, "reauth.failed", r.URL.Path)
+			s.audit(r, "reauth.failed", r.URL.Path+": wrong code")
 			fail(w, http.StatusUnauthorized, "Wrong code.")
 			return false
 		}
