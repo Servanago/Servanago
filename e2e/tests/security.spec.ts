@@ -39,8 +39,10 @@ test('authenticator app: enroll, sign in with a backup code, turn off', async ({
   const secret = (await page.locator('#totp-setup code').first().innerText()).trim();
   await page.getByLabel('Code from the app').fill(totp(secret));
   await page.getByRole('button', { name: 'Confirm' }).click();
+  // allInnerTexts() does not wait: read the codes only once htmx has swapped them in, or a slow runner sees none
+  // while the server has already enabled TOTP, and every later sign-in as admin then asks for a code.
+  await expect(page.locator('#totp-msg li code')).toHaveCount(10);
   const codes = await page.locator('#totp-msg li code').allInnerTexts();
-  expect(codes).toHaveLength(10);
 
   await page.getByRole('button', { name: 'Sign out' }).click();
   await signIn(page);
