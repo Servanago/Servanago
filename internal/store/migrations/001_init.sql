@@ -33,6 +33,7 @@ CREATE TABLE sites (
   stream          INTEGER NOT NULL DEFAULT 0, -- flush_interval -1
   max_body        INTEGER NOT NULL DEFAULT 0 CHECK (max_body >= 0), -- request_body max_size in bytes; 0 = Caddy default
   gate_mode       TEXT NOT NULL DEFAULT '',   -- magic-link gate (DESIGN.md §18): '' = ungated, 'acl' = email allowlist, 'open' = any email
+  extra_routes    TEXT NOT NULL DEFAULT '',   -- path prefixes Caddy proxies to their own upstream before the site's handler: one per line, path=dial
   CHECK (
        (kind = 'proxy'  AND upstream_host IS NOT NULL AND upstream_port IS NOT NULL AND static_root IS NULL
                       AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')

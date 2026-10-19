@@ -138,8 +138,25 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 			return r, fmt.Errorf("record IPv6: %w", err)
 		}
 	}
+	if r.ExtraRoutes, err = extraRoutesText(v.Get("extra_routes")); err != nil {
+		return r, err
+	}
 	r.Enabled = v.Get("enabled") != ""
 	return r, nil
+}
+
+// extraRoutesText parses the extra routes box and returns its canonical form: one route per line,
+// path=dial, so the renderer's re-parse of the stored text can never fail.
+func extraRoutesText(text string) (string, error) {
+	rs, err := config.ParseExtraRoutes(text)
+	if err != nil {
+		return "", fmt.Errorf("extra routes: %w", err)
+	}
+	lines := make([]string, len(rs))
+	for i, x := range rs {
+		lines[i] = x.Text()
+	}
+	return strings.Join(lines, "\n"), nil
 }
 
 // parseFCGIAddr reads the FastCGI upstream: an absolute socket path (port 0) or host:port.
@@ -233,6 +250,7 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	base.InstallCommand, base.BuildCommand = in.InstallCommand, in.BuildCommand
 	base.TLSSkipVerify, base.Enabled, base.RecordIP, base.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
 	base.FPMVersion = in.FPMVersion
+	base.ExtraRoutes = in.ExtraRoutes
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
 	}

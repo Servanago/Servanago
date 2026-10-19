@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/store"
 )
 
@@ -173,24 +174,37 @@ func issuer(o Options) m {
 // siteHandler is the site's terminal handler (reverse_proxy, file_server or the php_fastcgi
 // expansion) wrapped in the shared gate, allowlist and basic-auth chain when any of them is set.
 func siteHandler(host string, r store.Site) (any, error) {
+	var extras []any
+	if r.ExtraRoutes != "" {
+		var err error
+		if extras, err = extraRoutes(r); err != nil {
+			return nil, err
+		}
+	}
 	var handlers []any
 	switch r.Kind {
 	case "static":
 		// file_server lists no directories unless asked. Dotfiles and dot-directories get a 404 by request path;
 		// file_server's own "hide" would also match dot-directories in the root's location.
-		handlers = []any{m{"handler": "subroute", "routes": []any{
-			m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true},
-			m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
-		}}}
+		routes := []any{dotfile404()}
+		routes = append(routes, extras...)
+		routes = append(routes, m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}})
+		handlers = []any{m{"handler": "subroute", "routes": routes}}
 	case "php":
-		handlers = []any{phpRoute(r)}
+		handlers = []any{phpRoute(r, extras)}
 	case "fastcgi": // every request goes to the FastCGI upstream; the script path is root + the request path
-		handlers = []any{m{"handler": "subroute", "routes": []any{dotfile404(), m{"handle": []any{fastcgiProxy(fastcgiDial(r), r.StaticRoot)}}}}}
+		routes := []any{dotfile404()}
+		routes = append(routes, extras...)
+		routes = append(routes, m{"handle": []any{fastcgiProxy(fastcgiDial(r), r.StaticRoot)}})
+		handlers = []any{m{"handler": "subroute", "routes": routes}}
 	case "cgi": // /cgi-bin/* runs through the site's own fcgiwrap; everything else is a plain file
-		handlers = []any{m{"handler": "subroute", "routes": []any{dotfile404(),
+		routes := []any{dotfile404()}
+		routes = append(routes, extras...)
+		routes = append(routes,
 			m{"match": []any{m{"path": []any{"/cgi-bin/*"}}}, "handle": []any{fastcgiProxy("unix//run/servanago/"+r.Slug+".sock", r.StaticRoot)}, "terminal": true},
 			m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
-		}}}
+		)
+		handlers = []any{m{"handler": "subroute", "routes": routes}}
 	default:
 		proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
 		if r.Scheme == "https" {
@@ -208,7 +222,15 @@ func siteHandler(host string, r store.Site) (any, error) {
 			handlers = []any{m{"handler": "request_body", "max_size": r.MaxBody}, proxy}
 		}
 		if r.Kind == "frankenphp" { // FrankenPHP serves .env and .git itself: answer dotfiles here, as for static and php
-			handlers = []any{m{"handler": "subroute", "routes": []any{dotfile404(), m{"handle": handlers}}}}
+			routes := []any{dotfile404()}
+			routes = append(routes, extras...)
+			routes = append(routes, m{"handle": handlers})
+			handlers = []any{m{"handler": "subroute", "routes": routes}}
+		} else if len(extras) > 0 { // proxy and node: the path routes precede the catch-all proxy
+			routes := make([]any, 0, len(extras)+1)
+			routes = append(routes, extras...)
+			routes = append(routes, m{"handle": handlers})
+			handlers = []any{m{"handler": "subroute", "routes": routes}}
 		}
 	}
 	if r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(handlers) == 1 {
@@ -241,6 +263,29 @@ func dotfile404() m {
 	return m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true}
 }
 
+// extraRoutes renders the site's extra routes (admin-entered, config.ParseExtraRoutes): each becomes
+// a path-matched reverse_proxy that answers before the site's main handler. They run after the
+// dotfile guard of the kinds that have one and inside the gate, allowlist and basic-auth chain.
+func extraRoutes(r store.Site) ([]any, error) {
+	xs, err := config.ParseExtraRoutes(r.ExtraRoutes)
+	if err != nil {
+		return nil, fmt.Errorf("render: site %d extra routes: %w", r.ID, err)
+	}
+	var out []any
+	for _, x := range xs {
+		dial := x.Dial
+		if strings.HasPrefix(dial, "/") {
+			dial = "unix/" + dial
+		}
+		out = append(out, m{
+			"match":    []any{m{"path": []any{x.Path, x.Path + "/*"}}},
+			"handle":   []any{m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": dial}}}},
+			"terminal": true,
+		})
+	}
+	return out, nil
+}
+
 // fastcgiDial is the Caddy dial string for a fastcgi site: an absolute socket path or host:port.
 func fastcgiDial(r store.Site) string {
 	if strings.HasPrefix(r.UpstreamHost, "/") {
@@ -255,16 +300,17 @@ func fastcgiProxy(dial, root string) m {
 
 // phpRoute is the JSON form of the documented php_fastcgi expansion, pointed at the site's own
 // pool socket: canonical-path redirect, index.php fallback rewrite, the FastCGI proxy, and a
-// plain file_server underneath (dotfiles 404 first, as for static sites).
-func phpRoute(r store.Site) any {
+// plain file_server underneath (dotfiles 404 first, then any extra routes, as for static sites).
+func phpRoute(r store.Site, extras []any) any {
 	dial := "unix//run/servanago/" + r.Slug + ".sock"
 	proxy := m{
 		"handler":   "reverse_proxy",
 		"upstreams": []any{m{"dial": dial}},
 		"transport": m{"protocol": "fastcgi", "root": r.StaticRoot, "split_path": []any{".php"}},
 	}
-	routes := []any{
-		m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true},
+	routes := []any{dotfile404()}
+	routes = append(routes, extras...)
+	routes = append(routes,
 		m{
 			"match":  []any{m{"file": m{"try_files": []any{"{http.request.uri.path}/index.php"}}, "not": []any{m{"path": []any{"*/"}}}}},
 			"handle": []any{m{"handler": "static_response", "status_code": "308", "headers": m{"Location": []any{"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"}}}},
@@ -275,6 +321,6 @@ func phpRoute(r store.Site) any {
 		},
 		m{"match": []any{m{"path": []any{"*.php"}}}, "handle": []any{proxy}},
 		m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
-	}
+	)
 	return m{"handler": "subroute", "routes": routes}
 }

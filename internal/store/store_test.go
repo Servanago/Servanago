@@ -88,6 +88,7 @@ func TestRouteCRUDAndConstraints(t *testing.T) {
 	r := site("sonarr.example.com")
 	r.RecordIP, r.Allowlist, r.BasicUser, r.BasicHash = "10.9.9.9", "192.168.0.0/16", "u", "h"
 	r.Stream, r.MaxBody = true, 2<<30
+	r.ExtraRoutes = "/cryptpad_websocket=127.0.0.1:3303\n/api=/run/api.sock"
 	r, err := s.CreateSite(ctx, r)
 	if err != nil {
 		t.Fatal(err)

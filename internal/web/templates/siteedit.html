@@ -136,6 +136,8 @@
 <label>Upload limit (blank = no limit) <input name="max_body" value="{{size .Site.MaxBody}}" placeholder="2GB" aria-describedby="hint-max_body"></label>
 {{hintid "max_body"}}
 </div>
+<label>Extra routes (one per line, path=dial) <textarea name="extra_routes" rows="3" placeholder="/cryptpad_websocket=127.0.0.1:3303" aria-describedby="hint-extra_routes">{{.Site.ExtraRoutes}}</textarea></label>
+{{hintid "extra_routes"}} {{helplink "access"}}
 </details>
 <label><input type="checkbox" name="enabled"{{if .Site.Enabled}} checked{{end}} aria-describedby="hint-enabled"> Enabled</label>
 {{hintid "enabled"}}

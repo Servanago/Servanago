@@ -125,6 +125,20 @@ func TestRenderGolden(t *testing.T) {
 		{"wildcard_uncovered_names", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) {
 			r.Hostnames = []string{"example.com", "a.b.example.com", "sonarr.example.com"}
 		})}}},
+		// Extra routes: path prefixes proxied to their own upstream ahead of the site's main handler,
+		// after the dotfile guard and inside the gate chain.
+		{"extra_routes", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) {
+			r.ExtraRoutes = "/cryptpad_websocket=127.0.0.1:3303\n/api=/run/api.sock"
+		})}}},
+		{"extra_routes_static", opts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/srv/www/blog"), func(r *store.Site) {
+			r.ExtraRoutes = "/.well-known=10.0.0.5:8080"
+		})}}},
+		{"extra_routes_php", opts(), State{[]store.Domain{dom}, []store.Site{with(asPHP(site, "blog", "8.2"), func(r *store.Site) {
+			r.ExtraRoutes = "/ws=127.0.0.1:3303"
+		})}}},
+		{"extra_routes_gate", opts(), State{[]store.Domain{dom}, []store.Site{with(asNode(site, "app11", 3000, "node server.js"), func(r *store.Site) {
+			r.GateMode, r.ExtraRoutes = "open", "/cryptpad_websocket=127.0.0.1:3303"
+		})}}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

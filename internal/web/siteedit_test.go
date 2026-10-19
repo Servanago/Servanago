@@ -50,6 +50,8 @@ func TestParseRoute(t *testing.T) {
 		{"record ip public", form("record_ip", "8.8.8.8"), ""},
 		{"record ip loopback", form("record_ip", "127.0.0.1"), "record IP"},
 		{"record ip garbage", form("record_ip", "nope"), "record IP"},
+		{"extra routes", form("extra_routes", "/cryptpad_websocket=127.0.0.1:3303"), ""},
+		{"extra routes socket and trash", form("extra_routes", "\n\n/api=/run/api.sock\nbadline\n"), "extra routes"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -74,6 +76,16 @@ func TestParseRouteRecordIP(t *testing.T) {
 	}
 	if r, _ := parseSite(form(), config.Config{}); r.RecordIP != "" {
 		t.Errorf("blank must stay blank (domain default): %q", r.RecordIP)
+	}
+}
+
+func TestParseRouteExtraRoutes(t *testing.T) {
+	r, err := parseSite(form("extra_routes", "  /cryptpad_websocket=127.0.0.1:3303\n\n"), config.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "/cryptpad_websocket=127.0.0.1:3303"; r.ExtraRoutes != want {
+		t.Errorf("ExtraRoutes = %q, want the normalized %q", r.ExtraRoutes, want)
 	}
 }
 
