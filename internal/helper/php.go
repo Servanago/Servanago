@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -40,6 +41,7 @@ var phpTools = []struct{ tool, pkg string }{
 	{"gcc", "gcc"}, {"g++", "g++"}, {"make", "make"}, {"pkg-config", "pkg-config"}, {"perl", "perl"},
 	{"cmake", "cmake"}, {"gpg", "gnupg"}, {"xz", "xz-utils"}, {"tar", "tar"},
 	{"bison", "bison"}, {"flex", "flex"}, // PostgreSQL 18's configure (libpq) refuses to run without them, although the tarball ships the generated parsers
+	{"autoconf", "autoconf"}, {"automake", "automake"}, {"libtoolize", "libtool"}, {"m4", "m4"}, // phpize, for the PECL extensions
 }
 
 var (
@@ -362,6 +364,42 @@ func (a Actions) verifyBuild(dir, ver string) error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("extensions not built: %s", strings.Join(missing, ", "))
+	}
+	return nil
+}
+
+// checkBuildHas refuses a site whose extensions its build does not contain (a build made before apcu or imagick were
+// offered has no apcu.so): php-fpm would only warn at start, and the site would run without the extension.
+func (a Actions) checkBuildHas(s Spec) error {
+	label, _ := sourceBuild(s.FPMBin)
+	dir := runtimes.PHPRoot + "/" + label
+	out, err := a.s.Exec(dir+"/bin/php-config", "--extension-dir")
+	if err != nil {
+		return fmt.Errorf("php-config of %s: %w", label, err)
+	}
+	extDir := strings.TrimSpace(out)
+	if !strings.HasPrefix(extDir, dir+"/") {
+		return fmt.Errorf("php-config of %s reports an extension directory outside the build: %q", label, extDir)
+	}
+	have, err := a.s.ReadDir(extDir)
+	if err != nil {
+		return fmt.Errorf("read the extension directory of %s: %w", label, err)
+	}
+	want, _ := runtimes.ParseExtensions(s.Extensions) // validated before this point
+	if len(want) == 0 {
+		want = runtimes.CoreExtensions
+	}
+	var missing []string
+	for _, e := range runtimes.SharedExtensions(runtimes.Branch(label)) {
+		if !slices.Contains(want, e.Name) {
+			continue
+		}
+		if !slices.Contains(have, e.Name+".so") {
+			missing = append(missing, e.Name)
+		}
+	}
+	if len(missing) > 0 {
+		return fmt.Errorf("PHP build %s does not contain %s; build PHP again to get it, or untick it for this site", label, strings.Join(missing, ", "))
 	}
 	return nil
 }

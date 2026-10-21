@@ -1,6 +1,8 @@
 package phpbuild
 
 import (
+	"archive/zip"
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -25,6 +27,27 @@ type fixture struct {
 	verr     error
 	runErr   func(c phplibs.Cmd) error
 	libs     []phplibs.Resolved
+	exts     []phplibs.ExtSource
+}
+
+// zipOf builds a zip in memory from name -> content.
+func zipOf(t *testing.T, files map[string]string) []byte {
+	t.Helper()
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	for name, body := range files {
+		w, err := zw.Create(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := w.Write([]byte(body)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+	return buf.Bytes()
 }
 
 const phpTar = "php source bytes"
@@ -46,6 +69,16 @@ func newFixture(t *testing.T) *fixture {
 	f.libs = []phplibs.Resolved{
 		{Name: "zlib", Version: "1.3.1", URL: "https://zlib.example/zlib-1.3.1.tar.xz", Algo: phplibs.AlgoSHA256, Sum: sum("zlib")},
 		{Name: "openssl", Version: "3.5.0", URL: "https://ssl.example/openssl-3.5.0.tar.gz", Algo: phplibs.AlgoSHA256, Sum: sum("openssl")},
+		{Name: "imagemagick", Version: "7.1.2-34", URL: "https://im.example/ImageMagick-7.1.2-34.tar.xz", Algo: phplibs.AlgoSHA256, Sum: sum("im")},
+	}
+	f.feeds["https://im.example/ImageMagick-7.1.2-34.tar.xz"] = []byte("im")
+	const sha = "819fce90c469a5666b1706036cd66120af419f1f"
+	f.exts = []phplibs.ExtSource{
+		{Name: "apcu", Package: "apcu/apcu", Version: "5.1.28", URL: "https://api.github.com/repos/krakjoe/apcu/zipball/" + sha, Commit: sha},
+		{Name: "imagick", Package: "imagick/imagick", Version: "3.8.1", URL: "https://api.github.com/repos/Imagick/imagick/zipball/" + sha, Commit: sha},
+	}
+	for _, x := range f.exts {
+		f.feeds[x.URL] = zipOf(t, map[string]string{"owner-" + x.Name + "-819fce9/config.m4": "dnl", "owner-" + x.Name + "-819fce9/" + x.Name + ".c": "/* c */"})
 	}
 	job, _ := json.Marshal(Job{Version: "8.4.27", N: 2, Jobs: 4})
 	if err := os.WriteFile(filepath.Join(f.dir, JobFile), job, 0o644); err != nil {
@@ -80,6 +113,7 @@ func (f *fixture) env() Env {
 			return f.verr
 		},
 		Libs: func(ctx context.Context) ([]phplibs.Resolved, error) { return f.libs, nil },
+		Exts: func(ctx context.Context) ([]phplibs.ExtSource, error) { return f.exts, nil },
 	}
 }
 
@@ -109,7 +143,7 @@ func TestFetch(t *testing.T) {
 		}
 	}
 	var p plan
-	if err := readJSON(filepath.Join(f.dir, "plan.json"), &p); err != nil || len(p.Libs) != 2 || p.Libs[0].Have {
+	if err := readJSON(filepath.Join(f.dir, "plan.json"), &p); err != nil || len(p.Libs) != 3 || len(p.Exts) != 2 || p.Libs[0].Have {
 		t.Errorf("plan %+v (%v)", p, err)
 	}
 }
@@ -223,8 +257,125 @@ func TestBuild(t *testing.T) {
 		t.Errorf("libraries must build in order:\n%s", all)
 	}
 	libs, err := os.ReadFile(filepath.Join(f.root, "8.4.27-2", "libs.txt"))
-	if err != nil || string(libs) != "zlib-1.3.1\nopenssl-3.5.0\n" {
+	if err != nil || string(libs) != "zlib-1.3.1\nopenssl-3.5.0\nimagemagick-7.1.2-34\n" {
 		t.Errorf("libs.txt %q (%v)", libs, err)
+	}
+}
+
+// The extensions are built after PHP itself, with the build's own phpize, from the single directory the zipball holds.
+func TestBuildExtensions(t *testing.T) {
+	f := newFixture(t)
+	if err := Fetch(context.Background(), f.env(), f.dir); err != nil {
+		t.Fatal(err)
+	}
+	var cmds []phplibs.Cmd
+	f.runErr = func(c phplibs.Cmd) error { cmds = append(cmds, c); return nil }
+	prefix := filepath.Join(f.root, "8.4.27-2")
+	if err := os.MkdirAll(prefix, 0o755); err != nil { // what the recorded `make install` would have created
+		t.Fatal(err)
+	}
+	if err := Build(context.Background(), f.env(), f.dir); err != nil {
+		t.Fatal(err)
+	}
+	phpInstall, apcuPhpize, imagickConf := -1, -1, -1
+	for i, c := range cmds {
+		switch {
+		case c.Name == "make" && len(c.Args) == 1 && c.Args[0] == "install" && strings.Contains(c.Dir, "php-8.4.27"):
+			phpInstall = i
+		case c.Name == filepath.Join(prefix, "bin/phpize") && strings.Contains(c.Dir, "ext-apcu"):
+			apcuPhpize = i
+			if filepath.Base(filepath.Dir(c.Dir)) != "ext-apcu" || filepath.Base(c.Dir) != "owner-apcu-819fce9" {
+				t.Errorf("phpize ran in %s", c.Dir)
+			}
+		case strings.Contains(c.Dir, "ext-imagick") && c.Name == "./configure":
+			imagickConf = i
+			if !strings.Contains(strings.Join(c.Args, " "), "--with-php-config="+filepath.Join(prefix, "bin/php-config")) ||
+				!strings.Contains(strings.Join(c.Args, " "), filepath.Join(f.root, "libs", "imagemagick-7.1.2-34")) {
+				t.Errorf("imagick configure: %v", c.Args)
+			}
+		}
+	}
+	if phpInstall < 0 || apcuPhpize < phpInstall || imagickConf < apcuPhpize {
+		t.Errorf("order: php install %d, apcu phpize %d, imagick configure %d", phpInstall, apcuPhpize, imagickConf)
+	}
+}
+
+func TestFetchExtensionsFailClosed(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*fixture)
+		want  string
+	}{
+		{"not a zip", func(f *fixture) { f.feeds[f.exts[0].URL] = []byte("<html>rate limited</html>") }, "not a zip file"},
+		{"download fails", func(f *fixture) { delete(f.feeds, f.exts[1].URL) }, "download imagick 3.8.1"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newFixture(t)
+			tt.setup(f)
+			err := Fetch(context.Background(), f.env(), f.dir)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err %v, want %q", err, tt.want)
+			}
+			if _, statErr := os.Stat(filepath.Join(f.dir, "plan.json")); statErr == nil {
+				t.Error("a failed fetch left a plan")
+			}
+		})
+	}
+}
+
+// A zip that tries to write outside its directory, or holds a symlink, is refused before anything is compiled.
+func TestUnzipRefusesEscapes(t *testing.T) {
+	for name, files := range map[string]map[string]string{
+		"parent directory": {"../evil": "x"},
+		"deep parent":      {"a/../../evil": "x"},
+		"absolute":         {"/etc/evil": "x"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			file := filepath.Join(dir, "x.zip")
+			if err := os.WriteFile(file, zipOf(t, files), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			dst := filepath.Join(dir, "out")
+			if err := unzip(file, dst); err == nil || !strings.Contains(err.Error(), "leaves the destination") {
+				t.Fatalf("err %v", err)
+			}
+			if _, err := os.Stat(filepath.Join(dir, "evil")); err == nil {
+				t.Error("a file was written outside the destination")
+			}
+		})
+	}
+}
+
+func TestUnzipRefusesSymlinks(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	h := &zip.FileHeader{Name: "top/link"}
+	h.SetMode(os.ModeSymlink | 0o777)
+	w, _ := zw.CreateHeader(h)
+	_, _ = w.Write([]byte("/etc/passwd"))
+	_ = zw.Close()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "x.zip")
+	if err := os.WriteFile(file, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := unzip(file, filepath.Join(dir, "out")); err == nil || !strings.Contains(err.Error(), "not a file or directory") {
+		t.Fatalf("err %v", err)
+	}
+}
+
+func TestOnlyChild(t *testing.T) {
+	dir := t.TempDir()
+	if _, err := onlyChild(dir); err == nil {
+		t.Error("an empty directory has no top-level directory")
+	}
+	for _, d := range []string{"a", "b"} {
+		_ = os.Mkdir(filepath.Join(dir, d), 0o755)
+	}
+	if _, err := onlyChild(dir); err == nil {
+		t.Error("two entries must be refused")
 	}
 }
 

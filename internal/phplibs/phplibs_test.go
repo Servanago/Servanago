@@ -18,6 +18,9 @@ var feeds = map[string]string{
 	"https://api.github.com/repos/unicode-org/icu/releases?per_page=100":                    "github-unicode-org-icu.json",
 	"https://api.github.com/repos/kkos/oniguruma/releases?per_page=100":                     "github-kkos-oniguruma.json",
 	"https://github.com/kkos/oniguruma/releases/download/v6.9.10/onig-6.9.10.tar.gz.sha256": "onig-6.9.10.tar.gz.sha256",
+	"https://api.github.com/repos/ImageMagick/ImageMagick/releases?per_page=100":            "github-ImageMagick-ImageMagick.json",
+	"https://repo.packagist.org/p2/apcu/apcu.json":                                          "packagist-apcu.json",
+	"https://repo.packagist.org/p2/imagick/imagick.json":                                    "packagist-imagick.json",
 	"https://download.gnome.org/sources/libxml2/cache.json":                                 "libxml2-cache.json",
 	"https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.sha256sum":              "libxml2-2.15.4.sha256sum",
 	"https://sqlite.org/download.html":                                                      "sqlite-download.html",
@@ -46,6 +49,7 @@ func TestResolveRecordedFeeds(t *testing.T) {
 		{"libjpeg-turbo", "3.2.0", "https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/3.2.0/libjpeg-turbo-3.2.0.tar.gz", AlgoSHA256, "6f30092cef9fb839779646608f4ee14ae3cbac989c47fa05e841b0841f09878e"},
 		{"libzip", "1.12.1", "https://github.com/nih-at/libzip/releases/download/v1.12.1/libzip-1.12.1.tar.xz", AlgoSHA256, "c40062022a1963c80573d48f6070792297cecd7c6bffe3aefcac0d8b9bee8913"},
 		{"icu", "78.3", "https://github.com/unicode-org/icu/releases/download/release-78.3/icu4c-78.3-sources.tgz", AlgoSHA256, "3a2e7a47604ba702f345878308e6fefeca612ee895cf4a5f222e7955fabfe0c0"},
+		{"imagemagick", "7.1.2-34", "https://github.com/ImageMagick/ImageMagick/releases/download/7.1.2-34/ImageMagick-7.1.2-34.tar.xz", AlgoSHA256, "55fe0ec246245b46c429f9e6bc65294ad4a78a66b88abd9817971ca157856323"},
 		{"oniguruma", "6.9.10", "https://github.com/kkos/oniguruma/releases/download/v6.9.10/onig-6.9.10.tar.gz", AlgoSHA256, "2a5cfc5ae259e4e97f86b68dfffc152cdaffe94e2060b770cb827238d769fc05"}, // sum from the .sha256 sidecar
 		{"libxml2", "2.15.4", "https://download.gnome.org/sources/libxml2/2.15/libxml2-2.15.4.tar.xz", AlgoSHA256, "98087fd181d9070724f3fbc65c7377db03038eb92bd882374daff44940138821"},
 		{"sqlite", "3.54.1", "https://sqlite.org/2026/sqlite-autoconf-3540100.tar.gz", AlgoSHA3, "b6ced585c750916b1052667239a12c25a7ff34e7f06e1e6e01ecb0427657d9c4"},
@@ -159,6 +163,7 @@ func TestSourceDir(t *testing.T) {
 	}{
 		{Resolved{Name: "zlib", Version: "1.3.2"}, "zlib-1.3.2"},
 		{Resolved{Name: "icu", Version: "78.3"}, "icu"},
+		{Resolved{Name: "imagemagick", Version: "7.1.2-34"}, "ImageMagick-7.1.2-34"}, // the tarball's real top directory
 		{Resolved{Name: "oniguruma", Version: "6.9.10"}, "onig-6.9.10"},
 		{Resolved{Name: "libpq", Version: "18.6"}, "postgresql-18.6"},
 		{Resolved{Name: "sqlite", Version: "3.54.1"}, "sqlite-autoconf-3540100"},
@@ -175,7 +180,7 @@ func TestNewer(t *testing.T) {
 	for _, tt := range []struct {
 		a, b string
 		want bool
-	}{{"3.6.5", "3.6.4", true}, {"3.10.0", "3.9.9", true}, {"8.23.0", "8.4.1", true}, {"1.3", "1.3.0", false}, {"1.3.1", "1.3", true}, {"18.6", "18.10", false}} {
+	}{{"3.6.5", "3.6.4", true}, {"3.10.0", "3.9.9", true}, {"8.23.0", "8.4.1", true}, {"1.3", "1.3.0", false}, {"1.3.1", "1.3", true}, {"7.1.2-34", "7.1.2-9", true}, {"7.1.2-1", "7.1.1-99", true}, {"7.1.2", "7.1.2-1", false}, {"18.6", "18.10", false}} {
 		if got := newer(tt.a, tt.b); got != tt.want {
 			t.Errorf("newer(%s, %s) = %v", tt.a, tt.b, got)
 		}

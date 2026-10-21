@@ -59,13 +59,13 @@ const (
 )
 
 // names is the build order: a library comes after the ones its recipe links against.
-var names = []string{"zlib", "openssl", "curl", "libxml2", "libpng", "libjpeg-turbo", "freetype", "libwebp", "libzip", "icu", "oniguruma", "sqlite", "libpq"}
+var names = []string{"zlib", "openssl", "curl", "libxml2", "libpng", "libjpeg-turbo", "freetype", "libwebp", "imagemagick", "libzip", "icu", "oniguruma", "sqlite", "libpq"}
 
 // Names returns the build order, dependencies first.
 func Names() []string { return append([]string(nil), names...) }
 
 var (
-	versionRE = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}$`) // checked before a version reaches a URL or a path
+	versionRE = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}(-[0-9]+)?$`) // checked before a version reaches a URL or a path; ImageMagick adds -N
 	sumRE     = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 	plainVersion = regexp.MustCompile(`^\d+\.\d+\.\d+$`)
@@ -90,7 +90,9 @@ func Resolve(ctx context.Context, get Getter, name string) (Resolved, error) {
 	case "libzip":
 		r, err = github(ctx, get, "nih-at/libzip", `^v(\d+\.\d+\.\d+)$`, "libzip-%s.tar.xz")
 	case "icu":
-		r, err = github(ctx, get, "unicode-org/icu", `^release-(\d+[.-]\d+)$`, "icu4c-%s-sources.tgz")
+		r, err = github(ctx, get, "unicode-org/icu", `^release-(\d+\.\d+)$`, "icu4c-%s-sources.tgz")
+	case "imagemagick":
+		r, err = github(ctx, get, "ImageMagick/ImageMagick", `^(\d+\.\d+\.\d+-\d+)$`, "ImageMagick-%s.tar.xz")
 	case "oniguruma":
 		r, err = github(ctx, get, "kkos/oniguruma", `^v(\d+\.\d+\.\d+)$`, "onig-%s.tar.gz")
 	case "libxml2":
@@ -124,6 +126,8 @@ func SourceDir(r Resolved) string {
 	switch r.Name {
 	case "icu":
 		return "icu"
+	case "imagemagick":
+		return "ImageMagick-" + r.Version
 	case "oniguruma":
 		return "onig-" + r.Version
 	case "libpq":
@@ -178,7 +182,7 @@ func github(ctx context.Context, get Getter, repo, tagRE, assetFmt string) (Reso
 		if m == nil || rel.Prerelease || rel.Draft {
 			continue
 		}
-		v := strings.NewReplacer("_", ".", "-", ".").Replace(m[1])
+		v := strings.ReplaceAll(m[1], "_", ".") // curl tags read 8_23_0
 		if !versionRE.MatchString(v) || findAsset(rel, fmt.Sprintf(assetFmt, v)) == nil {
 			continue
 		}
@@ -331,7 +335,7 @@ func newer(a, b string) bool {
 
 func parts(v string) []int {
 	var out []int
-	for _, p := range strings.Split(v, ".") {
+	for _, p := range strings.FieldsFunc(v, func(r rune) bool { return r == '.' || r == '-' }) { // 7.1.2-34 is 7,1,2,34
 		n, _ := strconv.Atoi(p)
 		out = append(out, n)
 	}

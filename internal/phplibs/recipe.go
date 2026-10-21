@@ -56,7 +56,16 @@ func Recipe(r Resolved, prefix string, deps map[string]string, jobs int) []Cmd {
 	case "freetype":
 		return std("--with-zlib=yes", "--with-png=yes", "--with-harfbuzz=no", "--with-brotli=no", "--with-bzip2=no")
 	case "libwebp":
-		return std("--disable-gl", "--disable-sdl", "--disable-png", "--disable-jpeg", "--disable-tiff", "--disable-gif", "--disable-libwebpdemux")
+		return std("--disable-gl", "--disable-sdl", "--disable-png", "--disable-jpeg", "--disable-tiff", "--disable-gif") // demux stays: ImageMagick's webp coder links it
+	case "imagemagick":
+		// Libraries only (no convert/magick tools), and only the coders for libraries built here. It installs
+		// MagickWand.pc and ImageMagick.pc for the imagick extension.
+		return std("--without-utilities", "--without-magick-plus-plus", "--without-perl", "--disable-docs", "--disable-openmp", "--disable-opencl",
+			"--with-png=yes", "--with-jpeg=yes", "--with-webp=yes", "--with-freetype=yes", "--with-xml=yes", "--with-zlib=yes",
+			"--without-x", "--without-lzma", "--without-bzlib", "--without-fontconfig", "--without-tiff", "--without-heic", "--without-jxl",
+			"--without-openexr", "--without-raw", "--without-lcms", "--without-pango", "--without-rsvg", "--without-wmf", "--without-djvu",
+			"--without-openjp2", "--without-lqr", "--without-fftw", "--without-gslib", "--without-zstd", "--without-gvc", "--without-jbig",
+			"--without-autotrace", "--without-dps", "--without-flif", "--without-fpx", "--without-raqm")
 	case "libzip":
 		return cmake("-DBUILD_SHARED_LIBS=ON", "-DBUILD_TOOLS=OFF", "-DBUILD_REGRESS=OFF", "-DBUILD_EXAMPLES=OFF", "-DBUILD_DOC=OFF",
 			"-DENABLE_OPENSSL=ON", "-DENABLE_GNUTLS=OFF", "-DENABLE_MBEDTLS=OFF", "-DENABLE_COMMONCRYPTO=OFF", "-DENABLE_BZIP2=OFF", "-DENABLE_LZMA=OFF", "-DENABLE_ZSTD=OFF",

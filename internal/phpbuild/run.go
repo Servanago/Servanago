@@ -23,10 +23,11 @@ import (
 // points both at a temp directory.
 type Env struct {
 	Get    phplibs.Getter
-	Run    func(ctx context.Context, c phplibs.Cmd) error        // c.Dir is absolute
-	Verify func(ctx context.Context, file, sig string) error     // GPG: a good signature from a key in the PHP keyring
-	Libs   func(ctx context.Context) ([]phplibs.Resolved, error) // nil = resolve every library from its feed
-	Copy   func(ctx context.Context, from, to string) error      // seeds an installed library into the stage; nil = cp -a
+	Run    func(ctx context.Context, c phplibs.Cmd) error         // c.Dir is absolute
+	Verify func(ctx context.Context, file, sig string) error      // GPG: a good signature from a key in the PHP keyring
+	Libs   func(ctx context.Context) ([]phplibs.Resolved, error)  // nil = resolve every library from its feed
+	Exts   func(ctx context.Context) ([]phplibs.ExtSource, error) // nil = resolve every PECL extension from Packagist
+	Copy   func(ctx context.Context, from, to string) error       // seeds an installed library into the stage; nil = cp -a
 	Root   string
 	Stage  string
 	Log    io.Writer
@@ -38,6 +39,13 @@ var versionRE = regexp.MustCompile(`^[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}$`)
 type plan struct {
 	PHPFile string    `json:"php_file"`
 	Libs    []planLib `json:"libs"`
+	Exts    []planExt `json:"exts"`
+}
+
+// planExt is a PECL extension's source: a GitHub zipball of the commit Packagist names.
+type planExt struct {
+	phplibs.ExtSource
+	File string `json:"file"`
 }
 
 type planLib struct {
@@ -233,6 +241,43 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 		e.logf("%s: %s verified%s", l.dir(), r.Algo, map[bool]string{true: " (pinned, not feed-tracked)"}[r.Pinned])
 		p.Libs = append(p.Libs, l)
 	}
+	// PECL extensions. Packagist and GitHub publish no checksum for these (decided: trust them over HTTPS at the commit
+	// Packagist names), so the log records the commit and the zipball's sha256 for anyone who wants to audit a build.
+	exts := e.Exts
+	if exts == nil {
+		exts = func(ctx context.Context) ([]phplibs.ExtSource, error) {
+			var out []phplibs.ExtSource
+			for _, n := range phplibs.ExtNames() {
+				x, err := phplibs.ResolveExt(ctx, e.Get, n)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, x)
+			}
+			return out, nil
+		}
+	}
+	extSrc, err := exts(ctx)
+	if err != nil {
+		return err
+	}
+	for _, x := range extSrc {
+		e.logf("downloading %s", x.URL)
+		data, err := e.Get(ctx, x.URL)
+		if err != nil {
+			return fmt.Errorf("download %s %s: %w", x.Name, x.Version, err)
+		}
+		if len(data) < 4 || string(data[:2]) != "PK" {
+			return fmt.Errorf("%s %s: the download is not a zip file", x.Name, x.Version)
+		}
+		file := "ext-" + x.Name + "-" + x.Version + ".zip"
+		if err := os.WriteFile(filepath.Join(src, file), data, 0o644); err != nil {
+			return err
+		}
+		sum := sha256.Sum256(data)
+		e.logf("%s %s (%s) commit %s sha256 %x: no checksum is published, trusted at that commit over HTTPS", x.Name, x.Version, x.Package, x.Commit, sum)
+		p.Exts = append(p.Exts, planExt{ExtSource: x, File: file})
+	}
 	pb, _ := json.Marshal(p)
 	if err := os.WriteFile(filepath.Join(dir, "plan.json"), pb, 0o644); err != nil {
 		return err
@@ -311,6 +356,28 @@ func Build(ctx context.Context, e Env, dir string) (err error) {
 	} {
 		if err := run(c); err != nil {
 			return fmt.Errorf("build php: %s: %w", c.Name, err)
+		}
+	}
+	// PECL extensions are built against this PHP with its own phpize, as shared objects into its extension directory.
+	for _, x := range p.Exts {
+		e.logf("== building %s %s", x.Name, x.Version)
+		into := filepath.Join(work, "ext-"+x.Name)
+		if err := unzip(filepath.Join(src, x.File), into); err != nil {
+			return fmt.Errorf("unpack %s: %w", x.Name, err)
+		}
+		top, err := onlyChild(into)
+		if err != nil {
+			return fmt.Errorf("unpack %s: %w", x.Name, err)
+		}
+		cmds := phplibs.ExtRecipe(x.ExtSource, prefix, deps, job.Jobs)
+		if len(cmds) == 0 {
+			return fmt.Errorf("build %s: a library it needs was not built", x.Name)
+		}
+		for _, c := range cmds {
+			c.Dir = filepath.Join(top, c.Dir)
+			if err := run(c); err != nil {
+				return fmt.Errorf("build %s: %s: %w", x.Name, filepath.Base(c.Name), err)
+			}
 		}
 	}
 	var used []string

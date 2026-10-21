@@ -361,6 +361,9 @@ func (a Actions) UnitInstall(r Request) Response {
 		}
 		ini := siteINI(s)
 		if ini != "" {
+			if err := a.checkBuildHas(s); err != nil {
+				return Response{Error: err.Error()}
+			}
 			if err := a.s.MkdirAll("/etc/servanago/php", 0o755); err != nil {
 				return Response{Error: fmt.Sprintf("create php config dir: %v", err)}
 			}

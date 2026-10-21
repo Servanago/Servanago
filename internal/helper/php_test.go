@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -26,8 +27,39 @@ func req(t *testing.T, action, spec string) Request {
 
 const srcBin = "/opt/servanago/php/8.4.27-1/sbin/php-fpm"
 
+// builtSeam is a fake host with an installed build under dir whose extension directory holds the .so files of
+// every shared extension of its branch, except those named in lacking.
+func builtSeam(label string, lacking ...string) *fakeSeam {
+	s := newFakeSeam()
+	dir := runtimes.PHPRoot + "/" + label
+	ext := dir + "/lib/php/extensions/no-debug-non-zts-20240924"
+	s.execOut = map[string]string{dir + "/bin/php-config --extension-dir": ext + "\n"}
+	s.dirs = map[string][]string{}
+	for _, e := range runtimes.SharedExtensions(runtimes.Branch(label)) {
+		if !slices.Contains(lacking, e.Name) {
+			s.dirs[ext] = append(s.dirs[ext], e.Name+".so")
+		}
+	}
+	return s
+}
+
+// A build made before an extension was offered does not have its .so: the site is refused, not started without it.
+func TestSourceBuildMissingExtensionIsRefused(t *testing.T) {
+	seam := builtSeam("8.4.27-1", "apcu", "imagick")
+	r := req(t, ActionUnitInstall, `{"kind":"php","slug":"blog","root":"/srv/blog","fpm_bin":"`+srcBin+`","fpm_version":"8.4","extensions":["apcu","curl","imagick"]}`)
+	resp := NewActions(seam).UnitInstall(r)
+	if resp.OK || !strings.Contains(resp.Error, "does not contain apcu, imagick") || len(seam.written) != 0 {
+		t.Fatalf("%+v written=%v", resp, keys(seam.written))
+	}
+	// An extension the site did not select is not needed.
+	r = req(t, ActionUnitInstall, `{"kind":"php","slug":"blog","root":"/srv/blog","fpm_bin":"`+srcBin+`","fpm_version":"8.4","extensions":["curl"]}`)
+	if resp := NewActions(seam).UnitInstall(r); !resp.OK {
+		t.Fatalf("a build without apcu must serve a site that did not ask for it: %+v", resp)
+	}
+}
+
 func TestSourceBuildUnitInstall(t *testing.T) {
-	seam := newFakeSeam()
+	seam := builtSeam("8.4.27-1")
 	r := req(t, ActionUnitInstall, `{"kind":"php","slug":"blog","root":"/srv/blog","fpm_bin":"`+srcBin+`","fpm_version":"8.4","extensions":["curl","mbstring"]}`)
 	if resp := NewActions(seam).UnitInstall(r); !resp.OK {
 		t.Fatalf("install: %+v", resp)
@@ -51,7 +83,7 @@ func TestSourceBuildUnitInstall(t *testing.T) {
 }
 
 func TestSourceBuildDefaultsToCoreExtensions(t *testing.T) {
-	seam := newFakeSeam()
+	seam := builtSeam("8.4.27-1")
 	r := req(t, ActionUnitInstall, `{"kind":"php","slug":"blog","root":"/srv/blog","fpm_bin":"`+srcBin+`","fpm_version":"8.4.27-1"}`)
 	if resp := NewActions(seam).UnitInstall(r); !resp.OK {
 		t.Fatalf("install: %+v", resp)
@@ -66,7 +98,7 @@ func TestSourceBuildDefaultsToCoreExtensions(t *testing.T) {
 
 // PHP 8.5 compiles opcache in and ships no opcache.so: loading it would only warn, so the ini leaves it out.
 func TestPHP85INIOmitsOpcache(t *testing.T) {
-	seam := newFakeSeam()
+	seam := builtSeam("8.5.12-1")
 	bin := "/opt/servanago/php/8.5.12-1/sbin/php-fpm"
 	r := req(t, ActionUnitInstall, `{"kind":"php","slug":"blog","root":"/srv/blog","fpm_bin":"`+bin+`","fpm_version":"8.5","extensions":["opcache","mbstring"]}`)
 	if resp := NewActions(seam).UnitInstall(r); !resp.OK {
@@ -166,7 +198,7 @@ func FuzzSiteINI(f *testing.F) {
 	f.Add("")
 	f.Fuzz(func(t *testing.T, name string) {
 		spec := Spec{Kind: "php", Slug: "site1", Root: "/srv/x", FPMBin: srcBin, FPMVersion: "8.4", Extensions: []string{name, "intl"}}
-		seam := newFakeSeam()
+		seam := builtSeam("8.4.27-1")
 		if resp := NewActions(seam).UnitInstall(Request{Action: ActionUnitInstall, Vals: spec}); !resp.OK {
 			return
 		}

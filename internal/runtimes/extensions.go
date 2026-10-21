@@ -21,6 +21,7 @@ var PHPExtensions = []Ext{
 	{"dom", "web", false}, {"simplexml", "web", false}, {"xml", "web", false}, {"xmlreader", "web", false}, {"xmlwriter", "web", false},
 	{"curl", "web", false}, {"zip", "web", false}, {"gd", "web", false}, {"intl", "web", false},
 	{"mysqli", "db", false}, {"pdo_mysql", "db", false}, {"pgsql", "db", false}, {"pdo_pgsql", "db", false},
+	{"apcu", "extra", false}, {"imagick", "extra", false}, // PECL packages (apcu/apcu, imagick/imagick), built from their Packagist source
 }
 
 // CoreExtensions is what a site gets when it selects none.
