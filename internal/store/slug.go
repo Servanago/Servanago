@@ -29,6 +29,9 @@ func slugBase(host string) string {
 	return slug
 }
 
+// reservedSlugs belong to the PHP build job (user sg-phpbuild, units servanago-phpbuild and servanago-phpfetch).
+var reservedSlugs = map[string]bool{"phpbuild": true, "phpfetch": true}
+
 // newSlug returns slugBase(host), or that with -2, -3, ... appended until no site has it.
 func (s *Store) newSlug(ctx context.Context, host string) (string, error) {
 	base := slugBase(host)
@@ -39,7 +42,9 @@ func (s *Store) newSlug(ctx context.Context, host string) (string, error) {
 			slug = strings.TrimRight(base[:min(len(base), 32-len(suffix))], "-") + suffix
 		}
 		var taken int
-		if err := s.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM sites WHERE slug=?`, slug).Scan(&taken); err != nil {
+		if reservedSlugs[slug] {
+			taken = 1
+		} else if err := s.q.QueryRowContext(ctx, `SELECT COUNT(*) FROM sites WHERE slug=?`, slug).Scan(&taken); err != nil {
 			return "", fmt.Errorf("check slug %s: %w", slug, err)
 		}
 		if taken == 0 {

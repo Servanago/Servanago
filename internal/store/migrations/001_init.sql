@@ -34,6 +34,9 @@ CREATE TABLE sites (
   max_body        INTEGER NOT NULL DEFAULT 0 CHECK (max_body >= 0), -- request_body max_size in bytes; 0 = Caddy default
   gate_mode       TEXT NOT NULL DEFAULT '',   -- magic-link gate (DESIGN.md §18): '' = ungated, 'acl' = email allowlist, 'open' = any email
   extra_routes    TEXT NOT NULL DEFAULT '',   -- path prefixes Caddy proxies to their own upstream before the site's handler: one per line, path=dial
+  php_extensions  TEXT NOT NULL DEFAULT '',   -- php: space-separated shared extensions loaded by the site's own php.ini; '' = the core set
+  php_health_path TEXT NOT NULL DEFAULT '',   -- php: path requested after a PHP switch; '' = only check that the unit stays up
+  CHECK (kind = 'php' OR (php_extensions = '' AND php_health_path = '')),
   CHECK (
        (kind = 'proxy'  AND upstream_host IS NOT NULL AND upstream_port IS NOT NULL AND static_root IS NULL
                       AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')
@@ -169,6 +172,14 @@ CREATE TABLE settings (
   smtp_user  TEXT NOT NULL DEFAULT '',
   smtp_pass  BLOB,
   mail_from  TEXT NOT NULL DEFAULT '',
-  updated_at TEXT NOT NULL DEFAULT ''
+  updated_at TEXT NOT NULL DEFAULT '',
+  php_check_json TEXT NOT NULL DEFAULT '',   -- last PHP release check: branch -> latest version and security flag
+  php_checked_at INTEGER NOT NULL DEFAULT 0  -- unix seconds of that check; 0 = never
 );
 INSERT INTO settings (id) VALUES (1);
+
+-- Default CLI PHP for a login user: a label (branch 8.4 or an exact build 8.4.27-1), independent of any site's pin.
+CREATE TABLE php_user_defaults (
+  username TEXT PRIMARY KEY,
+  version  TEXT NOT NULL CHECK (version != '')
+);

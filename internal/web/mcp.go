@@ -131,6 +131,8 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v.Set("install_command", cur.InstallCommand)
 	v.Set("build_command", cur.BuildCommand)
 	v.Set("fpm_version", cur.FPMVersion)
+	v["php_ext"] = strings.Fields(cur.PHPExtensions)
+	v.Set("php_health_path", cur.PHPHealthPath)
 	v.Set("allowlist", cur.Allowlist)
 	v.Set("gate_mode", cur.GateMode)
 	v.Set("basic_user", cur.BasicUser)

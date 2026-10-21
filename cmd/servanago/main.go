@@ -41,6 +41,8 @@ func main() {
 		switch os.Args[1] {
 		case "helper":
 			cmd = runHelper
+		case "php-job":
+			cmd = func() error { return runPHPJob(os.Args[2:]) }
 		case "import":
 			cmd = func() error { return runImport(os.Args[2:], os.Stdout) }
 		case "user":
@@ -147,6 +149,8 @@ func run() error {
 		defer cancel()
 		ui.VerifyToken(ctx)
 	}()
+	go ui.RunPHPChecks(ctx)
+	go ui.ReconcilePHP(ctx) // SQLite is the desired state: write each user's default PHP files again
 	srv := newUIServer(cfg.UIListen, ui.Handler())
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()

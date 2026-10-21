@@ -115,6 +115,14 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 			return r, err
 		}
 		r.Scheme = "http"
+		exts, err := runtimes.ParseExtensions(v["php_ext"])
+		if err != nil {
+			return r, err
+		}
+		r.PHPExtensions = strings.Join(exts, " ")
+		if r.PHPHealthPath, err = parseHealthPath(v.Get("php_health_path")); err != nil {
+			return r, err
+		}
 	default: // proxy
 		if r.Scheme = v.Get("scheme"); r.Scheme != "http" && r.Scheme != "https" {
 			return r, fmt.Errorf("scheme %q must be http or https", r.Scheme)
@@ -143,6 +151,21 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 	}
 	r.Enabled = v.Get("enabled") != ""
 	return r, nil
+}
+
+// parseHealthPath reads the optional path requested after a PHP switch: an absolute URL path, not a URL.
+func parseHealthPath(text string) (string, error) {
+	p := strings.TrimSpace(text)
+	if p == "" {
+		return "", nil
+	}
+	if len(p) > 200 || p[0] != '/' || strings.HasPrefix(p, "//") || strings.ContainsAny(p, " \t\r\n#\\") || strings.IndexFunc(p, func(r rune) bool { return r < 0x20 || r == 0x7f }) >= 0 {
+		return "", fmt.Errorf("health path %q must be an absolute path such as /healthz (up to 200 characters, no spaces)", p)
+	}
+	if u, err := url.Parse(p); err != nil || u.Scheme != "" || u.Host != "" {
+		return "", fmt.Errorf("health path %q must be a path, not a URL", p)
+	}
+	return p, nil
 }
 
 // extraRoutesText parses the extra routes box and returns its canonical form: one route per line,
@@ -225,15 +248,7 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	}
 	// A php site's version must be one the host actually has: the picker lists detected binaries.
 	if in.Kind == "php" {
-		php := s.detect(r.Context())
-		ok := false
-		for _, v := range php.PHP {
-			if v.Version == in.FPMVersion {
-				ok = true
-				break
-			}
-		}
-		if !ok {
+		if _, _, ok := runtimes.Resolve(in.FPMVersion, s.detect(r.Context()).PHP); !ok {
 			return in, nil, userError{http.StatusUnprocessableEntity, "php-fpm " + in.FPMVersion + " is not installed on this host; pick a detected version"}
 		}
 	}
@@ -249,7 +264,7 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	base.StartCommand = in.StartCommand
 	base.InstallCommand, base.BuildCommand = in.InstallCommand, in.BuildCommand
 	base.TLSSkipVerify, base.Enabled, base.RecordIP, base.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
-	base.FPMVersion = in.FPMVersion
+	base.FPMVersion, base.PHPExtensions, base.PHPHealthPath = in.FPMVersion, in.PHPExtensions, in.PHPHealthPath
 	base.ExtraRoutes = in.ExtraRoutes
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
@@ -442,6 +457,7 @@ type siteEditForm struct {
 	Row         *siteRow
 	RootNote    string         // any foldered site: why the folder cannot be read, or ""
 	PHPVersions []runtimes.Opt // detected php-fpm versions for the pick list
+	PHPExt      []extOpt       // the extension checklist (ServanaGo's own PHP builds)
 	PHPInstall  string         // install command to show when none is installed
 	Node        runtimes.NodeReport
 	Franken     runtimes.FrankenReport
@@ -461,11 +477,34 @@ func phpVersionOpts(versions []runtimes.PHPVersion, selected string) []runtimes.
 	return out
 }
 
+// extOpt is one checklist row: an extension and whether the site loads it (the core set when the site chose none).
+type extOpt struct {
+	Name, Group string
+	On          bool
+}
+
+func extOpts(selected string) []extOpt {
+	on := map[string]bool{}
+	for _, n := range strings.Fields(selected) {
+		on[n] = true
+	}
+	if len(on) == 0 {
+		for _, n := range runtimes.CoreExtensions {
+			on[n] = true
+		}
+	}
+	var out []extOpt
+	for _, e := range runtimes.PHPExtensions {
+		out = append(out, extOpt{Name: e.Name, Group: e.Group, On: on[e.Name]})
+	}
+	return out
+}
+
 func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.Site, edit bool) {
 	title := "Add site"
 	rep := s.detect(r.Context())
 	form := siteEditForm{Site: rt, Edit: edit, HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
-		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPInstall: rep.PHPInstall, Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
+		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOpts(rt.PHPExtensions), PHPInstall: rep.PHPInstall, Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
 	}

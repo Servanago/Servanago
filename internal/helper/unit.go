@@ -26,10 +26,23 @@ type Seam interface {
 	StopUnit(name string) error
 	UserAdd(user, root string) error
 	UserRemove(user string) error
-	FPMTest(bin, conf string) error
-	CheckBinary(path string) error // a regular, executable file owned by root that no one else can write
+	FPMTest(bin, conf, ini string) error // ini "" = the binary's own php.ini
+	CheckBinary(path string) error       // a regular, executable file owned by root that no one else can write
 	UnitStatus(name string) (StatusData, error)
 	UnitLogs(name string, lines int) ([]string, error)
+
+	// PHP builds (php.go). Every argument is derived or validated by the action, never taken from a caller.
+	Missing(tools []string) []string                  // tools not found on PATH
+	FreeBytes(path string) (uint64, error)            // free space on the filesystem holding path (or its nearest existing parent)
+	JobDir(dir, user string) error                    // recreate dir (and dir/root) empty, owned by user
+	ReadDir(path string) ([]string, error)            // entry names
+	RemoveAll(path string) error                      // callers confine path under a managed root first
+	Rename(oldPath, newPath string) error             // atomic move into place
+	InstallTree(src, dst string) error                // copy a build tree root-owned: regular files, dirs and contained symlinks only; dst must not exist
+	Exec(name string, args ...string) (string, error) // run a binary the helper chose and return its combined output
+	Fetch(url string, limit int64) ([]byte, error)    // https GET with a size cap
+	UserOK(name string) error                         // an existing, non-system user with a login shell
+	Exe() (string, error)                             // the helper's own binary, which the job units run
 }
 
 type Actions struct{ s Seam }

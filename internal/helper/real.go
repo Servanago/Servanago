@@ -74,8 +74,12 @@ func (RealSeam) UserRemove(user string) error {
 	}
 	return nil
 }
-func (RealSeam) FPMTest(bin, conf string) error {
-	out, err := exec.Command(bin, "-t", "-y", conf).CombinedOutput()
+func (RealSeam) FPMTest(bin, conf, ini string) error {
+	args := []string{"-t", "-y", conf}
+	if ini != "" {
+		args = append(args, "-c", ini)
+	}
+	out, err := exec.Command(bin, args...).CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}

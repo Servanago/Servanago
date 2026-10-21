@@ -2,6 +2,7 @@ package helper
 
 import (
 	"io/fs"
+	"strings"
 	"time"
 )
 
@@ -31,11 +32,40 @@ type fakeSeam struct {
 	disableErr                     error
 	binErr                         error
 	binChecked                     string
+	fpmTestIni                     string
+
+	// PHP build seam
+	files        map[string][]byte // ReadFile and Lstat see these (path -> content), besides atUnit
+	missing      []string
+	free         uint64
+	jobDirCalls  []string
+	dirs         map[string][]string // ReadDir results
+	removedAll   []string
+	renamed      [][2]string
+	installed    [][2]string
+	installErr   error
+	execOut      map[string]string // "bin arg arg" -> output
+	execErr      error
+	fetched      map[string][]byte
+	fetchErr     error
+	userErr      error
+	exe          string
+	unitStatuses map[string]StatusData // per-unit UnitStatus for the build units
+	unitLogs     map[string][]string
+	checked      []string
+	exist        map[string]bool // paths Lstat reports as existing directories
+	readBack     bool            // ReadFile returns what WriteFile stored (for the state file round trip)
 }
 
 func newFakeSeam() *fakeSeam { return &fakeSeam{written: map[string][]byte{}} }
 
 func (s *fakeSeam) Lstat(path string) (fs.FileInfo, error) {
+	if s.exist[path] {
+		return dirFI{}, nil
+	}
+	if _, ok := s.files[path]; ok {
+		return plainFI{}, nil
+	}
 	if path != s.atUnit {
 		return nil, fs.ErrNotExist
 	}
@@ -45,6 +75,12 @@ func (s *fakeSeam) Lstat(path string) (fs.FileInfo, error) {
 	return plainFI{}, nil
 }
 func (s *fakeSeam) ReadFile(path string) ([]byte, error) {
+	if b, ok := s.files[path]; ok {
+		return append([]byte(nil), b...), nil
+	}
+	if b, ok := s.written[path]; ok && s.readBack {
+		return append([]byte(nil), b...), nil
+	}
 	if path == s.atUnit && !s.isSymlink {
 		return append([]byte(nil), s.previous...), nil
 	}
@@ -68,6 +104,9 @@ func (s *fakeSeam) DaemonReload() error          { s.reloadCalls++; return s.rel
 func (s *fakeSeam) Enable(name string) error     { s.enabled = name; return s.enable }
 func (s *fakeSeam) UnitStatus(name string) (StatusData, error) {
 	s.statusName = name
+	if st, ok := s.unitStatuses[name]; ok {
+		return st, nil
+	}
 	return s.status, s.statusErr
 }
 func (s *fakeSeam) UnitLogs(name string, lines int) ([]string, error) {
@@ -76,6 +115,9 @@ func (s *fakeSeam) UnitLogs(name string, lines int) ([]string, error) {
 	if s.logsErr != nil {
 		return nil, s.logsErr
 	}
+	if l, ok := s.unitLogs[name]; ok {
+		return l, nil
+	}
 	return s.logs, nil
 }
 func (s *fakeSeam) UserAdd(user, home string) error {
@@ -83,13 +125,51 @@ func (s *fakeSeam) UserAdd(user, home string) error {
 	return nil
 }
 func (s *fakeSeam) UserRemove(user string) error { s.userRemoved = user; return nil }
-func (s *fakeSeam) FPMTest(bin, conf string) error {
-	s.fpmTestBin, s.fpmTested = bin, conf
+func (s *fakeSeam) FPMTest(bin, conf, ini string) error {
+	s.fpmTestBin, s.fpmTested, s.fpmTestIni = bin, conf, ini
 	return s.fpmTestErr
 }
-func (s *fakeSeam) CheckBinary(path string) error { s.binChecked = path; return s.binErr }
-func (s *fakeSeam) StartUnit(name string) error   { s.started = name; return s.startStopErr }
-func (s *fakeSeam) StopUnit(name string) error    { s.stopped = name; return s.startStopErr }
+func (s *fakeSeam) CheckBinary(path string) error {
+	s.binChecked = path
+	s.checked = append(s.checked, path)
+	return s.binErr
+}
+
+func (s *fakeSeam) Missing([]string) []string        { return s.missing }
+func (s *fakeSeam) FreeBytes(string) (uint64, error) { return s.free, nil }
+func (s *fakeSeam) JobDir(dir, user string) error {
+	s.jobDirCalls = append(s.jobDirCalls, dir+" "+user)
+	return nil
+}
+func (s *fakeSeam) ReadDir(path string) ([]string, error) { return s.dirs[path], nil }
+func (s *fakeSeam) RemoveAll(path string) error {
+	s.removedAll = append(s.removedAll, path)
+	return nil
+}
+func (s *fakeSeam) Rename(oldPath, newPath string) error {
+	s.renamed = append(s.renamed, [2]string{oldPath, newPath})
+	return nil
+}
+func (s *fakeSeam) InstallTree(src, dst string) error {
+	s.installed = append(s.installed, [2]string{src, dst})
+	return s.installErr
+}
+func (s *fakeSeam) UserOK(string) error  { return s.userErr }
+func (s *fakeSeam) Exe() (string, error) { return s.exe, nil }
+func (s *fakeSeam) Exec(name string, args ...string) (string, error) {
+	return s.execOut[strings.Join(append([]string{name}, args...), " ")], s.execErr
+}
+func (s *fakeSeam) Fetch(url string, limit int64) ([]byte, error) {
+	if s.fetchErr != nil {
+		return nil, s.fetchErr
+	}
+	if b, ok := s.fetched[url]; ok {
+		return b, nil
+	}
+	return nil, fs.ErrNotExist
+}
+func (s *fakeSeam) StartUnit(name string) error { s.started = name; return s.startStopErr }
+func (s *fakeSeam) StopUnit(name string) error  { s.stopped = name; return s.startStopErr }
 func (s *fakeSeam) DisableUnit(name string) error {
 	s.disabled = name
 	return s.disableErr
@@ -104,6 +184,11 @@ func (plainFI) Name() string       { return "unit" }
 func (plainFI) Size() int64        { return 0 }
 func (plainFI) ModTime() time.Time { return time.Time{} }
 func (plainFI) Sys() any           { return nil }
+
+type dirFI struct{ plainFI }
+
+func (dirFI) Mode() fs.FileMode { return fs.ModeDir | 0o755 }
+func (dirFI) IsDir() bool       { return true }
 
 type symlinkFI struct{ plainFI }
 

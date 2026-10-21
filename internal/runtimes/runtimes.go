@@ -4,17 +4,27 @@ package runtimes
 
 import (
 	"context"
+	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
 )
 
-// PHPVersion is one installed php-fpm binary.
+// PHPRoot is where ServanaGo's own PHP builds live: PHPRoot/<version>-<n>/{sbin,bin,...}. A variable so tests can point it elsewhere.
+var PHPRoot = "/opt/servanago/php"
+
+// BuildRE is a build directory name: 8.4.27-1 is the first build of PHP 8.4.27.
+var BuildRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$`)
+
+// PHPVersion is one installed php-fpm binary, as a label a site can pin: a distro version ("8.2"), a
+// source build ("8.4.27-1") or a branch of source builds ("8.4", following the newest build there).
 type PHPVersion struct {
-	Version string // from the binary name: php-fpm8.2 -> "8.2"
+	Version string // the label: php-fpm8.2 -> "8.2"; a source build keeps its directory name
 	Path    string // the executable; the pool's binary when a site picks this version
+	Source  bool   // built by ServanaGo under PHPRoot
 }
 
 // Opt is a pick-list entry: one version, marked when it is the stored one.
@@ -85,20 +95,23 @@ func Detect(ctx context.Context, ex RunExec) Report {
 	}
 	r.Node.Install = "sudo apt install nodejs"
 
-	var php []PHPVersion
+	php := sourceBuilds(ex)
 	for _, dir := range []string{"/usr/sbin", "/usr/bin", "/usr/local/bin"} {
 		m, _ := ex.Glob(dir + "/php-fpm*") // pattern errors are impossible for a fixed pattern
 		for _, p := range m {
 			v := strings.TrimPrefix(filepath.Base(p), "php-fpm")
 			if v != "" {
-				php = append(php, PHPVersion{v, p})
+				php = append(php, PHPVersion{Version: v, Path: p})
 			}
 		}
 	}
-	sort.Slice(php, func(i, j int) bool { return newest(php[i].Version, php[j].Version) })
-	r.PHP = dedupe(php) // the first path searched wins for a repeated version
-	if len(r.PHP) > 0 {
-		r.PHPInstall = "sudo apt install php" + r.PHP[0].Version + "-fpm"
+	sort.SliceStable(php, func(i, j int) bool { return newest(php[i].Version, php[j].Version) })
+	r.PHP = dedupe(php) // the first one listed wins for a repeated label: source builds, then the first path searched
+	for _, p := range r.PHP {
+		if !p.Source {
+			r.PHPInstall = "sudo apt install php" + p.Version + "-fpm"
+			break
+		}
 	}
 	r.Franken.Install = "https://frankenphp.dev/docs/#getting-started"
 	for _, p := range FrankenPaths {
@@ -122,6 +135,74 @@ func Detect(ctx context.Context, ex RunExec) Report {
 	return r
 }
 
+// sourceBuilds lists ServanaGo's own builds: one entry per build directory plus one per branch (8.4)
+// pointing at the newest build there, so a site pinned to a branch follows security releases.
+func sourceBuilds(ex RunExec) []PHPVersion {
+	m, _ := ex.Glob(PHPRoot + "/*-*/sbin/php-fpm")
+	var builds []PHPVersion
+	for _, p := range m {
+		label := filepath.Base(filepath.Dir(filepath.Dir(p)))
+		if BuildRE.MatchString(label) {
+			builds = append(builds, PHPVersion{Version: label, Path: p, Source: true})
+		}
+	}
+	sort.SliceStable(builds, func(i, j int) bool { return newest(builds[i].Version, builds[j].Version) })
+	out := append([]PHPVersion(nil), builds...)
+	seen := map[string]bool{}
+	for _, b := range builds {
+		if br := Branch(b.Version); !seen[br] {
+			seen[br] = true
+			out = append(out, PHPVersion{Version: br, Path: b.Path, Source: true})
+		}
+	}
+	return out
+}
+
+// BuildLibs lists the library directories a build was compiled against (its libs.txt); nil when unreadable.
+func BuildLibs(label string) []string {
+	if !BuildRE.MatchString(label) {
+		return nil
+	}
+	b, err := os.ReadFile(filepath.Join(PHPRoot, label, "libs.txt"))
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(string(b))
+}
+
+// Branch is the major.minor of a build label or version: 8.4.27-1 -> 8.4.
+func Branch(label string) string {
+	parts := strings.SplitN(label, ".", 3)
+	if len(parts) < 2 {
+		return label
+	}
+	return parts[0] + "." + parts[1]
+}
+
+// Resolve maps a site's pinned label to an installed binary. A source build that has since been pruned
+// falls back to the newest build of its branch (fallback=true, so the UI can say so); a label with no match is not ok.
+func Resolve(label string, installed []PHPVersion) (v PHPVersion, fallback, ok bool) {
+	if label == "" {
+		return PHPVersion{}, false, false
+	}
+	for _, p := range installed {
+		if p.Version == label {
+			return p, false, true
+		}
+	}
+	if BuildRE.MatchString(label) {
+		for _, p := range installed {
+			if p.Version == Branch(label) {
+				return p, true, true
+			}
+		}
+	}
+	return PHPVersion{}, false, false
+}
+
+// Newer reports whether version a is later than b (8.4.27 vs 8.4.9, 8.4.27-2 vs 8.4.27-1).
+func Newer(a, b string) bool { return newest(a, b) }
+
 // newest returns true when a and b are sorted a-before-b: first version, then version parts.
 func newest(a, b string) bool {
 	as, bs := splitVersion(a), splitVersion(b)
@@ -142,7 +223,7 @@ func newest(a, b string) bool {
 
 func splitVersion(v string) []int {
 	var out []int
-	for _, part := range strings.Split(v, ".") {
+	for _, part := range strings.FieldsFunc(v, func(r rune) bool { return r == '.' || r == '-' }) { // 8.4.27-1: the build number counts
 		if n, err := strconv.Atoi(part); err == nil {
 			out = append(out, n)
 		}

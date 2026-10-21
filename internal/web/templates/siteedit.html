@@ -92,6 +92,14 @@
 <code>{{.PHPInstall}}</code>.</p>{{end}}
 {{hintid "fpm_version"}}
 <p class="explain">You set the folder above to the webroot; <code>index.php</code> is the router. The pool and socket are created for you.</p>
+<fieldset>
+<legend>Extensions (ServanaGo's own PHP builds)</legend>
+{{range .PHPExt}}<label><input type="checkbox" name="php_ext" value="{{.Name}}"{{if .On}} checked{{end}}> {{.Name}}</label>
+{{end}}
+{{hintid "php_ext"}}
+</fieldset>
+<label>Health path (optional) <input name="php_health_path" value="{{.Site.PHPHealthPath}}" placeholder="/healthz" autocomplete="off" aria-describedby="hint-php_health_path"></label>
+{{hintid "php_health_path"}}
 </div>
 </fieldset>
 <fieldset>

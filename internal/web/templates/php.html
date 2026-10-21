@@ -1,0 +1,97 @@
+{{define "reauth"}}<input type="password" name="password" placeholder="Your password" aria-label="Your password to confirm" autocomplete="current-password" required>
+{{if .}}<input type="text" name="code" placeholder="Your code" aria-label="Your code to confirm" autocomplete="one-time-code" required>{{end}}{{end}}
+
+{{define "phpjob"}}<div id="phpjob"{{if .Active}} hx-get="/php/job" hx-trigger="every 3s" hx-swap="outerHTML"{{end}}>
+{{if .Err}}<p role="alert">{{.Err}}</p>
+{{else if eq .Phase "idle"}}<p>No build is running.</p>
+{{else}}<p><strong>PHP {{.Version}}</strong>: {{.Phase}}{{if .Message}} <span class="explain">{{.Message}}</span>{{end}}</p>
+{{if .Logs}}<pre class="unit-logs">{{range .Logs}}{{.}}
+{{end}}</pre>{{end}}{{end}}
+</div>{{end}}
+
+{{define "content"}}
+<h1>PHP</h1>
+<p>ServanaGo can compile PHP itself from php.net's source, so a security release does not wait for your distribution's package mirrors. Builds live in <code>/opt/servanago/php</code>. PHP from your distribution keeps working; sites pick either on the site's page.</p>
+{{with .Data}}
+{{if .Updates}}
+<article>
+<header>New PHP releases</header>
+<ul>{{range .Updates}}<li>PHP <strong>{{.Version}}</strong> for the {{.Branch}} branch{{if .Security}} (<strong>security release</strong>){{end}}</li>{{end}}</ul>
+<p>Nothing changes until you build it. Build, then switch the sites below.</p>
+</article>
+{{end}}
+
+<article>
+<header>Build</header>
+{{template "phpjob" .Job}}
+{{if eq .Job.Phase "built"}}<form hx-post="/php/builds/install" hx-target="#php-msg"><p>PHP {{.Job.Version}} is built but not installed yet.</p>{{template "reauth" .NeedCode}}<button type="submit">Install it</button></form>{{end}}
+<form hx-post="/php/builds" hx-target="#php-msg">
+<label>PHP version
+{{if .Releases}}<select name="version">{{range .Releases}}<option value="{{.Version}}">{{.Version}}{{if .Security}} (security){{end}}</option>{{end}}</select>
+{{else}}<input name="version" placeholder="8.4.27" pattern="[0-9]+\.[0-9]+\.[0-9]+" autocomplete="off" required>{{end}}</label>
+<label><input type="checkbox" name="switch"> Switch the sites that follow this branch when it is installed</label>
+{{template "reauth" .NeedCode}}
+<button type="submit"{{if .Job.Active}} disabled{{end}}>Build</button>
+</form>
+<p class="explain">A build takes tens of minutes and is limited to half the machine's CPU and 4 GB of memory. It needs a C and C++ compiler, make, pkg-config, cmake, perl, bison, flex, gpg, xz and tar on this machine; if one is missing the message says which. Only releases php.net still supports can be built.</p>
+<form hx-post="/php/check" hx-target="#php-msg">
+<p>{{if .CheckedAt}}Last checked {{.CheckedAt}}. {{else}}Not checked yet. {{end}}ServanaGo checks php.net once a week and emails the MAIL FROM address (Settings) when a branch you run has a new release.</p>
+<button type="submit" class="outline secondary">Check now</button>
+</form>
+</article>
+
+<article>
+<header>Installed builds</header>
+{{if .Builds}}
+<table>
+<thead><tr><th>Build</th><th>Sites</th><th>Libraries</th><th></th></tr></thead>
+<tbody>
+{{range .Builds}}
+<tr>
+<td>{{.Label}}{{if .Newest}} <small>(newest {{.Branch}})</small>{{end}}{{if .Unsupported}} <small class="cert-error" title="This branch no longer gets security fixes">unsupported</small>{{end}}</td>
+<td>{{range .Sites}}{{.}}<br>{{else}}none{{end}}</td>
+<td><small>{{range .Libs}}{{.}} {{end}}</small></td>
+<td>{{if .InUse}}<small>in use: {{.InUse}}</small>{{else}}
+<details><summary>Remove</summary>
+<form hx-post="/php/builds/{{.Label}}/delete" hx-target="#php-msg" hx-confirm="Remove PHP {{.Label}}?">
+{{template "reauth" $.Data.NeedCode}}
+<button type="submit" class="outline danger">Remove</button>
+</form></details>{{end}}</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p>No ServanaGo PHP build yet. Build one above.</p>{{end}}
+{{if .Branches}}
+<form hx-post="/php/switch" hx-target="#php-msg">
+<label>Move the sites that follow a branch to its newest build
+<select name="branch">{{range .Branches}}<option>{{.}}</option>{{end}}</select></label>
+{{template "reauth" .NeedCode}}
+<button type="submit">Switch</button>
+</form>
+<p class="explain">Sites are switched one at a time. A site that does not come up (or whose health path fails) goes back to the previous build and the rest are left alone.</p>
+{{end}}
+</article>
+
+<article>
+<header>Command-line PHP</header>
+<p>The <code>php</code> and <code>composer</code> a user gets in a terminal, over ssh or in cron. Nothing is written into the user's home or any site folder; the distro PHP stays installed for everyone else. <code>sudo php</code> ignores this setting.</p>
+{{if .Defaults}}<table><thead><tr><th>User</th><th>PHP</th></tr></thead><tbody>
+{{range .Defaults}}<tr><td>{{.Username}}</td><td>{{.Version}}</td></tr>{{end}}</tbody></table>{{end}}
+{{if and .Users .Labels}}
+<form hx-post="/php/defaults" hx-target="#php-msg">
+<label>User <select name="user">{{range .Users}}<option>{{.}}</option>{{end}}</select></label>
+<label>PHP <select name="version"><option value="">the distro PHP (clear)</option>{{range .Labels}}<option>{{.}}</option>{{end}}</select></label>
+{{template "reauth" .NeedCode}}
+<button type="submit">Save</button>
+</form>
+{{else}}<p class="explain">Build PHP first; the users here are the accounts with a login shell.</p>{{end}}
+<form hx-post="/php/composer" hx-target="#php-msg">
+<p>Composer: {{if .ComposerOK}}installed.{{else}}not installed.{{end}} ServanaGo downloads <code>composer.phar</code> from getcomposer.org and checks its published sha256.</p>
+{{template "reauth" .NeedCode}}
+<button type="submit" class="outline">{{if .ComposerOK}}Update{{else}}Install{{end}} composer</button>
+</form>
+</article>
+{{end}}
+<p id="php-msg" role="alert"></p>
+{{end}}

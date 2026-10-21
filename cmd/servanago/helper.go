@@ -30,6 +30,13 @@ func runHelper() error {
 		helper.ActionUnitRemove:  a.UnitRemove,
 		helper.ActionUnitStart:   a.UnitStart,
 		helper.ActionUnitStop:    a.UnitStop,
+
+		helper.ActionPHPBuild:       a.PHPBuild,
+		helper.ActionPHPStatus:      a.PHPStatus,
+		helper.ActionPHPInstall:     a.PHPInstall,
+		helper.ActionPHPPrune:       a.PHPPrune,
+		helper.ActionPHPUserDefault: a.PHPUserDefault,
+		helper.ActionComposer:       a.Composer,
 	}
 	slog.Info("helper listening", "socket", helper.SocketPath, "servanago_user", hasUser)
 	helper.Serve(ln, helper.NewAuthorizer(uid), acts)

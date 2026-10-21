@@ -2,6 +2,7 @@ package helper
 
 import (
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -146,14 +147,18 @@ catch_workers_output=yes
 // root-owned /run/servanago, and drops its workers to the site user through the pool's user=. A master
 // started as the site user could not create the socket. The runtime directory is declared (and preserved)
 // here as well as in the helper unit, so a helper restart does not delete every site socket.
-func phpUnitTemplate(user, fpmBin, confPath, root string) []byte {
+func phpUnitTemplate(user, fpmBin, confPath, ini, root string) []byte {
+	args := "-F -y " + confPath
+	if ini != "" { // a source build reads the site's own ini (its extensions); distro builds keep their php.ini
+		args += " -c " + ini
+	}
 	return []byte(fmt.Sprintf(`[Unit]
 Description=ServanaGo site %s (php-fpm %s)
 After=network.target
 
 [Service]
 Type=simple
-ExecStart=%s -F -y %s
+ExecStart=%s %s
 RuntimeDirectory=servanago
 RuntimeDirectoryMode=0755
 RuntimeDirectoryPreserve=yes
@@ -166,7 +171,7 @@ ReadWritePaths=/run/servanago %s
 
 [Install]
 WantedBy=multi-user.target
-`, user, filepath.Base(fpmBin), fpmBin, confPath, root))
+`, user, filepath.Base(fpmBin), fpmBin, args, root))
 }
 
 var fpmBinRE = regexp.MustCompile(`^(?:/usr/(?:sbin|bin)|/usr/local/bin)/php-fpm[0-9]+(?:\.[0-9]+)*$`)
@@ -217,11 +222,20 @@ func validateKindSpec(s Spec) error {
 		if err := validateRoot(s.Root, false); err != nil {
 			return err
 		}
-		if !fpmBinRE.MatchString(s.FPMBin) {
-			return fmt.Errorf("php-fpm binary %q must be a detected /usr/{sbin,bin,local/bin}/php-fpm<version>", s.FPMBin)
+		if label, ok := sourceBuild(s.FPMBin); ok { // one of ServanaGo's own builds: pinned by exact label or by branch
+			if s.FPMVersion != label && s.FPMVersion != runtimes.Branch(label) {
+				return fmt.Errorf("fpm version %q does not match the build %q (use %s or %s)", s.FPMVersion, s.FPMBin, label, runtimes.Branch(label))
+			}
+		} else {
+			if !fpmBinRE.MatchString(s.FPMBin) {
+				return fmt.Errorf("php-fpm binary %q must be a detected /usr/{sbin,bin,local/bin}/php-fpm<version> or a build under %s", s.FPMBin, runtimes.PHPRoot)
+			}
+			if got := strings.TrimPrefix(filepath.Base(s.FPMBin), "php-fpm"); got != s.FPMVersion {
+				return fmt.Errorf("fpm version %q does not match the binary %q", s.FPMVersion, s.FPMBin)
+			}
 		}
-		if got := strings.TrimPrefix(filepath.Base(s.FPMBin), "php-fpm"); got != s.FPMVersion {
-			return fmt.Errorf("fpm version %q does not match the binary %q", s.FPMVersion, s.FPMBin)
+		if _, err := runtimes.ParseExtensions(s.Extensions); err != nil {
+			return err
 		}
 	case "frankenphp":
 		if err := validateRoot(s.Root, false); err != nil {
@@ -305,7 +319,15 @@ func (a Actions) unitFor(s Spec) (unitPath string, content []byte) {
 		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), cgiServiceTemplate(s.Slug, s.FCGIBin, s.Root)
 	}
 	conf := filepath.Join("/etc/servanago/fpm", s.Slug+".conf")
-	return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), phpUnitTemplate(user, s.FPMBin, conf, s.Root)
+	return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), phpUnitTemplate(user, s.FPMBin, conf, siteINI(s), s.Root)
+}
+
+// siteINIPath is a source build site's own php.ini; "" for a distro build, which keeps its php.ini and conf.d.
+func siteINI(s Spec) string {
+	if _, ok := sourceBuild(s.FPMBin); !ok {
+		return ""
+	}
+	return "/etc/servanago/php/" + s.Slug + ".ini"
 }
 
 // UnitInstall writes the template unit (plus the pool for php), verifies each artifact
@@ -329,12 +351,26 @@ func (a Actions) UnitInstall(r Request) Response {
 
 	// The pool exists before the unit so both verify against their target state.
 	if s.Kind == "php" {
+		// The unit runs this binary as root (the php-fpm master): refuse one anyone else could have replaced.
+		if err := a.s.CheckBinary(s.FPMBin); err != nil {
+			return Response{Error: fmt.Sprintf("php-fpm binary: %v", err)}
+		}
 		conf := "/etc/servanago/fpm/" + slug + ".conf"
 		if err := a.s.MkdirAll("/etc/servanago/fpm", 0o755); err != nil {
 			return Response{Error: fmt.Sprintf("create fpm config dir: %v", err)}
 		}
+		ini := siteINI(s)
+		if ini != "" {
+			if err := a.s.MkdirAll("/etc/servanago/php", 0o755); err != nil {
+				return Response{Error: fmt.Sprintf("create php config dir: %v", err)}
+			}
+			label, _ := sourceBuild(s.FPMBin)
+			if resp := a.put(ini, phpINITemplate(slug, runtimes.Branch(label), s.Extensions), func(string) error { return nil }); !resp.OK {
+				return resp
+			}
+		}
 		if resp := a.put(conf, poolTemplate(slug, "sg-"+slug), func(path string) error {
-			return a.s.FPMTest(s.FPMBin, path)
+			return a.s.FPMTest(s.FPMBin, path, ini)
 		}); !resp.OK {
 			return resp
 		}
@@ -377,6 +413,7 @@ func (a Actions) UnitRemove(r Request) Response {
 	_ = a.s.DisableUnit(name)
 	_ = a.s.Remove(filepath.Join(systemdUnitDir, name))
 	_ = a.s.Remove("/etc/servanago/fpm/" + slug + ".conf")
+	_ = a.s.Remove("/etc/servanago/php/" + slug + ".ini")
 	if err := a.s.DaemonReload(); err != nil {
 		return Response{Error: fmt.Sprintf("systemctl daemon-reload: %v", err)}
 	}
@@ -418,6 +455,11 @@ func (a Actions) UnitStop(r Request) Response {
 // put is write-from-template with the standard protections: refuse symlink targets, keep the
 // previous content, verify, and roll back (restore or remove) when verification fails.
 func (a Actions) put(path string, content []byte, verify func(path string) error) Response {
+	return a.putPerm(path, content, 0o644, verify)
+}
+
+// putPerm is put with an explicit file mode (the shims are executable).
+func (a Actions) putPerm(path string, content []byte, perm fs.FileMode, verify func(path string) error) Response {
 	if fi, err := a.s.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
 		return Response{Error: filepath.Base(path) + " exists as a symlink; refusing to write"}
 	}
@@ -428,7 +470,7 @@ func (a Actions) put(path string, content []byte, verify func(path string) error
 		}
 	}
 	name := filepath.Base(path)
-	if err := a.s.WriteFile(path, content, 0o644); err != nil {
+	if err := a.s.WriteFile(path, content, perm); err != nil {
 		return Response{Error: fmt.Sprintf("write %s: %v", name, err)}
 	}
 	if err := verify(path); err != nil {
@@ -436,7 +478,7 @@ func (a Actions) put(path string, content []byte, verify func(path string) error
 		// bad file on disk, so it is reported along with the verify failure.
 		var rerr error
 		if hasPrev {
-			rerr = a.s.WriteFile(path, prev, 0o644)
+			rerr = a.s.WriteFile(path, prev, perm)
 		} else {
 			rerr = a.s.Remove(path)
 		}

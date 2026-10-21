@@ -3,6 +3,7 @@ package runtimes
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 )
 
@@ -105,6 +106,67 @@ func TestDetectFCGIWrap(t *testing.T) {
 	}
 	if r := Detect(context.Background(), &fakeExec{}); r.FCGIWrap.Installed || r.FCGIWrap.Install == "" {
 		t.Errorf("absent fcgiwrap: %+v", r.FCGIWrap)
+	}
+}
+
+func labels(v []PHPVersion) []string {
+	var out []string
+	for _, p := range v {
+		out = append(out, p.Version)
+	}
+	return out
+}
+
+func TestDetectSourceBuilds(t *testing.T) {
+	ex := &fakeExec{globs: map[string][]string{
+		PHPRoot + "/*-*/sbin/php-fpm": {PHPRoot + "/8.4.9-1/sbin/php-fpm", PHPRoot + "/8.4.27-1/sbin/php-fpm", PHPRoot + "/8.3.36-2/sbin/php-fpm", PHPRoot + "/junk-1/sbin/php-fpm"},
+		"/usr/sbin/php-fpm*":          {"/usr/sbin/php-fpm8.4", "/usr/sbin/php-fpm8.1"},
+	}}
+	r := Detect(context.Background(), ex)
+	want := []string{"8.4.27-1", "8.4.9-1", "8.4", "8.3.36-2", "8.3", "8.1"}
+	if got := labels(r.PHP); strings.Join(got, " ") != strings.Join(want, " ") {
+		t.Fatalf("labels %v, want %v", got, want)
+	}
+	for _, p := range r.PHP {
+		switch p.Version {
+		case "8.4": // the branch label follows the newest build, and wins over the distro 8.4
+			if p.Path != PHPRoot+"/8.4.27-1/sbin/php-fpm" || !p.Source {
+				t.Errorf("branch 8.4: %+v", p)
+			}
+		case "8.1":
+			if p.Source {
+				t.Errorf("apt build marked as source: %+v", p)
+			}
+		}
+	}
+	if r.PHPInstall != "sudo apt install php8.1-fpm" { // the hint names a distro package, never a build directory
+		t.Errorf("install hint %q", r.PHPInstall)
+	}
+}
+
+func TestResolve(t *testing.T) {
+	inst := []PHPVersion{
+		{"8.4.27-1", "/b/8.4.27-1", true}, {"8.4.9-1", "/b/8.4.9-1", true}, {"8.4", "/b/8.4.27-1", true},
+		{"8.2", "/usr/sbin/php-fpm8.2", false},
+	}
+	tests := []struct {
+		label, path string
+		fallback    bool
+		ok          bool
+	}{
+		{"8.4.9-1", "/b/8.4.9-1", false, true}, // exact build
+		{"8.4", "/b/8.4.27-1", false, true},    // branch follows the newest
+		{"8.2", "/usr/sbin/php-fpm8.2", false, true},
+		{"8.4.20-1", "/b/8.4.27-1", true, true}, // pruned exact build falls back to its branch
+		{"8.3.1-1", "", false, false},           // no such branch at all
+		{"7.4", "", false, false},
+		{"", "", false, false},
+	}
+	for _, tt := range tests {
+		v, fb, ok := Resolve(tt.label, inst)
+		if ok != tt.ok || fb != tt.fallback || v.Path != tt.path {
+			t.Errorf("Resolve(%q) = %+v fallback=%v ok=%v, want %q fallback=%v ok=%v", tt.label, v, fb, ok, tt.path, tt.fallback, tt.ok)
+		}
 	}
 }
 

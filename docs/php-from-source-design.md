@@ -26,7 +26,7 @@ Things checked against the code and php.net while designing are marked **(verifi
 /etc/servanago/php/<slug>.ini            per-site ini (extensions)   [helper writes]
 /etc/servanago/php-users/<user>          one line: a label           [helper writes]
 /usr/local/bin/php, /usr/local/bin/composer, /etc/profile.d/servanago-php.sh   [helper writes]
-/var/lib/servanago/build/<ver>/          work dir for a running build, owned by sg-phpbuild
+/var/lib/servanago-build/current/       work dir for a running build, owned by sg-phpbuild (see section 16)
 /var/log/servanago/php-build-<ver>-<n>.log
 ```
 
@@ -230,3 +230,24 @@ PHP's version, checksum and signature also come live from php.net, so a PHP-only
 - Library build recipes (ICU and libpq in particular) can break on a new upstream release, and with live resolvers a changed feed page breaks the build until Servanago ships a fix. Fixture tests catch format changes only after a fixture refresh; a failed build says which library and why.
 - Builds run on the host CPU for tens of minutes; `CPUQuota` and `MemoryMax` keep the web app and sites responsive.
 - `sudo php` bypasses profile.d (`secure_path`) and falls to the shim or distro `php`.
+
+## 16. As built: where the code differs from sections 1 to 15
+
+Written after implementation. Where this section and an earlier one disagree, this one is right.
+
+- **The job is Go, not shell.** `servanago php-job fetch|build DIR` (`cmd/servanago/phpjob.go`, `internal/phpbuild`). There is no `phpbuild.sh`, no `systemd-run`, and no `internal/helper/phpbuild.go`. Two fixed unit files, `servanago-phpfetch.service` (network on, `OnSuccess=` the build unit) and `servanago-phpbuild.service` (`PrivateNetwork=yes`, `BindPaths=<job>/root:/opt/servanago/php`), are written by the helper from templates (`jobUnit` in `internal/helper/php.go`).
+- **Job directory**: `/var/lib/servanago-build/current` (`phpbuild.Dir`), not `/var/lib/servanago/build`, because `/var/lib/servanago` is 0750 `servanago:servanago` and the job runs as `sg-phpbuild`.
+- **Library reuse.** Libraries are installed once under `/opt/servanago/php/libs/<name>-<ver>` and reused. The fetch phase (which sees the real tree) copies the ones the build needs into the stage, and the build unit sees the stage at the final path, so every prefix and `RUNPATH` is the real one. `php-install` copies only libraries that are not installed yet.
+- **Library versions** come from each library's release feed (`internal/phplibs`). Four exceptions: libpng, freetype and libwebp are **pinned** (version and sha256 in the table, `Resolved.Pinned`) because no feed publishes a sha256 for them (see the comments in `phplibs.go` for how each was checked), and sqlite is verified with **SHA3-256**, the only hash its download page publishes. A newer libpng, freetype or libwebp needs a Servanago release.
+- **Host tools**: gcc, g++, make, pkg-config, perl, cmake, bison, flex, gpg, xz, tar (`phpTools`). bison and flex were added after a real build: PostgreSQL 18's configure (for libpq) stops without them even though the tarball ships the generated parsers.
+- **Downloads retry** twice on network errors and 5xx answers (`phpbuild.HTTPGet`); a checksum mismatch is never retried.
+- **Extensions.** ctype, filter, tokenizer, session, fileinfo, phar, pdo, openssl, libxml and zlib are always built in and not selectable. Selectable shared extensions: mbstring opcache sqlite3 pdo_sqlite dom simplexml xml xmlreader xmlwriter curl zip gd intl mysqli pdo_mysql pgsql pdo_pgsql (`runtimes.PHPExtensions`). **PHP 8.5 and later always include opcache** (checked in the 8.5.12 UPGRADING notes): no `opcache.so`, so it is neither loaded nor expected from an 8.5 build (`Ext.Shared`).
+- **No PECL.** redis, apcu and imagick were left out: no feed publishes an authenticated sha256 for their source tarballs (pecl.php.net lists none and has no signatures; the GitHub tag tarballs carry no digest).
+- **Status** is `php-status` (state file plus the journal of the two units), not `unit-status` with a reserved slug. The slugs `phpbuild` and `phpfetch` are still reserved (`store.reservedSlugs`).
+- **Distro PHP is unchanged.** The per-site `php.ini` and `-c` apply only to ServanaGo's own builds. A distro build keeps its `php.ini` and `conf.d`.
+- **`php-fpm` is now checked** with `CheckBinary` for every php site (the gap found in research is closed), distro builds included.
+- **Routes** use `s.protected` and ask for the password through `s.confirm`, which does nothing in open mode (no administrator exists).
+- **Startup.** `ReconcilePHP` writes every stored user default again. Site units are still not reconciled at startup: that gap existed before this work (`runtimeApply` runs only from handlers).
+- **Install is automatic.** `watchBuild` installs a finished build and, if asked, switches the sites that follow the branch. A web restart during a build leaves the finished build waiting for the Install button.
+- **The update mail** goes to the MAIL FROM address, because ServanaGo has no admin email field.
+- **Not run against real systemd.** The unit files pass `systemd-analyze verify`-style checks only in tests with a fake; `BindPaths=` under `ProtectSystem=strict`, `OnSuccess=` and `PrivateNetwork=` have not been exercised on a real host. A real compile of PHP and every library was run with `go test -tags smoke ./internal/phpbuild` (see its header); that test uses one directory for the stage and the final tree, so it does not test the bind mount.

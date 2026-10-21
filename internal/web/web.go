@@ -11,6 +11,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -44,6 +45,8 @@ type Deps struct {
 	// and the runtime detector (nil = the real host).
 	HelperSocket string
 	Exec         runtimes.RunExec
+	// HTTPGet fetches the php.net release feed (nil = a plain https client). A test seam.
+	HTTPGet func(ctx context.Context, url string) ([]byte, error)
 }
 
 type Server struct {
@@ -55,6 +58,13 @@ type Server struct {
 
 	flashMu sync.Mutex
 	flashes []string // one-time notices shown on the next page render
+
+	// PHP (php.go): timings and network seams, overridden by tests.
+	phpSettle time.Duration // wait after starting a switched site before judging it
+	phpPoll   time.Duration // how often a running build is polled
+	phpWatch  atomic.Bool   // one build watcher at a time
+	healthGet func(ctx context.Context, host, path string) (int, error)
+	sendMail  func(from, to, subject, body string) error
 }
 
 func (s *Server) flash(msg string) {
@@ -72,8 +82,9 @@ func (s *Server) takeFlashes() []string {
 }
 
 func New(d Deps) *Server {
-	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn()}
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "siteedit", "logs", "help"} {
+	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second}
+	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "siteedit", "logs", "help", "php"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -177,6 +188,15 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /settings", s.protected(s.settingsPage))
 	mux.Handle("POST /settings/smtp", s.protected(s.saveSMTP))
 	mux.Handle("GET /status", s.protected(s.status))
+	mux.Handle("GET /php", s.protected(s.phpPage))
+	mux.Handle("GET /php/job", s.protected(s.phpJobPanel))
+	mux.Handle("POST /php/builds", s.protected(s.phpBuild))
+	mux.Handle("POST /php/builds/install", s.protected(s.phpInstall))
+	mux.Handle("POST /php/builds/{label}/delete", s.protected(s.phpPrune))
+	mux.Handle("POST /php/switch", s.protected(s.phpSwitch))
+	mux.Handle("POST /php/defaults", s.protected(s.phpDefault))
+	mux.Handle("POST /php/check", s.protected(s.phpCheckNow))
+	mux.Handle("POST /php/composer", s.protected(s.phpComposer))
 	mux.Handle("GET /logs", s.protected(s.logsPage))
 	mux.Handle("GET /logs/rows", s.protected(s.logRows))
 	mux.Handle("GET /domains", s.protected(s.domainsPage))

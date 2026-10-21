@@ -9,6 +9,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"regexp"
+
+	"github.com/servanago/servanago/internal/phpbuild"
 )
 
 const (
@@ -21,6 +23,13 @@ const (
 	ActionUnitRemove  = "unit-remove"
 	ActionUnitStart   = "unit-start"
 	ActionUnitStop    = "unit-stop"
+
+	ActionPHPBuild       = "php-build"
+	ActionPHPStatus      = "php-status"
+	ActionPHPInstall     = "php-install"
+	ActionPHPPrune       = "php-prune"
+	ActionPHPUserDefault = "php-user-default"
+	ActionComposer       = "composer-install"
 )
 
 // MaxRequestSize bounds one request; larger input is refused before parsing.
@@ -59,6 +68,11 @@ type Spec struct {
 	FPMVersion string `json:"fpm_version,omitempty"` // php: label matching FPMBin's suffix
 	FrankenBin string `json:"franken_bin,omitempty"` // frankenphp: detected binary (one of a fixed set)
 	FCGIBin    string `json:"fcgi_bin,omitempty"`    // cgi: detected fcgiwrap (one of a fixed set)
+
+	Extensions []string `json:"extensions,omitempty"`  // php (source build): shared extensions from the allowlist; none = the core set
+	PHPVersion string   `json:"php_version,omitempty"` // php-build/php-install: 8.4.27; php-user-default: a label (8.4 or 8.4.27-1), "" clears
+	User       string   `json:"user,omitempty"`        // php-user-default: an existing login user
+	Build      string   `json:"build,omitempty"`       // php-prune: a build directory name such as 8.4.27-1
 }
 
 // Request is one newline-delimited action from the control plane. Spec is mandatory, even
@@ -82,7 +96,8 @@ func DecodeRequest(b []byte) (Request, error) {
 	}
 	switch r.Action {
 	case ActionPing, ActionUnitInstall, ActionUnitStatus, ActionUnitLogs,
-		ActionUserAdd, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop:
+		ActionUserAdd, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop,
+		ActionPHPBuild, ActionPHPStatus, ActionPHPInstall, ActionPHPPrune, ActionPHPUserDefault, ActionComposer:
 	default:
 		return Request{}, fmt.Errorf("unknown action %q", r.Action)
 	}
@@ -115,10 +130,11 @@ func strict(r *bytes.Reader) *json.Decoder {
 
 // Response answers one request. Only the fields the action produces are set.
 type Response struct {
-	OK     bool        `json:"ok"`
-	Error  string      `json:"error,omitempty"`
-	Status *StatusData `json:"status,omitempty"`
-	Logs   []string    `json:"logs,omitempty"`
+	OK     bool            `json:"ok"`
+	Error  string          `json:"error,omitempty"`
+	Status *StatusData     `json:"status,omitempty"`
+	Logs   []string        `json:"logs,omitempty"`
+	Build  *phpbuild.State `json:"build,omitempty"` // php-status
 }
 
 // StatusData is one unit's systemd state.

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/servanago/servanago/internal/helper"
@@ -35,12 +36,18 @@ func (s *Server) detect(ctx context.Context) runtimes.Report {
 
 // runtimeApply installs (and starts, when enabled) a runtime site's user and unit.
 func (s *Server) runtimeApply(r *http.Request, rt store.Site) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 60*time.Second)
+	defer cancel()
+	return s.applyRuntime(ctx, rt, nil)
+}
+
+// applyRuntime is runtimeApply without a request. A php site normally runs the build its label resolves to;
+// force names another one (a PHP switch and its revert).
+func (s *Server) applyRuntime(ctx context.Context, rt store.Site, force *runtimes.PHPVersion) error {
 	if !rt.IsRuntime() {
 		return nil
 	}
 	hc := s.helperClient()
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 60*time.Second)
-	defer cancel()
 	install := helper.Spec{Slug: rt.Slug, Kind: rt.Kind, Root: rt.StaticRoot}
 	switch rt.Kind {
 	case "node":
@@ -57,16 +64,19 @@ func (s *Server) runtimeApply(r *http.Request, rt store.Site) error {
 			return errors.New("fcgiwrap is not installed on this host")
 		}
 		install.FCGIBin = fw.Path
-	default: // the helper needs the exact binary; the version label was validated against detection
-		rep := s.detect(ctx)
-		for _, v := range rep.PHP {
-			if v.Version == rt.FPMVersion {
-				install.FPMBin, install.FPMVersion = v.Path, v.Version
-				break
+	default: // the helper needs the exact binary; the pinned label resolves to one (a pruned build falls back to its branch)
+		v := runtimes.PHPVersion{}
+		if force != nil {
+			v = *force
+		} else {
+			var ok bool
+			if v, _, ok = runtimes.Resolve(rt.FPMVersion, s.detect(ctx).PHP); !ok {
+				return fmt.Errorf("php-fpm %s is not installed on this host", rt.FPMVersion)
 			}
 		}
-		if install.FPMBin == "" {
-			return fmt.Errorf("php-fpm %s is not installed on this host", rt.FPMVersion)
+		install.FPMBin, install.FPMVersion = v.Path, v.Version
+		if v.Source { // distro builds keep their own php.ini, so the selection only applies to ServanaGo's builds
+			install.Extensions = strings.Fields(rt.PHPExtensions)
 		}
 	}
 	if _, err := hc.Call(ctx, helper.ActionUserAdd, helper.Spec{Slug: rt.Slug, Root: rt.StaticRoot}); err != nil {
