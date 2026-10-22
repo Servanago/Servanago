@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 bin=${1:?usage: packaging/build-deb.sh BIN [OUT]}
-out=${2:-bin/servanago_0.5.3_$(dpkg --print-architecture).deb}
+out=${2:-bin/servanago_0.6.0_$(dpkg --print-architecture).deb}
 [[ $bin = /* ]] || bin="$PWD/$bin"
 
 stage=$(mktemp -d)
