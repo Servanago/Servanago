@@ -21,7 +21,7 @@
 {{template "reauth" $.Data.NeedCode}}
 <button type="submit" class="outline">Set password</button>
 </form>
-{{if or .TOTP .Passkeys}}<form hx-post="/users/{{.ID}}/reset-2fa" hx-target="#users-msg" hx-confirm="Remove {{.Username}}'s authenticator and passkeys? They will sign in with the password alone.">
+{{if or .TOTP .Passkeys}}<form hx-post="/users/{{.ID}}/reset-2fa" hx-target="#users-msg" hx-confirm="Remove {{.Username}}'s authenticator and passkeys? They must set up a new one at their next sign-in.">
 {{template "reauth" $.Data.NeedCode}}
 <button type="submit" class="outline secondary">Reset second factor</button>
 </form>{{end}}
