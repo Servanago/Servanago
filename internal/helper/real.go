@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	osuser "os/user"
+	"regexp"
 	"strconv"
 	"strings"
 	"syscall"
@@ -126,7 +127,8 @@ func (RealSeam) DisableUnit(name string) error {
 func (RealSeam) VerifyUnit(path string) error {
 	out, err := exec.Command("systemd-analyze", "verify", path).CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("%w: %s", err, firstLines(out))
+		// A dotted user name draws a warning line first; it is not the failure.
+		return fmt.Errorf("%w: %s", err, firstLines(regexp.MustCompile(`(?m)^Accepting user/group name.*\n`).ReplaceAll(out, nil)))
 	}
 	return nil
 }

@@ -2,6 +2,8 @@ package helper
 
 import (
 	"errors"
+	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -314,5 +316,34 @@ func TestCGILifecycleUsesSocket(t *testing.T) {
 	start2, _ := DecodeRequest([]byte(`{"action":"unit-start","spec":{"slug":"app11"}}`))
 	if resp := NewActions(plain).UnitStart(start2); !resp.OK || plain.started != "servanago-app11.service" {
 		t.Fatalf("plain start: %+v %q", resp, plain.started)
+	}
+}
+
+// loadSeam verifies like systemd-analyze: a .service that Requires= a socket (and the socket's service) must already be on disk.
+type loadSeam struct{ *fakeSeam }
+
+func (s loadSeam) VerifyUnit(path string) error {
+	sibling := map[string]string{".service": ".socket", ".socket": ".service"}[filepath.Ext(path)]
+	if _, ok := s.written[strings.TrimSuffix(path, filepath.Ext(path))+sibling]; !ok {
+		return fmt.Errorf("%s: unit %s not found", filepath.Base(path), sibling)
+	}
+	return nil
+}
+
+func TestSocketSiteVerifiesWithItsSocketOnDisk(t *testing.T) {
+	for _, tt := range []struct {
+		seam *fakeSeam
+		spec string
+	}{
+		{newFakeSeam(), `{"kind":"cgi","slug":"legacy","root":"/home/brian/legacy","fcgi_bin":"/usr/sbin/fcgiwrap"}`},
+		{bobSeam(), `{"kind":"static","slug":"bobsite","user":"bob","root":"/home/bob/public_html","public":"public"}`},
+	} {
+		req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":` + tt.spec + `}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if resp := NewActions(loadSeam{tt.seam}).UnitInstall(req); !resp.OK {
+			t.Errorf("%s: %+v", tt.spec, resp)
+		}
 	}
 }

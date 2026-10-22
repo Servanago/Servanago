@@ -7,6 +7,7 @@ import (
 	"io"
 	"math"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -102,6 +103,12 @@ func (r *Ring) Lines() []string {
 	return out
 }
 
+// mentions reports whether s contains name as a whole hostname, so "example.com" does not match "api.example.com".
+func mentions(s, name string) bool {
+	re := regexp.MustCompile(`(^|[^A-Za-z0-9.-])` + regexp.QuoteMeta(name) + `($|[^A-Za-z0-9-])`)
+	return re.MatchString(s)
+}
+
 // LastError returns the newest error-level message mentioning host, or its parent wildcard ("*.parent").
 func (r *Ring) LastError(host string) string {
 	needles := []string{host}
@@ -116,7 +123,7 @@ func (r *Ring) LastError(host string) string {
 			continue
 		}
 		for _, n := range needles {
-			if strings.Contains(e.Raw, n) {
+			if mentions(e.Raw, n) {
 				if e.Error != "" {
 					return e.Error
 				}

@@ -108,3 +108,15 @@ func TestLastErrorMatchesHostAndWildcard(t *testing.T) {
 		t.Errorf("exact host not matched: %q", got)
 	}
 }
+
+func TestLastErrorDoesNotMatchSubdomainOrSuffix(t *testing.T) {
+	r := NewRing(10)
+	_, _ = r.Write([]byte(`{"level":"error","ts":1,"msg":"dial tcp 127.0.0.1:9177: connect: connection refused","request":{"host":"api.example.com"}}` + "\n"))
+	_, _ = r.Write([]byte(`{"level":"error","ts":2,"msg":"boom","request":{"host":"notexample.com"}}` + "\n"))
+	if got := r.LastError("example.com"); got != "" {
+		t.Errorf("error for another host attributed to example.com: %q", got)
+	}
+	if got := r.LastError("api.example.com"); !strings.Contains(got, "connection refused") {
+		t.Errorf("own error not matched: %q", got)
+	}
+}

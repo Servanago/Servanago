@@ -428,16 +428,33 @@ func (a Actions) UnitInstall(r Request) Response {
 		}
 	}
 	unitPath, content := a.unitFor(s, id, exe)
-	if resp := a.put(unitPath, content, a.s.VerifyUnit); !resp.OK {
-		return resp
-	}
 	name := "servanago-" + slug + ".service"
 	if s.Kind == "cgi" || s.Kind == "static" { // the socket is what is enabled and started; the service is activated by it
+		// The service Requires= the socket and the socket needs the service, so each verifies only once the other is
+		// on disk: write the socket unchecked, verify the service, then verify the socket.
 		sockName := "servanago-" + slug + ".socket"
-		if resp := a.put(filepath.Join(systemdUnitDir, sockName), cgiSocketTemplate(slug), a.s.VerifyUnit); !resp.OK {
+		sockPath := filepath.Join(systemdUnitDir, sockName)
+		_, serr := a.s.Lstat(sockPath)
+		_, uerr := a.s.Lstat(unitPath)
+		sockNew, unitNew := serr != nil, uerr != nil // a failed install removes only what it created
+		if resp := a.put(sockPath, cgiSocketTemplate(slug), func(string) error { return nil }); !resp.OK {
+			return resp
+		}
+		resp := a.put(unitPath, content, a.s.VerifyUnit)
+		if resp.OK {
+			if resp = a.put(sockPath, cgiSocketTemplate(slug), a.s.VerifyUnit); !resp.OK && unitNew {
+				_ = a.s.Remove(unitPath)
+			}
+		}
+		if !resp.OK {
+			if sockNew {
+				_ = a.s.Remove(sockPath)
+			}
 			return resp
 		}
 		name = sockName
+	} else if resp := a.put(unitPath, content, a.s.VerifyUnit); !resp.OK {
+		return resp
 	}
 	if err := a.s.DaemonReload(); err != nil {
 		return Response{Error: fmt.Sprintf("systemctl daemon-reload: %v", err)}
