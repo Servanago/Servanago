@@ -15,4 +15,12 @@ if [ "${1:-}" = configure ]; then
     systemctl enable servanago.service
     systemctl enable servanago-helper.service
     echo "Edit /etc/servanago/servanago.env, then: systemctl start servanago"
+    # An upgrade: prerm stopped the units, so start the ones that were running (helper first).
+    run_dir=${SERVANAGO_RUN_DIR:-/run}
+    for u in servanago-helper.service servanago.service; do
+        if [ -e "$run_dir/$u.was-active" ]; then
+            rm -f "$run_dir/$u.was-active"
+            systemctl start "$u"
+        fi
+    done
 fi

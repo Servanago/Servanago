@@ -1,6 +1,16 @@
 #!/bin/bash
 set -euo pipefail
 
+# On upgrade, note which units were running so postinst can start them again.
+run_dir=${SERVANAGO_RUN_DIR:-/run}
+if [ "${1:-}" = upgrade ]; then
+    for u in servanago-helper.service servanago.service; do
+        if systemctl is-active --quiet "$u"; then
+            touch "$run_dir/$u.was-active"
+        fi
+    done
+fi
+
 if [ "${1:-}" = remove ] || [ "${1:-}" = upgrade ]; then
     systemctl stop servanago.service || true
     systemctl stop servanago-helper.service || true

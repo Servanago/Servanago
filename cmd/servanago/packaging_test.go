@@ -95,7 +95,7 @@ func TestBuildDeb(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dpkg-deb --info: %v", err)
 	}
-	for _, want := range []string{"Package: servanago", "Version: 0.2.0", "conffiles"} {
+	for _, want := range []string{"Package: servanago", "Version: 0.2.1", "conffiles"} {
 		if !strings.Contains(string(info), want) {
 			t.Errorf("deb info missing %q:\n%s", want, info)
 		}
@@ -123,5 +123,56 @@ func TestInstallScript(t *testing.T) {
 		t.Error("install.sh ran without root; want refusal")
 	} else if !strings.Contains(stderr.String(), "root") {
 		t.Errorf("refusal %q does not mention root", stderr.String())
+	}
+}
+
+// runMaintainer runs a packaging/DEBIAN script with stubbed system tools and returns the systemctl calls.
+// active names the units `systemctl is-active` reports as running.
+func runMaintainer(t *testing.T, runDir, script, active string, args ...string) string {
+	t.Helper()
+	bin := t.TempDir()
+	log := filepath.Join(bin, "systemctl.log")
+	stubs := map[string]string{
+		"systemctl": "echo \"$*\" >> " + log + "\n" +
+			"if [ \"$1\" = is-active ]; then case \" $FAKE_ACTIVE \" in *\" $3 \"*) exit 0;; esac; exit 3; fi\n",
+		"id": "exit 0", "install": "exit 0", "chown": "exit 0", "chmod": "exit 0", "useradd": "exit 0",
+	}
+	for name, body := range stubs {
+		if err := os.WriteFile(filepath.Join(bin, name), []byte("#!/bin/sh\n"+body+"\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cmd := exec.Command("bash", append([]string{"../../packaging/DEBIAN/" + script}, args...)...)
+	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"), "SERVANAGO_RUN_DIR="+runDir, "FAKE_ACTIVE="+active)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("%s %v: %v\n%s", script, args, err, out)
+	}
+	b, _ := os.ReadFile(log)
+	return string(b)
+}
+
+// An upgrade stops both units in prerm; postinst must start again the ones that were running, helper first.
+func TestUpgradeRestartsRunningUnits(t *testing.T) {
+	run := t.TempDir()
+	const both = "servanago.service servanago-helper.service"
+	runMaintainer(t, run, "prerm", both, "upgrade")
+	got := runMaintainer(t, run, "postinst", "", "configure", "0.2.0")
+	h, w := strings.Index(got, "start servanago-helper.service"), strings.Index(got, "start servanago.service")
+	if h < 0 || w < 0 || h > w {
+		t.Errorf("want helper started before the web service, got:\n%s", got)
+	}
+}
+
+// A unit the admin had stopped stays stopped across an upgrade, and a first install starts nothing.
+func TestUpgradeLeavesStoppedUnitsAlone(t *testing.T) {
+	run := t.TempDir()
+	runMaintainer(t, run, "prerm", "servanago-helper.service", "upgrade") // the web service was not running
+	got := runMaintainer(t, run, "postinst", "", "configure", "0.2.0")
+	if strings.Contains(got, "start servanago.service") || !strings.Contains(got, "start servanago-helper.service") {
+		t.Errorf("only the helper was running:\n%s", got)
+	}
+	fresh := runMaintainer(t, t.TempDir(), "postinst", "", "configure")
+	if strings.Contains(fresh, " start ") || strings.HasPrefix(fresh, "start ") {
+		t.Errorf("a first install must not start anything:\n%s", fresh)
 	}
 }
