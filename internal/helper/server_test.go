@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -84,5 +86,61 @@ func TestServeRefusals(t *testing.T) {
 	resp = mustCall(t, socket, strings.Repeat("a", (MaxRequestSize+8)<<10))
 	if resp.OK || !strings.Contains(resp.Error, "limit") {
 		t.Errorf("overlong line: %+v", resp)
+	}
+}
+
+// A peer that connects and sends nothing must not hold a goroutine forever.
+func TestServeDropsIdlePeer(t *testing.T) {
+	old := requestTimeout
+	requestTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { requestTimeout = old })
+	socket := serveOn(t, func(Peer) bool { return true })
+	c, err := net.Dial("unix", socket)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	_ = c.SetReadDeadline(time.Now().Add(3 * time.Second))
+	line, err := bufio.NewReader(c).ReadString('\n')
+	if err != nil {
+		t.Fatalf("the server should answer, then close, an idle peer: %v", err)
+	}
+	if !strings.Contains(line, "read request") {
+		t.Errorf("reply %q", line)
+	}
+}
+
+// Two requests for one slug never run at once (a double-clicked save); other slugs are not held up.
+func TestServeSerialisesPerSlug(t *testing.T) {
+	var running, peak atomic.Int32
+	act := func(Request) Response {
+		n := running.Add(1)
+		for {
+			p := peak.Load()
+			if n <= p || peak.CompareAndSwap(p, n) {
+				break
+			}
+		}
+		time.Sleep(50 * time.Millisecond)
+		running.Add(-1)
+		return Response{OK: true}
+	}
+	ln, err := net.Listen("unix", t.TempDir()+"/helper.sock")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	go Serve(ln, func(Peer) bool { return true }, map[string]Action{ActionUnitStart: act})
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mustCall(t, ln.Addr().String(), `{"action":"unit-start","spec":{"slug":"app11"}}`)
+		}()
+	}
+	wg.Wait()
+	if peak.Load() != 1 {
+		t.Errorf("%d unit-start calls for one slug ran at once", peak.Load())
 	}
 }

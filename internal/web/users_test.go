@@ -283,3 +283,21 @@ func TestPasskeyLoginPicksTheOwner(t *testing.T) {
 		}
 	}
 }
+
+// With no administrator the UI is open, so only a client on this machine may use it: anyone else could create
+// the first account. Caddy proxies from loopback, so the client address comes from X-Forwarded-For.
+func TestOpenModeRefusesRemoteClients(t *testing.T) {
+	s := newServer(t, "")
+	for name, r := range map[string]req{
+		"direct remote peer":     {path: "/", peer: "203.0.113.9:4000"},
+		"proxied remote client":  {path: "/", hdr: map[string]string{"X-Forwarded-For": "203.0.113.9"}},
+		"remote on a form route": {path: "/sites/new", peer: "203.0.113.9:4000"},
+	} {
+		if w := s.do(r); w.Code != http.StatusForbidden {
+			t.Errorf("%s: %d, want 403", name, w.Code)
+		}
+	}
+	if w := s.do(req{path: "/"}); w.Code != http.StatusOK {
+		t.Errorf("loopback client in open mode: %d, want 200", w.Code)
+	}
+}

@@ -152,8 +152,9 @@ func run() error {
 		ui.VerifyToken(ctx)
 	}()
 	go ui.RunPHPChecks(ctx)
-	go ui.ReconcilePHP(ctx) // SQLite is the desired state: write each user's default PHP files again
-	go ui.ResumeBuild(ctx)  // a PHP build outlives the web process, so follow it (and install it) again
+	go ui.ReconcilePHP(ctx)     // SQLite is the desired state: write each user's default PHP files again
+	go ui.ReconcileRuntime(ctx) // site units and users follow the stored sites
+	go ui.ResumeBuild(ctx)      // a PHP build outlives the web process, so follow it (and install it) again
 	srv := newUIServer(cfg.UIListen, ui.Handler())
 	errc := make(chan error, 1)
 	go func() { errc <- srv.ListenAndServe() }()

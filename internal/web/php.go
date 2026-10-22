@@ -599,6 +599,26 @@ func (s *Server) ReconcilePHP(ctx context.Context) {
 	}
 }
 
+// ReconcileRuntime applies every runtime site's user and unit again: SQLite is the desired state, so a site saved
+// while the helper was down, or a unit lost with the host, comes back at startup. A failure is logged per site.
+func (s *Server) ReconcileRuntime(ctx context.Context) {
+	sites, err := s.deps.Store.ListSites(ctx)
+	if err != nil {
+		slog.Error("read sites to reconcile", "error", err)
+		return
+	}
+	for _, rt := range sites {
+		if !rt.IsRuntime() {
+			continue
+		}
+		cctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+		if err := s.applyRuntime(cctx, rt, nil); err != nil {
+			slog.Warn("site unit not applied at startup", "slug", rt.Slug, "error", err)
+		}
+		cancel()
+	}
+}
+
 func (s *Server) phpCheckNow(w http.ResponseWriter, r *http.Request) {
 	if err := s.runPHPCheck(r.Context()); err != nil {
 		fail(w, http.StatusBadGateway, err.Error())

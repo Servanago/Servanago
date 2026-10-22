@@ -348,3 +348,22 @@ func TestSocketSiteVerifiesWithItsSocketOnDisk(t *testing.T) {
 		}
 	}
 }
+
+// The helper is the trust boundary: it refuses system trees as a site root even if the web layer is bypassed.
+func TestUnitInstallRefusesSystemRoots(t *testing.T) {
+	for _, root := range []string{"/", "/etc", "/etc/servanago", "/proc/1", "/sys", "/dev", "/root", "/root/site", "/boot", "/var/lib/servanago", "/var/lib/servanago/data", "/run/servanago"} {
+		spec := fmt.Sprintf(`{"kind":"node","slug":"app11","root":%q,"port":3000,"start":"node server.js"}`, root)
+		req, err := DecodeRequest([]byte(`{"action":"unit-install","spec":` + spec + `}`))
+		if err != nil {
+			t.Fatal(err)
+		}
+		seam := newFakeSeam()
+		resp := NewActions(seam).UnitInstall(req)
+		if resp.OK || !strings.Contains(resp.Error, "off limits") {
+			t.Errorf("root %q: want an off-limits refusal, got %+v", root, resp)
+		}
+		if len(seam.written) != 0 {
+			t.Errorf("root %q: wrote %v", root, keys(seam.written))
+		}
+	}
+}

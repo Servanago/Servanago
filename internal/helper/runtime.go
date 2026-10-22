@@ -206,7 +206,7 @@ func (a Actions) UserAdd(r Request) Response {
 	if r.Vals.User != "" {
 		return a.userAddNamed(r.Vals)
 	}
-	if err := validateRoot(r.Vals.Root, true); err != nil {
+	if err := validateSiteRoot(r.Vals.Root, true); err != nil {
 		return Response{Error: err.Error()}
 	}
 	user := "sg-" + slug
@@ -232,7 +232,7 @@ func (a Actions) UserRemove(r Request) Response {
 func validateKindSpec(s Spec) error {
 	switch s.Kind {
 	case "node":
-		if err := validateRoot(s.Root, false); err != nil {
+		if err := validateSiteRoot(s.Root, false); err != nil {
 			return err
 		}
 		if s.Port < 1024 || s.Port > 65535 {
@@ -242,7 +242,7 @@ func validateKindSpec(s Spec) error {
 			return err
 		}
 	case "php":
-		if err := validateRoot(s.Root, false); err != nil {
+		if err := validateSiteRoot(s.Root, false); err != nil {
 			return err
 		}
 		if label, ok := sourceBuild(s.FPMBin); ok { // one of ServanaGo's own builds: pinned by exact label or by branch
@@ -261,7 +261,7 @@ func validateKindSpec(s Spec) error {
 			return err
 		}
 	case "frankenphp":
-		if err := validateRoot(s.Root, false); err != nil {
+		if err := validateSiteRoot(s.Root, false); err != nil {
 			return err
 		}
 		if s.Port < 1024 || s.Port > 65535 {
@@ -271,14 +271,14 @@ func validateKindSpec(s Spec) error {
 			return fmt.Errorf("frankenphp binary %q must be one of %v", s.FrankenBin, runtimes.FrankenPaths)
 		}
 	case "cgi":
-		if err := validateRoot(s.Root, false); err != nil {
+		if err := validateSiteRoot(s.Root, false); err != nil {
 			return err
 		}
 		if !slices.Contains(runtimes.FCGIWrapPaths, s.FCGIBin) {
 			return fmt.Errorf("fcgiwrap binary %q must be one of %v", s.FCGIBin, runtimes.FCGIWrapPaths)
 		}
 	case "static": // only a site with its own user is served by a unit; the others stay in Caddy
-		if err := validateRoot(s.Root, false); err != nil {
+		if err := validateSiteRoot(s.Root, false); err != nil {
 			return err
 		}
 		if s.User == "" {
@@ -314,9 +314,30 @@ func validateRoot(root string, optional bool) error {
 	return nil
 }
 
+// deniedSiteRoots can never be a site root, nor anything under them. "/" itself is denied too, but only "/" itself:
+// /home and /srv are legitimate. The web layer checks the same trees (config.ValidateStaticRoot) plus the data
+// directory it was configured with; the helper does not trust that and keeps its own list.
+var deniedSiteRoots = []string{"/etc", "/proc", "/sys", "/dev", "/root", "/boot", "/var/lib/servanago", "/run/servanago"}
+
+// validateSiteRoot is validateRoot plus the system trees a site must never live in.
+func validateSiteRoot(root string, optional bool) error {
+	if err := validateRoot(root, optional); err != nil || root == "" {
+		return err
+	}
+	if root == "/" {
+		return fmt.Errorf("root %q is off limits (the filesystem root)", root)
+	}
+	for _, d := range deniedSiteRoots {
+		if root == d || strings.HasPrefix(root, d+"/") {
+			return fmt.Errorf("root %q is off limits (%s)", root, d)
+		}
+	}
+	return nil
+}
+
 // ValidateRoot and ValidateStart are the helper's own rules, exported so the web form refuses a bad
 // value before it is saved instead of after.
-func ValidateRoot(root string) error { return validateRoot(root, false) }
+func ValidateRoot(root string) error { return validateSiteRoot(root, false) }
 func ValidateStart(cmd string) error { return validateStart(cmd) }
 
 // validateStart bounds the admin's start command. It is written inside a quoted ExecStart= line, so a

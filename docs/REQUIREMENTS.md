@@ -1,82 +1,97 @@
 # ServanaGo — Requirements
 
-Status: **inherited baseline requirements**, written for the container-based Caretakarr this project forked from. They describe what the current code does. The target product (native host, site model, runtimes, root helper) and its milestones are in [`ROADMAP.md`](ROADMAP.md); this file is reworked as those milestones land. Items removed in M0 are marked. License: MIT.
+Status: current as of v0.5.1 plus the spec-panel hardening branch. This file replaces the baseline inherited from Caretakarr (route model, private-IP-only records, mandatory Cloudflare, `/data`). Scope, milestones and per-milestone notes are in [`ROADMAP.md`](ROADMAP.md); mechanisms are in [`DESIGN.md`](DESIGN.md). License: MIT.
 
-## Goal (baseline)
+Each requirement has an ID. A test, a spec, or a manual check that cites the ID proves it; "Verified" says how far that has gone.
 
-One Go process that lets self-hosters publish web apps behind a real domain they manage on Cloudflare, with valid HTTPS certificates and no inbound ports required for issuance. A simple web UI manages domains and routes. Caddy config is fully generated from SQLite.
+## Goal
 
-## Decisions made
+One native Linux host publishes several kinds of web sites (reverse proxy, static, Node.js, PHP-FPM, FrankenPHP, FastCGI, CGI) behind one embedded Caddy, with valid HTTPS, managed from a web UI. SQLite is the desired state. It is not a hosting control panel and makes no multi-tenant security claim.
 
-| Topic | Decision |
-|---|---|
-| Caddy topology | Embedded in the Go binary (`caddy/v2` + `caddy-dns/cloudflare` as Go imports, `caddy.Load`). No xcaddy, no supervisor, no separate admin-API client. Needs a spike to confirm. |
-| UI auth | Administrators (equal, no roles) stored in SQLite with bcrypt passwords. `ADMIN_PASSWORD` creates the first one on first start and is ignored afterwards. With no administrator the UI is open and a loud startup warning is logged. |
-| DNS scope | ServanaGo creates/updates/deletes Cloudflare A records per route, using the official `cloudflare-go` SDK. |
-| Upstream entry | Manual entry: scheme, host or IP, port. (Arr presets and opt-in Docker discovery were removed in M0.) |
-| Hostname model | Subdomain per service under managed domains. One wildcard cert per domain. |
-| Frontend | Go templates + htmx + Pico or Tailwind, served from `embed.FS`. No Node build step. |
-| Route controls (v1) | Enable/disable toggle, LAN-only IP allowlist, per-route basic auth. |
+## Actors
 
-## Configuration (.env)
+- **Administrator**: an equal member of the `users` table. Signs in to the UI, MCP clients act with a server-wide token.
+- **Visitor**: a browser reaching a hosted site; may be gated by a magic link.
+- **Control plane**: the unprivileged `servanago` process (UI, Caddy, SQLite).
+- **Helper**: the root `servanago-helper` process, reachable only over a Unix socket.
 
-- `CLOUDFLARE_API_TOKEN` (required): scoped token with `Zone:Read` and `DNS:Edit`. Same name as the homelab Caddyfile's `{$CLOUDFLARE_API_TOKEN}`, so existing `.env` files drop in.
-- `ACME_PROPAGATION_DELAY` (optional, unset = Caddy default), `ACME_PROPAGATION_TIMEOUT` (optional, unset = Caddy default): DNS-01 tuning, only emitted into the config when set. A working homelab config uses `2m` / `10m`.
-- `ACME_RESOLVERS` (default `1.1.1.1,8.8.8.8`).
-- `SERVANAGO_HOST` (required): hostname for the ServanaGo UI itself, e.g. `servanago.example.com`.
-- `SERVANAGO_HOST_IP` (required): the address `SERVANAGO_HOST` resolves to; ServanaGo manages that A record. IPv4 in 10/8, 172.16/12, 192.168/16 or 100.64/10 only. The same rule applies to every domain and route IP: ServanaGo never publishes public addresses. See `docs/DESIGN.md` §16.
-- `SERVANAGO_HOST_ZONE` (optional): Cloudflare zone name for that record; unset means walk up the host's labels.
-- `ADMIN_PASSWORD` (optional), `ADMIN_USER` (optional, default `admin`): create the first administrator when none exists.
-- `ACME_EMAIL` (required): Let's Encrypt account contact (expiry and problem notices). Must parse as a valid address (`net/mail`). Caddy itself treats it as optional, ServanaGo requires it and fails fast at startup naming the variable.
-- `ACME_STAGING` (optional): use the Let's Encrypt staging CA.
+## Configuration
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `SERVANAGO_HOST` | required | hostname of the UI |
+| `ACME_EMAIL` | required | Let's Encrypt contact, a bare address |
+| `DATA_DIR` | `/var/lib/servanago` | SQLite, Caddy storage, last-known-good config |
+| `UI_LISTEN` | `127.0.0.1:8080` | local UI listener |
+| `HTTP_PORT` / `HTTPS_PORT` | 80 / 443 | Caddy |
+| `SERVANAGO_HOST_IP`, `SERVANAGO_HOST_IP6` | unset | public record targets (dual-stack) |
+| `CLOUDFLARE_API_TOKEN` | unset | optional: DNS records and DNS-01 certificates |
+| `ADMIN_USER`, `ADMIN_PASSWORD` | `admin`, unset | create the first administrator when none exists |
+| `REQUIRE_2FA` | true | `false` opts out |
+| `SERVANAGO_STATIC_ROOTS` | unset | optional colon-separated allowlist for static roots |
+| `SERVANAGO_SECRET_KEY` | unset | seals SMTP password and TOTP seeds |
+| `SERVANAGO_MCP_TOKEN` | unset | enables `/mcp`; at least 32 characters |
+| `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | unset | optional Turnstile on sign-in |
+| `ACME_ISSUER`, `ACME_STAGING`, `ACME_RESOLVERS`, `ACME_PROPAGATION_*` | see code | certificate tuning |
 
 ## Functional requirements
 
-1. **Bootstrap.** On first boot, with an empty database, generate a Caddy config from `.env` alone that serves the UI at `SERVANAGO_HOST` with a valid certificate.
-2. **Domains.** Add and remove domains. Validate that the domain is a zone reachable by the token. Reject `.local`, `.internal`, `.home.arpa`, IP literals and other names Caddy would send to its internal CA.
-3. **Certs.** Per-domain `cert_mode`: `wildcard` (default, one `*.domain` cert) or `per_host` (one cert per route hostname, like a plain Caddyfile). Both via DNS-01 with Cloudflare. Apply propagation delay and timeout only if set, and resolvers from `.env`. Switching mode re-renders and Caddy issues what is missing.
-4. **Routes.** A route is subdomain + upstream host/IP + port + scheme (http/https, with skip-verify option for self-signed upstreams) under a managed domain.
-5. ~~**Presets.**~~ Removed in M0.
-6. **DNS records.** On route create, update and delete, manage the matching A record in Cloudflare. Each route gets a DNS-only (grey cloud) record by default. Record IP is user-supplied per domain (default target IP). Show the sync state of each record.
-7. **Route controls.** Enable/disable toggle, optional CIDR allowlist (403 outside), optional basic auth (bcrypt hash stored in SQLite).
-8. ~~**Docker discovery (opt-in).**~~ Removed in M0.
-9. **Apply loop.** Every change writes SQLite, regenerates the full Caddy JSON, and applies it atomically. If Caddy rejects the config, the previous config stays live, the UI shows the error, and the DB change is reverted.
-10. **Status.** Per-route health (upstream reachable), per-domain cert state (issued / pending / error, expiry), per-record DNS state.
-10a. **Logs page.** Caddy log lines (including ACME/issuance errors) captured in an in-memory ring buffer and shown in the UI, filterable by level. Not persisted.
-11. **Auth.** Once an administrator exists: username + password login, session cookie (HttpOnly, SameSite) tied to the user and a per-user epoch so removal, password change and a second-factor reset end that user's sessions, rate-limited attempts. A Users page manages administrators (add, remove, set password, reset second factor; each re-authenticates the acting admin) and an Audit page lists who did what. Optional second factors (authenticator app, passkeys), optional Turnstile on the password step, `REQUIRE_2FA`, and a `2fa-reset` command: see `docs/DESIGN.md` §17. Separately, a per-route optional **site access gate**: the site asks for a magic link (single-use token emailed via SMTP) before anything is proxied, with per-domain or open enrollment, shared sessions and operator revocation; email delivery is configured on the Settings page in SQLite with a sealed password: see `docs/DESIGN.md` §18.
-12. **Persistence.** All state in one SQLite file plus Caddy's cert storage, both under one data directory (`DATA_DIR`, default `/data` until native packaging in M3). Backup is copying it.
+### Sites and ingress
+
+- **FR-1 Site kinds.** A site has one or more free FQDN hostnames and one kind: `proxy`, `static`, `node`, `php`, `frankenphp`, `fastcgi`, `cgi`. Hostnames ending in `.local`, `.internal`, `.home.arpa` and IP literals are refused.
+- **FR-2 Apply path.** Every change: validate, write SQLite in a transaction, render the full Caddy JSON, `caddy.Load`, commit. If Caddy rejects the config, the previous config stays live and the database change is rolled back. Caddy is never changed piecemeal.
+- **FR-3 Startup.** If the stored config fails to load, the last-known-good file is loaded; failing that, a bootstrap-only config. A banner shows the reason. The process never crash-loops on bad rows.
+- **FR-4 Runtime units.** For node, php, frankenphp, cgi and static-with-user sites, the helper installs the user and the systemd unit after the database commit. A failure is reported to the administrator and recorded in the audit log; the stored site stays as desired state.
+- **FR-5 Startup reconcile.** At startup every runtime site's user and unit are applied again from SQLite, so a unit lost with the host or a save made while the helper was down converges without another save. A failure for one site is logged and does not stop the others.
+- **FR-6 Per-site controls.** Enable/disable, CIDR allowlist, basic auth, magic-link gate, attached Caddyfile snippets (handler allowlist; `/.well-known/*` bypasses them).
+- **FR-7 Certificates and DNS.** HTTP-01/TLS-ALPN by default. With a Cloudflare token: DNS-01 and A/AAAA records per hostname. An AAAA record needs its A record.
+
+### Administration
+
+- **FR-8 Authentication.** Username and password (bcrypt), session cookie tied to user and epoch (removal, password change and second-factor reset end that user's sessions), 5 attempts per client address per 15 minutes. Optional TOTP, backup codes, passkeys; Turnstile optional.
+- **FR-9 Open mode.** While no administrator exists the UI is open, but only to a client on this machine. A request whose client address is not loopback (`X-Forwarded-For` is honoured only from a loopback peer) gets 403 with instructions to create the first administrator locally.
+- **FR-10 Audit.** Every mutating action writes an audit row naming the actor (`user`, `mcp token`, or `system`).
+- **FR-11 MCP.** Off unless `SERVANAGO_MCP_TOKEN` is set. Writes run the UI's own handlers, so the same validation applies.
+
+### PHP
+
+- **FR-12 PHP from source.** Builds are fetched by checksum and signature, compiled in sandboxed units, and installed root-owned under `/opt/servanago/php`. Sites follow a branch label (`8.4`) or pin an exact build (`8.4.27-1`).
+
+## Security requirements
+
+- **SR-1 Helper boundary.** The helper accepts only root or the `servanago` uid (`SO_PEERCRED`), one request per connection, a closed set of typed actions, strict JSON, at most 64 KiB.
+- **SR-2 Helper input.** The helper re-validates everything and does not rely on the web layer: slug `^[a-z][a-z0-9-]{1,31}$`; roots clean, absolute, free of whitespace and `% $ \ " '`; roots under `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/boot`, `/var/lib/servanago`, `/run/servanago` and `/` itself are refused; unit and pool files come from the helper's templates only.
+- **SR-3 Helper liveness.** A peer must send its request within 10 seconds. Actions for the same slug run one at a time. Every external command (`systemctl`, `useradd`, `systemd-analyze`, `php-fpm -t`, `journalctl`) is killed after 60 seconds.
+- **SR-4 Named users.** A site may run as an existing user only if its uid is 1000 to 65533, it is in none of root, sudo, wheel, admin, adm, docker, lxd, and the site folder is inside its home after symlink resolution. `root`, `servanago` and `sg-*` are reserved.
+- **SR-5 Executed binaries.** A binary a unit runs (FrankenPHP, fcgiwrap, php-fpm, the helper itself) must be root-owned and not group or world writable.
+- **SR-6 Files.** Site files are never chowned or chmodded, except directories the helper creates in a home it just created.
+- **SR-7 Secrets.** Operator secrets come from the environment or root-owned files, never SQLite or logs. SMTP passwords and TOTP seeds are sealed; site environment values are sealed and write-only.
+- **SR-8 No isolation claim.** Unix-user separation is not a sandbox for mutually untrusted tenants, and no document may claim multi-tenant security. Anyone who controls the UI session can run a shell command as any eligible user (SR-4) through a node site's start command.
 
 ## Non-functional requirements
 
-- Single static binary (amd64, arm64). The container image was removed in M0; the target is native-host packaging (M3).
-- One data directory, ports 80 and 443 for Caddy, no separate admin port. No Caddy admin API exposed on the network.
-- Idle memory target under 100 MB. Cold start to serving under 5 seconds with existing certs.
-- Secrets never written to SQLite or logs. The token is read from the environment only.
-- Structured logs (`slog`) with a configurable level.
-- Tests: unit tests for config rendering, integration test applying configs to an in-process Caddy with a fake upstream, mocked Cloudflare API for DNS sync.
-- MIT license. Ship `LICENSE` and a `NOTICE` file crediting Caddy and the Cloudflare module (both Apache-2.0).
+- **NFR-1 Platform.** Debian 12+ or Ubuntu 22.04+, systemd 252 or later, amd64/arm64, one static binary, packaged as a `.deb`.
+- **NFR-2 Persistence.** All state is one SQLite file plus Caddy storage under `DATA_DIR`. Schema changes are numbered migrations applied at start; `001` and `002` are never edited.
+- **NFR-3 Footprint.** Idle memory under 100 MB; cold start to serving under 5 seconds with existing certificates (targets, not measured in CI).
+- **NFR-4 Logging.** Structured `slog`. No codes, seeds or tokens are logged.
+- **NFR-5 Licensing.** `LICENSE` is MIT; `NOTICE` credits Caddy and the other Apache, BSD and MIT dependencies.
 
-## User stories and acceptance
+## Acceptance scenarios
 
-- *As a self-hoster,* I set `CLOUDFLARE_API_TOKEN` and `SERVANAGO_HOST` (plus `SERVANAGO_HOST_IP` and `ACME_EMAIL`), run the binary, and open `https://SERVANAGO_HOST` with a valid cert. **Accept:** no manual Caddy or DNS steps beyond pointing that host at the server.
-- *I add `example.com`.* **Accept:** wildcard cert issues, status shows the expiry date.
-- *I add Sonarr at `192.168.1.20:8989` as `sonarr`.* **Accept:** `https://sonarr.example.com` works with a valid cert, websockets included, and the A record exists in Cloudflare.
-- *I restrict a route to my LAN.* **Accept:** a request from outside the CIDR gets 403.
-- *I submit a bad upstream or Cloudflare error.* **Accept:** the live config is unchanged and the UI shows the exact error.
-- *I restart the process.* **Accept:** all routes come back from SQLite with no re-issuance.
+- *FR-5.* **Given** a stored node site whose unit file was deleted, **when** `servanago` starts, **then** the helper receives `user-add`, `unit-install` and `unit-start` for that site, and a static site without a user receives none.
+- *FR-9.* **Given** no administrator, **when** a request arrives with `X-Forwarded-For: 203.0.113.9`, **then** the answer is 403; **when** it arrives from `127.0.0.1` without that header, **then** it is 200.
+- *SR-2.* **Given** `unit-install` with root `/etc/servanago`, **then** the answer is an error containing "off limits" and no file is written.
+- *SR-3.* **Given** a peer that connects and sends nothing, **then** the helper answers with a read error and closes within the timeout. **Given** four concurrent `unit-start` calls for one slug, **then** at most one runs at a time.
+- *FR-2.* **Given** a site whose rendered config Caddy rejects, **then** the previous config is live, the site row is unchanged, and an audit row `config.rejected` exists.
 
-## Risks
+## Verification status
 
-- Embedded Caddy lifecycle (signal handling, reload from inside the process) is unverified. Spike first.
-- The A-record IP for LAN-only setups may differ from the public IP. Per-domain default IP is required, and dynamic IP/DDNS is out of scope.
-- Open UI with no administrator (no `ADMIN_PASSWORD` on first start) plus a public hostname is a footgun. The startup warning is the only guard in v1.
-- Let's Encrypt rate limits. Default staging for first run is worth considering.
+Covered by tests: FR-2, FR-3, FR-5, FR-9, SR-1 to SR-5, helper fuzzing of unit-file injection.
+
+Not yet run against a real host: serve-static, static-with-user units, dotted user names, the PHP helper actions and job units, fcgiwrap, FR-12 end to end on a fresh install. Treat these as unverified until a host run is recorded in `ROADMAP.md`.
 
 ## Open questions
 
-1. Default A-record target: auto-detect the public IP, or require the user to enter an IP per domain?
-2. Should Cloudflare-proxied (orange cloud) records be supported at all, given they break private IPs?
-3. Does deleting a route also delete its DNS record, or only after confirmation?
-4. First-run default: staging CA or production?
-5. Import/export of config (JSON) in v1 or later?
-6. Should `SERVANAGO_HOST`'s domain have to be added as a managed domain, or is it auto-registered?
+1. Should the first-administrator guard (FR-9) offer a one-time setup token for installs managed only over a public hostname?
+2. Should a failed reconcile (FR-5) leave a visible per-site state rather than a log line?
+3. Should the helper own `DATA_DIR` instead of hard-coding `/var/lib/servanago` in SR-2?

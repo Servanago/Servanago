@@ -108,7 +108,7 @@ func (a Actions) userAddNamed(s Spec) Response {
 	if err := ValidateUser(s.User); err != nil {
 		return Response{Error: err.Error()}
 	}
-	if err := validateRoot(s.Root, false); err != nil {
+	if err := validateSiteRoot(s.Root, false); err != nil {
 		return Response{Error: err.Error()}
 	}
 	if s.Public != "" {

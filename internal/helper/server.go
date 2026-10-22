@@ -10,8 +10,21 @@ import (
 	"os"
 	"os/user"
 	"strconv"
+	"sync"
 	"syscall"
+	"time"
 )
+
+// requestTimeout bounds how long a peer may take to send its one request line.
+var requestTimeout = 10 * time.Second
+
+// slugLocks holds one mutex per slug; the set of slugs is small, so entries are never dropped.
+var slugLocks sync.Map
+
+func slugLock(slug string) *sync.Mutex {
+	mu, _ := slugLocks.LoadOrStore(slug, &sync.Mutex{})
+	return mu.(*sync.Mutex)
+}
 
 // Peer is what SO_PEERCRED reports about the client process.
 type Peer struct {
@@ -73,6 +86,10 @@ func handle(c net.Conn, auth func(Peer) bool, actions map[string]Action) {
 		respond(Response{Error: "peer not authorized"})
 		return
 	}
+	if err := c.SetReadDeadline(time.Now().Add(requestTimeout)); err != nil { // a silent peer must not hold this goroutine
+		respond(Response{Error: fmt.Sprintf("read request: %v", err)})
+		return
+	}
 	sc := bufio.NewScanner(c)
 	sc.Buffer(make([]byte, 4096), MaxRequestSize+8)
 	if !sc.Scan() {
@@ -92,6 +109,11 @@ func handle(c net.Conn, auth func(Peer) bool, actions map[string]Action) {
 	if !ok {
 		respond(Response{Error: "no such action " + req.Action})
 		return
+	}
+	if slug := req.Vals.Slug; slug != "" { // one action per site at a time: a double-clicked save must not interleave file writes
+		mu := slugLock(slug)
+		mu.Lock()
+		defer mu.Unlock()
 	}
 	resp := act(req)
 	slog.Info("helper action", "action", req.Action, "ok", resp.OK)

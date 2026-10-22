@@ -117,6 +117,36 @@ func TestCreateNodeSite(t *testing.T) {
 	}
 }
 
+// A site saved while the helper was down (or a unit lost with the host) is applied again at startup:
+// SQLite is the desired state. Static sites without a user have no unit and must be skipped.
+func TestReconcileRuntimeReappliesUnits(t *testing.T) {
+	s, host := runtimeServer(t)
+	root := t.TempDir()
+	if w := s.do(req{method: "POST", path: "/sites", body: form(nodeForm(root)...).Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("create node: %d %q", w.Code, w.Body.String())
+	}
+	if w := s.do(req{method: "POST", path: "/sites", body: form("kind", "static", "static_root", t.TempDir(), "hostnames", "files.example.com", "enabled", "on").Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("create static: %d %q", w.Code, w.Body.String())
+	}
+	rs, _ := s.deps.Store.ListSites(context.Background())
+	var slug string
+	for _, r := range rs {
+		if r.Kind == "node" {
+			slug = r.Slug
+		}
+	}
+	host.mu.Lock()
+	host.calls = nil
+	host.mu.Unlock()
+
+	s.ReconcileRuntime(context.Background())
+
+	want := "user-add " + slug + " |unit-install " + slug + " node|unit-start " + slug + " "
+	if host.log() != want {
+		t.Errorf("helper calls\n got %q\nwant %q", host.log(), want)
+	}
+}
+
 func TestCreatePHPSite(t *testing.T) {
 	s, host := runtimeServer(t)
 	w := s.do(req{method: "POST", path: "/sites", body: form(phpForm(t.TempDir())...).Encode(), hdr: htmxPost})

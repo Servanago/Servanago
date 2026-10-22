@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"os"
@@ -10,7 +11,25 @@ import (
 	"strconv"
 	"strings"
 	"syscall"
+	"time"
 )
+
+// cmdTimeout bounds every systemd or user-database command: a hung systemctl must not hold a site's lock forever.
+const cmdTimeout = 60 * time.Second
+
+// runCmd runs a command with a deadline and returns stdout and stderr together.
+func runCmd(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).CombinedOutput()
+}
+
+// runStdout is runCmd for output that is parsed: stderr is not mixed in.
+func runStdout(timeout time.Duration, name string, args ...string) ([]byte, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	return exec.CommandContext(ctx, name, args...).Output()
+}
 
 // RealSeam is what the running helper uses: os calls plus the systemctl tools. Tests never
 // touch this; they use fakeSeam. Every command is a fixed systemd incantation with a
@@ -61,15 +80,15 @@ func (RealSeam) UserAdd(user, home string) error {
 	if home == "" {
 		home = "/nonexistent"
 	}
-	out, err := exec.Command("useradd", "--system", "--user-group", "--no-create-home",
-		"--home-dir", home, "--shell", "/usr/sbin/nologin", user).CombinedOutput()
+	out, err := runCmd(cmdTimeout, "useradd", "--system", "--user-group", "--no-create-home",
+		"--home-dir", home, "--shell", "/usr/sbin/nologin", user)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil
 }
 func (RealSeam) UserRemove(user string) error {
-	out, err := exec.Command("userdel", user).CombinedOutput()
+	out, err := runCmd(cmdTimeout, "userdel", user)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
@@ -80,7 +99,7 @@ func (RealSeam) FPMTest(bin, conf, ini string) error {
 	if ini != "" {
 		args = append(args, "-c", ini)
 	}
-	out, err := exec.Command(bin, args...).CombinedOutput()
+	out, err := runCmd(cmdTimeout, bin, args...)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
@@ -103,21 +122,21 @@ func (RealSeam) CheckBinary(path string) error {
 	return nil
 }
 func (RealSeam) StartUnit(name string) error {
-	out, err := exec.Command("systemctl", "start", name).CombinedOutput()
+	out, err := runCmd(cmdTimeout, "systemctl", "start", name)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil
 }
 func (RealSeam) StopUnit(name string) error {
-	out, err := exec.Command("systemctl", "stop", name).CombinedOutput()
+	out, err := runCmd(cmdTimeout, "systemctl", "stop", name)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil
 }
 func (RealSeam) DisableUnit(name string) error {
-	out, err := exec.Command("systemctl", "disable", name).CombinedOutput()
+	out, err := runCmd(cmdTimeout, "systemctl", "disable", name)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
@@ -125,7 +144,7 @@ func (RealSeam) DisableUnit(name string) error {
 }
 
 func (RealSeam) VerifyUnit(path string) error {
-	out, err := exec.Command("systemd-analyze", "verify", path).CombinedOutput()
+	out, err := runCmd(cmdTimeout, "systemd-analyze", "verify", path)
 	if err != nil {
 		// A dotted user name draws a warning line first; it is not the failure.
 		return fmt.Errorf("%w: %s", err, firstLines(regexp.MustCompile(`(?m)^Accepting user/group name.*\n`).ReplaceAll(out, nil)))
@@ -133,14 +152,14 @@ func (RealSeam) VerifyUnit(path string) error {
 	return nil
 }
 func (RealSeam) DaemonReload() error {
-	out, err := exec.Command("systemctl", "daemon-reload").CombinedOutput()
+	out, err := runCmd(cmdTimeout, "systemctl", "daemon-reload")
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	return nil
 }
 func (RealSeam) Enable(name string) error {
-	out, err := exec.Command("systemctl", "enable", name).CombinedOutput()
+	out, err := runCmd(cmdTimeout, "systemctl", "enable", name)
 	if err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
@@ -148,7 +167,7 @@ func (RealSeam) Enable(name string) error {
 }
 
 func (RealSeam) UnitStatus(name string) (StatusData, error) {
-	out, err := exec.Command("systemctl", "show", "-p", "ActiveState", "-p", "SubState", "-p", "ExecMainPID", name).Output()
+	out, err := runStdout(cmdTimeout, "systemctl", "show", "-p", "ActiveState", "-p", "SubState", "-p", "ExecMainPID", name)
 	if err != nil {
 		return StatusData{}, fmt.Errorf("%w: %s", err, firstLines(out))
 	}
@@ -182,7 +201,7 @@ func parseShow(out []byte) (StatusData, error) {
 }
 
 func (RealSeam) UnitLogs(name string, lines int) ([]string, error) {
-	out, err := exec.Command("journalctl", "-u", name, "-n", strconv.Itoa(lines), "--no-pager").Output()
+	out, err := runStdout(cmdTimeout, "journalctl", "-u", name, "-n", strconv.Itoa(lines), "--no-pager")
 	if err != nil {
 		return nil, fmt.Errorf("%w: %s", err, firstLines(out))
 	}

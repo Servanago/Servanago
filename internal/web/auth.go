@@ -322,6 +322,10 @@ func (s *Server) gate(h http.HandlerFunc, allowEnroll bool) http.Handler {
 				return
 			}
 			r = withUser(r, u)
+		} else if ip := net.ParseIP(clientIP(r)); ip == nil || !ip.IsLoopback() {
+			// Open mode: whoever gets in first creates the first account, so only this machine may.
+			http.Error(w, "No administrator exists yet. Create one on this machine: servanago user add NAME, or set ADMIN_PASSWORD and restart.", http.StatusForbidden)
+			return
 		}
 		h(w, r)
 	})

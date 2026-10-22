@@ -131,7 +131,8 @@ func TestUserAddOnExistingUserOnlyChecks(t *testing.T) {
 
 func TestUserAddNamedRejections(t *testing.T) {
 	tests := []struct{ name, spec, want string }{
-		{"home outside /home", `{"slug":"lucky","user":"lucky","home":"/etc/lucky","root":"/etc/lucky/public_html"}`, "/home or /srv"},
+		{"home outside /home", `{"slug":"lucky","user":"lucky","home":"/opt/lucky","root":"/opt/lucky/public_html"}`, "/home or /srv"},
+		{"root in a system tree", `{"slug":"lucky","user":"lucky","home":"/etc/lucky","root":"/etc/lucky/public_html"}`, "off limits"},
 		{"home is /home", `{"slug":"lucky","user":"lucky","home":"/home","root":"/home/public_html"}`, "/home or /srv"},
 		{"nested home", `{"slug":"lucky","user":"lucky","home":"/home/a/b","root":"/home/a/b/public_html"}`, "/home or /srv"},
 		{"home missing", `{"slug":"lucky","user":"lucky","root":"/home/lucky/public_html"}`, "home"},

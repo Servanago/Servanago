@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 // systemctl show prints properties in its own order, not the order of -p, so values are matched by key.
@@ -66,5 +67,15 @@ func TestRealWriteFileIsAtomic(t *testing.T) {
 	}
 	if es, _ := os.ReadDir(dir); len(es) != 2 {
 		t.Errorf("leftover temp files: %v", es)
+	}
+}
+
+func TestRunCmdTimesOut(t *testing.T) {
+	start := time.Now()
+	if _, err := runCmd(100*time.Millisecond, "sleep", "5"); err == nil {
+		t.Fatal("a command past its timeout must fail")
+	}
+	if time.Since(start) > 3*time.Second {
+		t.Errorf("took %v", time.Since(start))
 	}
 }

@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	osuser "os/user"
 	"path/filepath"
 	"strconv"
@@ -83,7 +82,7 @@ func (RealSeam) UserCreate(name, home string, login bool, dirs []string) error {
 	if login {
 		shell = "/bin/bash"
 	}
-	if out, err := exec.Command("useradd", "--user-group", "--create-home", "--home-dir", home, "--shell", shell, name).CombinedOutput(); err != nil {
+	if out, err := runCmd(cmdTimeout, "useradd", "--user-group", "--create-home", "--home-dir", home, "--shell", shell, name); err != nil {
 		return fmt.Errorf("%w: %s", err, firstLines(out))
 	}
 	u, err := osuser.Lookup(name)
