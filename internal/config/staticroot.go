@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -60,17 +59,11 @@ func ValidateStaticRoot(root, dataDir string, allowed []string) (string, error) 
 	return resolved, nil
 }
 
-// StaticRootReadable reports whether the server can list root: the site page shows this, a failure never stops anything.
+// StaticRootReadable reports whether the server can enter root: the site page shows this, a failure never stops anything.
+// Entering is enough (Caddy opens files by name and lists nothing), so a folder shared with `setfacl -m u:servanago:x` passes.
 func StaticRootReadable(root string) error {
-	f, err := os.Open(root)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	if _, err := f.Readdirnames(1); err != nil && !errors.Is(err, io.EOF) {
-		return err
-	}
-	return nil
+	_, err := os.Stat(root + "/.") // resolving "." needs x on root itself
+	return err
 }
 
 // resolvedForms is p cleaned, plus its symlink-resolved form when that differs (/etc may be a link).

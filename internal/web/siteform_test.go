@@ -84,6 +84,25 @@ func TestStaticEditPageReportsUnreadableRoot(t *testing.T) {
 	}
 }
 
+func TestPHPEditPageAcceptsTraverseOnlyFolder(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	s, _ := routeServer(t)
+	root := t.TempDir()
+	r, err := s.deps.Store.CreateSite(context.Background(), store.Site{Kind: "php", StaticRoot: root, FPMVersion: "8.4", Hostnames: []string{"blog.example.com"}, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(root, 0o111); err != nil { // x only, as a setfacl u:servanago:x gives
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(root, 0o755) })
+	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); strings.Contains(body, "cannot read this folder") {
+		t.Fatalf("traverse-only folder reported unreadable: %s", body)
+	}
+}
+
 func TestHostnamesBoxAddsRemovesAndReordersAndSaveStaysOnPage(t *testing.T) {
 	s, cf, d := newDNSServer(t)
 	ctx := context.Background()

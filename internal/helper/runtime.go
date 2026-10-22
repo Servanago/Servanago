@@ -144,7 +144,6 @@ func poolTemplate(slug string, id siteIdentity) []byte {
 	return []byte(fmt.Sprintf(`; per-site pool for ServanaGo site %s; written by the helper
 [global]
 daemonize=no
-error_log=/proc/self/fd/2
 
 [servanago-%s]
 user=%s

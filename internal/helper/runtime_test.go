@@ -90,9 +90,10 @@ func TestRuntimeUnitInstall(t *testing.T) {
 						t.Errorf("pool missing %q:\n%s", want, p)
 					}
 				}
-				// Logs go to the journal: the site user cannot write /var/log/servanago.
-				if strings.Contains(p, "/var/log/") || !strings.Contains(p, "error_log=/proc/self/fd/2") {
-					t.Errorf("pool must log to stderr (journald):\n%s", p)
+				// Logs go to the journal: the site user cannot write /var/log/servanago. With no error_log a foreground
+				// php-fpm writes to its stderr; /proc/self/fd/2 fails with ENXIO when stderr is the journald socket.
+				if strings.Contains(p, "/var/log/") || strings.Contains(p, "error_log") {
+					t.Errorf("pool must leave error_log unset (stderr, journald):\n%s", p)
 				}
 				if seam.fpmTested != "/etc/servanago/fpm/blog.conf" || seam.fpmTestBin != "/usr/sbin/php-fpm8.2" {
 					t.Errorf("pool not tested: bin=%q conf=%q", seam.fpmTestBin, seam.fpmTested)
