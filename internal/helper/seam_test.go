@@ -62,6 +62,9 @@ type fakeSeam struct {
 	created   []createdUser
 	createErr error
 	links     map[string]string // EvalSymlinks: path -> resolved
+
+	docker    DockerData
+	dockerErr error
 }
 
 type createdUser struct {
@@ -122,6 +125,7 @@ func (s *fakeSeam) UnitStatus(name string) (StatusData, error) {
 	}
 	return s.status, s.statusErr
 }
+func (s *fakeSeam) DockerList() (DockerData, error) { return s.docker, s.dockerErr }
 func (s *fakeSeam) UnitLogs(name string, lines int) ([]string, error) {
 	s.statusName = name
 	s.logLines = lines

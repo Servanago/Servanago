@@ -9,6 +9,7 @@
 <label>Kind <select id="ref-kind"><option value="">All</option>{{range $d.Kinds}}<option>{{.}}</option>{{end}}</select></label>
 <label>Status <select id="ref-status"><option value="">All</option><option value="ok">ok</option><option value="issue">issue</option><option value="disabled">disabled</option></select></label>
 {{if $d.Users}}<label>Site user <select id="ref-user"><option value="">All</option>{{range $d.Users}}<option>{{.}}</option>{{end}}</select></label>{{end}}
+{{if $d.Projects}}<label>Compose project <select id="ref-compose"><option value="">All</option>{{range $d.Projects}}<option>{{.}}</option>{{end}}<option value="-">No compose project</option></select></label>{{end}}
 {{if $d.PHPs}}<label>PHP <select id="ref-php"><option value="">All</option>{{range $d.PHPs}}<option>{{.}}</option>{{end}}</select></label>{{end}}
 <label>Sort <select id="ref-sort"><option value="name">Name A-Z</option><option value="kind">Kind</option><option value="health">Problems first</option><option value="updated">Recently changed</option></select></label>
 <label><input type="checkbox" id="ref-issue"> Issues only</label>
@@ -20,7 +21,7 @@
 <nav class="ref-az" aria-label="Sites">{{range $d.Rows}}<a href="#{{.Slug}}">{{.Host}}</a> {{end}}</nav>
 <div id="ref-list">
 {{range $d.Rows}}
-<article id="{{.Slug}}" class="site health-{{.Health}}" data-name="{{.Host}}" data-kind="{{.Kind}}" data-health="{{.Health}}" data-user="{{.SiteUser}}" data-php="{{.FPMVersion}}" data-updated="{{.UpdatedAt}}" data-filter="{{.Filter}}">
+<article id="{{.Slug}}" class="site health-{{.Health}}" data-name="{{.Host}}" data-kind="{{.Kind}}" data-health="{{.Health}}" data-user="{{.SiteUser}}" data-php="{{.FPMVersion}}" data-compose="{{.Compose}}" data-updated="{{.UpdatedAt}}" data-filter="{{.Filter}}">
 <header class="ref-row">
 <a class="ref-name" href="/sites/{{.ID}}" aria-label="Edit {{.Host}}">{{.Host}}</a>
 <span class="ref-kind">{{.Kind}}</span>
@@ -28,6 +29,7 @@
 <span class="ref-target">{{.Target}}</span>
 <span class="ref-user">{{.SiteUser}}</span>
 <span class="ref-php">{{.FPMVersion}}</span>
+<span class="ref-docker">{{with .Docker}}{{.State}}{{if .Health}} ({{.Health}}){{end}}{{end}}</span>
 <span class="ref-dns">{{if .DNSOn}}{{if .HasDNS}}{{.DNSState}}{{else}}pending{{end}}{{end}}</span>
 </header>
 <div class="ref-detail">
@@ -50,6 +52,11 @@
 {{if or .Stream .MaxBody}}<dt>Tuning</dt><dd>{{if .Stream}}streaming{{end}}{{if .MaxBody}} upload limit {{size .MaxBody}}{{end}}</dd>{{end}}
 {{if .Probed}}<dt>Certificate</dt><dd>{{.Cert.State}}{{if not .Cert.NotAfter.IsZero}}, expires {{.Cert.NotAfter.Format "2006-01-02"}}{{end}}</dd>{{end}}
 {{if .HasUpstream}}{{if .Upstream}}<dt>Upstream</dt><dd>{{.Upstream}}</dd>{{end}}{{end}}
+{{with .Docker}}<dt>Container</dt><dd>{{.Name}} <small>({{.ID}})</small>: {{.State}}{{if .Health}}, {{.Health}}{{end}}, {{.Status}}</dd>
+<dt>Image</dt><dd>{{.Image}}</dd>
+{{if .Ports}}<dt>Ports</dt><dd>{{range $i, $p := .Ports}}{{if $i}}, {{end}}{{if $p.Public}}{{if $p.IP}}{{$p.IP}}:{{end}}{{$p.Public}}-&gt;{{end}}{{$p.Private}}/{{$p.Proto}}{{end}}</dd>{{end}}
+{{if .Networks}}<dt>Networks</dt><dd>{{range $i, $n := .Networks}}{{if $i}}, {{end}}{{$n}}{{end}}</dd>{{end}}
+{{if .Project}}<dt>Compose</dt><dd>{{.Project}}{{if .Service}} / {{.Service}}{{end}}{{if .WorkingDir}}<br><code>{{.WorkingDir}}</code>{{end}}{{if .ConfigFiles}}<br><code>{{.ConfigFiles}}</code>{{end}}</dd>{{end}}{{end}}
 {{if .DNSOn}}<dt>DNS</dt><dd>{{if .HasDNS}}{{range $i, $r := .DNS}}{{if $i}}, {{end}}{{$r.Family}} {{$r.Content}} ({{$r.State}}){{end}}{{else}}pending{{end}}</dd>{{end}}
 <dt>Saved</dt><dd>{{.Updated}}</dd>
 </dl>

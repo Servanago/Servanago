@@ -59,6 +59,8 @@ type Server struct {
 	flashMu sync.Mutex
 	flashes []string // one-time notices shown on the next page render
 
+	docker dockerCache // the helper's container list (docker.go)
+
 	// PHP (php.go): timings and network seams, overridden by tests.
 	phpSettle time.Duration // wait after starting a switched site before judging it
 	phpPoll   time.Duration // how often a running build is polled

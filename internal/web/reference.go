@@ -24,16 +24,17 @@ type refView struct {
 	Issues    []string // why Health is issue
 	RootErr   string   // why the folder cannot be read, or ""
 	NotesLong bool     // more than the card shows without "Show all"
-	Filter    string   // lower-case hostnames, slug and kind: what the search box matches
+	Filter    string   // lower-case hostnames, slug, kind and container names: what the search box matches
+	Compose   string   // the container's compose project, or "-" for none
 }
 
 // healthOf names every reason an enabled site needs attention. A disabled site serves nothing, so it has none.
 // A runtime site whose unit state could not be read counts: nobody knows it is fine.
-func healthOf(r siteRow, unit string, unitErr, rootErr error) (string, []string) {
+func healthOf(r siteRow, unit string, unitErr, rootErr error, extra ...string) (string, []string) {
 	if !r.Enabled {
 		return "disabled", nil
 	}
-	var issues []string
+	issues := slices.Clone(extra)
 	if r.Upstream == "down" {
 		issues = append(issues, "upstream down")
 	}
@@ -96,7 +97,7 @@ func (s *Server) referencePage(w http.ResponseWriter, r *http.Request) {
 			views[i].Unit, errs[i] = s.unitState(r.Context(), rows[i].Site)
 		}
 	})
-	var kinds, users, phps []string
+	var kinds, users, phps, projects []string
 	helperDown, runtime := true, false
 	for i := range views {
 		v := &views[i]
@@ -104,23 +105,33 @@ func (s *Server) referencePage(w http.ResponseWriter, r *http.Request) {
 		if rootErr != nil {
 			v.RootErr = rootErr.Error()
 		}
-		v.Health, v.Issues = healthOf(v.siteRow, v.Unit, errs[i], rootErr)
+		v.Health, v.Issues = healthOf(v.siteRow, v.Unit, errs[i], rootErr, dockerIssues(v.siteRow)...)
 		if v.IsRuntime() && v.Enabled {
 			runtime = true
 			helperDown = helperDown && errs[i] != nil
 		}
 		v.NotesLong = len(v.Notes) > 600
-		v.Filter = strings.ToLower(strings.Join(v.Hostnames, " ") + " " + v.Slug + " " + v.Kind)
+		v.Compose = "-"
+		v.Filter = strings.Join(v.Hostnames, " ") + " " + v.Slug + " " + v.Kind
+		if c := v.Docker; c != nil {
+			v.Filter += " " + c.Name + " " + c.Image + " " + c.Project + " " + c.Service
+			if c.Project != "" {
+				v.Compose = c.Project
+				projects = addUnique(projects, c.Project)
+			}
+		}
+		v.Filter = strings.ToLower(v.Filter)
 		kinds, users, phps = addUnique(kinds, v.Kind), addUnique(users, v.SiteUser), addUnique(phps, v.FPMVersion)
 	}
 	slices.Sort(kinds)
 	slices.Sort(users)
 	slices.Sort(phps)
+	slices.Sort(projects)
 	s.render(w, "reference", http.StatusOK, page{Title: "Reference", Data: struct {
-		Rows               []refView
-		Kinds, Users, PHPs []string
-		HelperDown         bool
-	}{views, kinds, users, phps, runtime && helperDown}})
+		Rows                         []refView
+		Kinds, Users, PHPs, Projects []string
+		HelperDown                   bool
+	}{views, kinds, users, phps, projects, runtime && helperDown}})
 }
 
 // addUnique appends v unless it is empty or already there.

@@ -24,6 +24,7 @@ const (
 	ActionUnitRemove  = "unit-remove"
 	ActionUnitStart   = "unit-start"
 	ActionUnitStop    = "unit-stop"
+	ActionDockerList  = "docker-list"
 
 	ActionPHPBuild       = "php-build"
 	ActionPHPStatus      = "php-status"
@@ -108,7 +109,7 @@ func DecodeRequest(b []byte) (Request, error) {
 	}
 	switch r.Action {
 	case ActionPing, ActionUnitInstall, ActionUnitStatus, ActionUnitLogs,
-		ActionUserAdd, ActionUserCheck, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop,
+		ActionUserAdd, ActionUserCheck, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop, ActionDockerList,
 		ActionPHPBuild, ActionPHPStatus, ActionPHPInstall, ActionPHPPrune, ActionPHPUserDefault, ActionComposer:
 	default:
 		return Request{}, fmt.Errorf("unknown action %q", r.Action)
@@ -146,8 +147,9 @@ type Response struct {
 	Error  string          `json:"error,omitempty"`
 	Status *StatusData     `json:"status,omitempty"`
 	Logs   []string        `json:"logs,omitempty"`
-	Build  *phpbuild.State `json:"build,omitempty"` // php-status
-	User   *UserData       `json:"user,omitempty"`  // user-check, user-add with a named user
+	Build  *phpbuild.State `json:"build,omitempty"`  // php-status
+	User   *UserData       `json:"user,omitempty"`   // user-check, user-add with a named user
+	Docker *DockerData     `json:"docker,omitempty"` // docker-list
 }
 
 // StatusData is one unit's systemd state.

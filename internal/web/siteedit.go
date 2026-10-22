@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/servanago/servanago/internal/helper"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/store"
 )
@@ -23,6 +24,9 @@ type siteRow struct {
 	Cert     probe.CertStatus
 	CertSoon bool   // issued but inside renewWindow: shown amber
 	CertWait string // how long a pending certificate may take, from the propagation settings
+	// Docker is the container a local proxy upstream points at; DockerErr is true when it could not be looked up.
+	Docker    *helper.Container
+	DockerErr bool
 }
 
 // HasDNS is true once at least one of the site's records has been synced or attempted.
@@ -63,6 +67,7 @@ func (s *Server) buildRows(r *http.Request, rs []store.Site) ([]siteRow, error) 
 		rows[i] = siteRow{Site: x, Host: x.Hostnames[0], DNS: bySite[x.ID], DNSOn: s.dnsOn()}
 		rows[i].Probed = x.Enabled && s.deps.Probe != nil
 	}
+	s.attachContainers(r.Context(), rows)
 	// Probes wait on the network, so run them side by side; each goroutine writes only its own row.
 	probe.Parallel(len(rows), func(i int) {
 		row := &rows[i]

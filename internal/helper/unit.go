@@ -30,6 +30,7 @@ type Seam interface {
 	CheckBinary(path string) error       // a regular, executable file owned by root that no one else can write
 	UnitStatus(name string) (StatusData, error)
 	UnitLogs(name string, lines int) ([]string, error)
+	DockerList() (DockerData, error) // read-only: the containers on this host (docker.go)
 
 	// PHP builds (php.go). Every argument is derived or validated by the action, never taken from a caller.
 	Missing(tools []string) []string                  // tools not found on PATH

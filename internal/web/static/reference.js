@@ -6,7 +6,7 @@
   var list = document.getElementById('ref-list');
   var cards = Array.prototype.slice.call(list.children);
   var $ = function (id) { return document.getElementById(id); };
-  var selects = { kind: $('ref-kind'), status: $('ref-status'), user: $('ref-user'), php: $('ref-php'), sort: $('ref-sort') };
+  var selects = { kind: $('ref-kind'), status: $('ref-status'), user: $('ref-user'), php: $('ref-php'), compose: $('ref-compose'), sort: $('ref-sort') };
   var q = $('ref-q'), issue = $('ref-issue');
   var views = document.getElementsByName('ref-view');
 
@@ -63,6 +63,7 @@
         (!selects.status.value || d.health === selects.status.value) &&
         (!selects.user || !selects.user.value || d.user === selects.user.value) &&
         (!selects.php || !selects.php.value || d.php === selects.php.value) &&
+        (!selects.compose || !selects.compose.value || d.compose === selects.compose.value) &&
         (!issue.checked || d.health === 'issue');
       el.hidden = !ok;
       if (ok) shown++;

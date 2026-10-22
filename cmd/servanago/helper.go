@@ -31,6 +31,7 @@ func runHelper() error {
 		helper.ActionUnitRemove:  a.UnitRemove,
 		helper.ActionUnitStart:   a.UnitStart,
 		helper.ActionUnitStop:    a.UnitStop,
+		helper.ActionDockerList:  a.DockerList,
 
 		helper.ActionPHPBuild:       a.PHPBuild,
 		helper.ActionPHPStatus:      a.PHPStatus,
