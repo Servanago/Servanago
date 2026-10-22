@@ -95,7 +95,7 @@ func TestBuildDeb(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dpkg-deb --info: %v", err)
 	}
-	for _, want := range []string{"Package: servanago", "Version: 0.5.2", "conffiles"} {
+	for _, want := range []string{"Package: servanago", "Version: 0.5.3", "conffiles"} {
 		if !strings.Contains(string(info), want) {
 			t.Errorf("deb info missing %q:\n%s", want, info)
 		}
