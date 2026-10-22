@@ -33,10 +33,11 @@ func (a txApplier) StartupError() error { return nil }
 const zonesOK = `{"success":true,"errors":[],"messages":[],"result":[{"id":"zone123","name":"example.com"}],"result_info":{"page":1,"per_page":20,"count":1,"total_count":1}}`
 
 type cfFake struct {
-	calls atomic.Int32
-	dns   *cftest.Fake // stateful DNS record endpoints
-	zones string       // body for GET /zones
-	token func(w http.ResponseWriter)
+	calls     atomic.Int32
+	dns       *cftest.Fake // stateful DNS record endpoints
+	zones     string       // body for GET /zones
+	zonesCode int          // status for GET /zones; 0 = 200
+	token     func(w http.ResponseWriter)
 }
 
 // domainServer returns an open-mode server wired to a fake Cloudflare.
@@ -55,6 +56,9 @@ func cfgServer(t *testing.T, cf *cfFake, cfg config.Config) *Server {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/zones":
+			if cf.zonesCode != 0 {
+				w.WriteHeader(cf.zonesCode)
+			}
 			_, _ = w.Write([]byte(cf.zones))
 		case "/user/tokens/verify":
 			cf.token(w)
@@ -225,14 +229,28 @@ func TestDeleteDomain(t *testing.T) {
 }
 
 func TestTokenVerifyBanner(t *testing.T) {
+	const invalid = `{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}],"messages":[],"result":null}`
+	cf := &cfFake{zones: invalid, zonesCode: 401, token: func(w http.ResponseWriter) {
+		w.WriteHeader(401)
+		_, _ = w.Write([]byte(invalid))
+	}}
+	s := domainServer(t, cf)
+	s.VerifyToken(context.Background())
+	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "Invalid API Token") {
+		t.Fatalf("banner missing: %s", body)
+	}
+}
+
+// An account-owned token fails /user/tokens/verify but can list zones: no banner.
+func TestTokenVerifyNoBannerForAccountToken(t *testing.T) {
 	cf := &cfFake{zones: zonesOK, token: func(w http.ResponseWriter) {
 		w.WriteHeader(401)
 		_, _ = w.Write([]byte(`{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}],"messages":[],"result":null}`))
 	}}
 	s := domainServer(t, cf)
 	s.VerifyToken(context.Background())
-	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "Invalid API Token") {
-		t.Fatalf("banner missing: %s", body)
+	if body := s.do(req{path: "/"}).Body.String(); strings.Contains(body, "Cloudflare token problem") {
+		t.Fatalf("banner shown for a working token: %s", body)
 	}
 }
 

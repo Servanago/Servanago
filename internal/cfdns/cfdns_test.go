@@ -84,9 +84,27 @@ func TestVerifyToken(t *testing.T) {
 		t.Fatalf("got %v", err)
 	}
 	bad := fake(t, map[string]func(http.ResponseWriter, *http.Request){
-		"GET /user/tokens/verify": reply(401, `{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}],"messages":[],"result":null}`)})
+		"GET /user/tokens/verify": reply(401, `{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}],"messages":[],"result":null}`),
+		"GET /zones":              reply(401, `{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}],"messages":[],"result":null}`)})
 	if err := bad.VerifyToken(context.Background()); err == nil || !strings.Contains(err.Error(), "Invalid API Token") {
 		t.Fatalf("got %v", err)
+	}
+}
+
+// An account-owned token is rejected by /user/tokens/verify but works on the zone API.
+func TestVerifyTokenAccountOwned(t *testing.T) {
+	const invalid = `{"success":false,"errors":[{"code":1000,"message":"Invalid API Token"}],"messages":[],"result":null}`
+	owned := fake(t, map[string]func(http.ResponseWriter, *http.Request){
+		"GET /user/tokens/verify": reply(401, invalid),
+		"GET /zones":              reply(200, zonesOK)})
+	if err := owned.VerifyToken(context.Background()); err != nil {
+		t.Fatalf("account-owned token with zone access: %v", err)
+	}
+	bad := fake(t, map[string]func(http.ResponseWriter, *http.Request){
+		"GET /user/tokens/verify": reply(401, invalid),
+		"GET /zones":              reply(401, invalid)})
+	if err := bad.VerifyToken(context.Background()); err == nil || !strings.Contains(err.Error(), "Invalid API Token") {
+		t.Fatalf("token rejected everywhere: got %v", err)
 	}
 }
 

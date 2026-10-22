@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 
 	cloudflare "github.com/cloudflare/cloudflare-go/v7"
@@ -63,10 +64,17 @@ func (c *Client) ZoneFor(ctx context.Context, host, override string) (id, zone s
 // (HTTP-01, no DNS sync); any other ZoneFor error is a real failure.
 var ErrNoZone = errors.New("no Cloudflare zone found")
 
-// VerifyToken checks the API token is valid and active.
+// VerifyToken checks the API token is valid and active. /user/tokens/verify answers 401 for
+// account-owned tokens, so on a 401 the token is accepted if it can list zones.
 func (c *Client) VerifyToken(ctx context.Context) error {
 	res, err := c.api.User.Tokens.Verify(ctx)
 	if err != nil {
+		var apiErr *cloudflare.Error
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusUnauthorized {
+			if _, zerr := c.api.Zones.List(ctx, zones.ZoneListParams{PerPage: cloudflare.F(1.0)}); zerr == nil {
+				return nil
+			}
+		}
 		return fmt.Errorf("verify Cloudflare token: %w", err)
 	}
 	if res.Status != "active" {
