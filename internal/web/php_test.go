@@ -615,3 +615,33 @@ func TestPHPActionsAskForThePassword(t *testing.T) {
 		}
 	}
 }
+
+// A build that finished while the web process was down is installed when the process starts again.
+func TestResumeBuildInstallsAFinishedBuild(t *testing.T) {
+	s, host := phpServer(t)
+	host.phase, host.phaseVer = phpbuild.PhaseBuilt, "8.4.28"
+	s.ResumeBuild(context.Background())
+	if !strings.Contains(host.log(), "php-install 8.4.28") {
+		t.Fatalf("not installed: %s", host.log())
+	}
+	rows, err := s.deps.Store.ListAudit(context.Background(), 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got bool
+	for _, e := range rows {
+		got = got || (e.Action == "php.install" && e.Actor == "system")
+	}
+	if !got {
+		t.Errorf("no system audit row for the install: %+v", rows)
+	}
+}
+
+// With no build waiting there is nothing to resume.
+func TestResumeBuildIdleDoesNothing(t *testing.T) {
+	s, host := phpServer(t)
+	s.ResumeBuild(context.Background())
+	if strings.Contains(host.log(), "php-install") {
+		t.Errorf("installed with no build: %s", host.log())
+	}
+}

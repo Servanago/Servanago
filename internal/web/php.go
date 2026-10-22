@@ -287,8 +287,8 @@ func (s *Server) auditorFor(r *http.Request) func(action, target string) {
 }
 
 // watchBuild follows a running build; when it has built, it asks the helper to install it and, if asked, switches the
-// sites that follow the branch. One watcher at a time; if the web process restarts mid-build, the finished build waits
-// on the page for the Install button.
+// sites that follow the branch. One watcher at a time; if the web process restarts mid-build, ResumeBuild follows it
+// again, and the page's Install button stays as the fallback.
 func (s *Server) watchBuild(ver string, switchAfter bool, audit func(action, target string)) {
 	if !s.phpWatch.CompareAndSwap(false, true) {
 		return
@@ -564,6 +564,23 @@ func (s *Server) phpDefault(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "php.default.set", user+" = "+label)
 	}
 	hxRedirect(w, "/php")
+}
+
+// ResumeBuild picks up a build the previous web process was following: the watcher dies with the process, and the
+// build job does not. It installs a build that finished meanwhile and follows one still running. The "switch the
+// sites" choice made at build time is not kept, so it is not repeated. Blocks while it watches; start it with go.
+func (s *Server) ResumeBuild(ctx context.Context) {
+	var job jobView
+	for i := 0; i < 10; i++ { // the helper may still be starting
+		if job = s.phpJob(ctx); job.Err == "" {
+			break
+		}
+		time.Sleep(s.phpPoll)
+	}
+	switch job.Phase {
+	case phpbuild.PhaseFetching, phpbuild.PhaseBuilding, phpbuild.PhaseBuilt:
+		s.watchBuild(job.Version, false, func(action, target string) { s.auditSystem(ctx, action, target) })
+	}
 }
 
 // ReconcilePHP writes every stored user default again (shims included): SQLite is the desired state, the host files follow.
