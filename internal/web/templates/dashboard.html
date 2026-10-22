@@ -63,8 +63,8 @@
 <p><strong>Node.js</strong>
 {{if .Runtimes.Node.Installed}}{{.Runtimes.Node.Version}}{{else}}not installed — <code>{{.Runtimes.Node.Install}}</code>{{end}}<br>
 <strong>PHP-FPM</strong>
-{{if .Runtimes.PHP}}{{range $i, $v := .Runtimes.PHP}}{{if $i}}, {{end}}{{$v.Version}}{{end}}{{else}}not installed — <code>sudo apt install php-fpm</code>{{end}}</p>
-<small>ServanaGo detects these and never installs them.</small>
+{{if .Runtimes.PHP}}ServanaGo builds: {{with .Runtimes.PHPFrom true}}{{range $i, $v := .}}{{if $i}}, {{end}}{{$v.Version}}{{end}}{{else}}none{{end}}; distro: {{with .Runtimes.PHPFrom false}}{{range $i, $v := .}}{{if $i}}, {{end}}{{$v.Version}}{{end}}{{else}}none{{end}}{{else}}none — build one on the <a href="/php">PHP page</a>{{end}}</p>
+<small>ServanaGo builds PHP itself (<a href="/php">PHP page</a>). It only detects Node.js, FrankenPHP and fcgiwrap and never installs them.</small>
 </article>
 <h2>Sites</h2>
 <article>

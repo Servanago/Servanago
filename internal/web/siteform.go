@@ -458,7 +458,6 @@ type siteEditForm struct {
 	RootNote    string         // any foldered site: why the folder cannot be read, or ""
 	PHPVersions []runtimes.Opt // detected php-fpm versions for the pick list
 	PHPExt      []extOpt       // the extension checklist (ServanaGo's own PHP builds)
-	PHPInstall  string         // install command to show when none is installed
 	Node        runtimes.NodeReport
 	Franken     runtimes.FrankenReport
 	FCGIWrap    runtimes.FCGIWrapReport
@@ -504,7 +503,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 	title := "Add site"
 	rep := s.detect(r.Context())
 	form := siteEditForm{Site: rt, Edit: edit, HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
-		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOpts(rt.PHPExtensions), PHPInstall: rep.PHPInstall, Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
+		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOpts(rt.PHPExtensions), Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
 	}

@@ -88,8 +88,7 @@
 <select name="fpm_version" aria-describedby="hint-fpm_version">
 {{range .PHPVersions}}<option value="{{.Version}}"{{if .Selected}} selected{{end}}>{{.Version}}</option>
 {{end}}</select></label>
-{{else}}<p>No php-fpm found on this host. Install one, then reload this form:
-<code>{{.PHPInstall}}</code>.</p>{{end}}
+{{else}}<p>No php-fpm found on this host. Build one on the <a href="/php">PHP page</a> or install a distribution package, then reload this form.</p>{{end}}
 {{hintid "fpm_version"}}
 <p class="explain">You set the folder above to the webroot; <code>index.php</code> is the router. The pool and socket are created for you.</p>
 <fieldset>

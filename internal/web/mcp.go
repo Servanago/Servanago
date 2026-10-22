@@ -269,7 +269,7 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 			return nil, out, err
 		})
 
-	mcp.AddTool(srv, &mcp.Tool{Name: "runtime_report", Description: "Which runtimes this host has: node, php-fpm versions, frankenphp, fcgiwrap. ServanaGo never installs them.", Annotations: ro},
+	mcp.AddTool(srv, &mcp.Tool{Name: "runtime_report", Description: "Which runtimes this host has: node, php-fpm versions, frankenphp, fcgiwrap. ServanaGo builds PHP itself (the /php page) and never installs the others.", Annotations: ro},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, map[string]any, error) {
 			rep := s.detect(ctx)
 			var php []string

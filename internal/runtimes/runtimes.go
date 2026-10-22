@@ -35,11 +35,21 @@ type Opt struct {
 
 // Report is what the UI shows.
 type Report struct {
-	Node       NodeReport
-	PHP        []PHPVersion // newest version first
-	PHPInstall string       // shown when empty, unless overridden
-	Franken    FrankenReport
-	FCGIWrap   FCGIWrapReport
+	Node     NodeReport
+	PHP      []PHPVersion // newest version first
+	Franken  FrankenReport
+	FCGIWrap FCGIWrapReport
+}
+
+// PHPFrom lists the installed php-fpm versions built by ServanaGo (source=true) or by the distro.
+func (r Report) PHPFrom(source bool) []PHPVersion {
+	var out []PHPVersion
+	for _, p := range r.PHP {
+		if p.Source == source {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // FCGIWrapPaths are where fcgiwrap is looked for (the helper accepts exactly these).
@@ -107,12 +117,6 @@ func Detect(ctx context.Context, ex RunExec) Report {
 	}
 	sort.SliceStable(php, func(i, j int) bool { return newest(php[i].Version, php[j].Version) })
 	r.PHP = dedupe(php) // the first one listed wins for a repeated label: source builds, then the first path searched
-	for _, p := range r.PHP {
-		if !p.Source {
-			r.PHPInstall = "sudo apt install php" + p.Version + "-fpm"
-			break
-		}
-	}
 	r.Franken.Install = "https://frankenphp.dev/docs/#getting-started"
 	for _, p := range FrankenPaths {
 		if m, _ := ex.Glob(p); len(m) == 1 { // Glob of a literal path is an existence test through the seam

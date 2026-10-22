@@ -139,8 +139,13 @@ func TestDetectSourceBuilds(t *testing.T) {
 			}
 		}
 	}
-	if r.PHPInstall != "sudo apt install php8.1-fpm" { // the hint names a distro package, never a build directory
-		t.Errorf("install hint %q", r.PHPInstall)
+	if d := r.PHPFrom(false); len(d) != 1 || d[0].Version != "8.1" { // distro builds, apart from ServanaGo's
+		t.Errorf("distro versions %+v", d)
+	}
+	for _, p := range r.PHPFrom(true) {
+		if !p.Source {
+			t.Errorf("PHPFrom(true) returned a distro build: %+v", p)
+		}
 	}
 }
 
@@ -181,7 +186,7 @@ func TestPHPPDupesSortedNewestFirst(t *testing.T) {
 	if r.PHP[0].Path != "/usr/sbin/php-fpm8.2" { // the first searched dir wins
 		t.Errorf("winner path %q", r.PHP[0].Path)
 	}
-	if r.PHPInstall != "sudo apt install php8.2-fpm" {
-		t.Errorf("php install %q", r.PHPInstall)
+	if len(r.PHPFrom(false)) != 2 || len(r.PHPFrom(true)) != 0 {
+		t.Errorf("distro %+v, source %+v", r.PHPFrom(false), r.PHPFrom(true))
 	}
 }
