@@ -43,6 +43,11 @@ type Seam interface {
 	Fetch(url string, limit int64) ([]byte, error)    // https GET with a size cap
 	UserOK(name string) error                         // an existing, non-system user with a login shell
 	Exe() (string, error)                             // the helper's own binary, which the job units run
+
+	// Named site users (user.go).
+	UserInfo(name string) (UserData, error)                        // Exists=false for an unknown name; an error for an existing user a site may not run as
+	UserCreate(name, home string, login bool, dirs []string) error // a locked login user whose home must not exist yet; dirs are created inside it, owned by the user
+	EvalSymlinks(path string) (string, error)
 }
 
 type Actions struct{ s Seam }

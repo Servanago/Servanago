@@ -55,6 +55,19 @@ type fakeSeam struct {
 	checked      []string
 	exist        map[string]bool // paths Lstat reports as existing directories
 	readBack     bool            // ReadFile returns what WriteFile stored (for the state file round trip)
+
+	// named site users
+	userData  map[string]UserData // UserInfo answers; an absent name does not exist
+	infoErr   error
+	created   []createdUser
+	createErr error
+	links     map[string]string // EvalSymlinks: path -> resolved
+}
+
+type createdUser struct {
+	name, home string
+	login      bool
+	dirs       []string
 }
 
 func newFakeSeam() *fakeSeam { return &fakeSeam{written: map[string][]byte{}} }
@@ -153,6 +166,22 @@ func (s *fakeSeam) Rename(oldPath, newPath string) error {
 func (s *fakeSeam) InstallTree(src, dst string) error {
 	s.installed = append(s.installed, [2]string{src, dst})
 	return s.installErr
+}
+func (s *fakeSeam) UserInfo(name string) (UserData, error) {
+	if s.infoErr != nil {
+		return UserData{}, s.infoErr
+	}
+	return s.userData[name], nil
+}
+func (s *fakeSeam) UserCreate(name, home string, login bool, dirs []string) error {
+	s.created = append(s.created, createdUser{name, home, login, dirs})
+	return s.createErr
+}
+func (s *fakeSeam) EvalSymlinks(p string) (string, error) {
+	if r, ok := s.links[p]; ok {
+		return r, nil
+	}
+	return p, nil
 }
 func (s *fakeSeam) UserOK(string) error  { return s.userErr }
 func (s *fakeSeam) Exe() (string, error) { return s.exe, nil }

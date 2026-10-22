@@ -26,6 +26,7 @@ func runHelper() error {
 		helper.ActionUnitStatus:  a.UnitStatus,
 		helper.ActionUnitLogs:    a.UnitLogs,
 		helper.ActionUserAdd:     a.UserAdd,
+		helper.ActionUserCheck:   a.UserCheck,
 		helper.ActionUserRemove:  a.UserRemove,
 		helper.ActionUnitRemove:  a.UnitRemove,
 		helper.ActionUnitStart:   a.UnitStart,

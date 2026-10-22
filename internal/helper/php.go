@@ -48,7 +48,7 @@ var (
 	versionRE = regexp.MustCompile(`^[0-9]{1,2}\.[0-9]{1,2}\.[0-9]{1,3}$`)               // 8.4.27
 	labelRE   = regexp.MustCompile(`^[0-9]{1,2}\.[0-9]{1,2}(\.[0-9]{1,3}-[0-9]{1,3})?$`) // 8.4 or 8.4.27-1
 	libDirRE  = regexp.MustCompile(`^[a-z0-9][a-z0-9._+-]{0,63}$`)                       // zlib-1.3.1
-	userRE    = regexp.MustCompile(`^[a-z_][a-z0-9_-]{0,31}$`)
+	userRE    = regexp.MustCompile(`^[a-z_][a-z0-9_.-]{0,31}$`)
 )
 
 // sourceBuild reports whether bin is <PHPRoot>/<ver>-<n>/sbin/php-fpm, and the build's label.
@@ -462,7 +462,7 @@ const pathScript = `#!/bin/sh
 # ServanaGo: print the php binary chosen for the current user (set on the PHP page); print nothing to mean "use the distro php".
 root=${SERVANAGO_PHP_ROOT:-/opt/servanago/php}
 map=${SERVANAGO_PHP_USERS:-/etc/servanago/php-users}
-label=$(cat "$map/$(id -un)" 2>/dev/null) || exit 0
+label=$(head -n 1 "$map/$(id -un)" 2>/dev/null) || exit 0
 case $label in
   ''|*[!0-9.-]*|*..*|.*|*-) exit 0 ;;
 esac
@@ -487,6 +487,11 @@ if [ ! -x "$bin" ]; then
   echo "php: no PHP found (none installed at $bin and no ServanaGo default set)" >&2
   exit 127
 fi
+# A site's user: the second line of its map file is the site's php.ini, so the command line has the site's extensions.
+ini=$(sed -n 2p "${SERVANAGO_PHP_USERS:-/etc/servanago/php-users}/$(id -un)" 2>/dev/null)
+case $bin in
+  /opt/servanago/php/*) if [ -n "$ini" ] && [ -r "$ini" ]; then set -- -c "$ini" "$@"; fi ;;
+esac
 exec "$bin" "$@"
 `
 
@@ -520,6 +525,13 @@ func (a Actions) PHPUserDefault(r Request) Response {
 	if err := a.s.UserOK(user); err != nil {
 		return Response{Error: fmt.Sprintf("user %s: %v", user, err)}
 	}
+	content := label + "\n"
+	if slug := r.Vals.Slug; slug != "" && label != "" { // a site's user: the command line loads the site's own ini
+		if err := ValidateSlug(slug); err != nil {
+			return Response{Error: err.Error()}
+		}
+		content += "/etc/servanago/php/" + slug + ".ini\n"
+	}
 	if err := a.s.MkdirAll(phpUsersDir, 0o755); err != nil {
 		return Response{Error: fmt.Sprintf("create %s: %v", phpUsersDir, err)}
 	}
@@ -544,7 +556,7 @@ func (a Actions) PHPUserDefault(r Request) Response {
 		}
 		return Response{OK: true}
 	}
-	if resp := a.putPerm(file, []byte(label+"\n"), 0o644, none); !resp.OK {
+	if resp := a.putPerm(file, []byte(content), 0o644, none); !resp.OK {
 		return resp
 	}
 	return Response{OK: true}

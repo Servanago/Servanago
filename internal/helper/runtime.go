@@ -1,6 +1,7 @@
 package helper
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -20,7 +21,7 @@ import (
 
 // nodeUnitTemplate is the sandboxed unit for a Node.js site. The start command is the
 // admin's own text; systemd runs it as the unprivileged site user, never root.
-func nodeUnitTemplate(user, root, start string) []byte {
+func nodeUnitTemplate(id siteIdentity, start string) []byte {
 	esc := systemdEscape(strings.ReplaceAll(start, "'", `'\''`))
 	return []byte(fmt.Sprintf(`[Unit]
 Description=ServanaGo site %s (Node.js)
@@ -41,13 +42,13 @@ ReadWritePaths=%s
 
 [Install]
 WantedBy=multi-user.target
-`, user, user, user, root, esc, root))
+`, id.User, id.User, id.Group, id.Root, esc, id.RW))
 }
 
 // frankenUnitTemplate runs one FrankenPHP php-server per site, as the unprivileged site user, on a loopback
 // port Caddy proxies to. The site user's home is the webroot, so Caddy's per-user data and config dirs are
 // pointed at the unit's private /tmp instead of letting FrankenPHP create .local and .config inside it.
-func frankenUnitTemplate(user, bin, root string, port int) []byte {
+func frankenUnitTemplate(id siteIdentity, bin string, port int) []byte {
 	return []byte(fmt.Sprintf(`[Unit]
 Description=ServanaGo site %s (FrankenPHP)
 After=network.target
@@ -68,13 +69,12 @@ ReadWritePaths=%s
 
 [Install]
 WantedBy=multi-user.target
-`, user, user, user, root, bin, root, port, root))
+`, id.User, id.User, id.Group, id.Root, bin, id.Web, port, id.RW))
 }
 
 // cgiServiceTemplate runs fcgiwrap as the site user. It is socket-activated: systemd (root) creates and owns the
 // socket below, so the unprivileged service never needs to write into /run/servanago.
-func cgiServiceTemplate(slug, bin, root string) []byte {
-	user := "sg-" + slug
+func cgiServiceTemplate(slug string, id siteIdentity, bin string) []byte {
 	return []byte(fmt.Sprintf(`[Unit]
 Description=ServanaGo site %s (CGI via fcgiwrap)
 Requires=servanago-%s.socket
@@ -91,7 +91,28 @@ PrivateDevices=yes
 ProtectSystem=strict
 ProtectHome=read-only
 ReadWritePaths=%s
-`, user, slug, slug, user, user, root, bin, root))
+`, id.User, slug, slug, id.User, id.Group, id.Root, bin, id.RW))
+}
+
+// staticServiceTemplate serves a static folder as the site's user: `servanago serve-static` takes the socket
+// systemd hands it (the same socket unit as cgi) and only reads the folder.
+func staticServiceTemplate(slug string, id siteIdentity, exe string) []byte {
+	return []byte(fmt.Sprintf(`[Unit]
+Description=ServanaGo site %s (static files)
+Requires=servanago-%s.socket
+After=servanago-%s.socket
+
+[Service]
+User=%s
+Group=%s
+WorkingDirectory=%s
+ExecStart=%s serve-static --root %s
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=read-only
+`, id.User, slug, slug, id.User, id.Group, id.Root, exe, id.Web))
 }
 
 // cgiSocketTemplate is the socket Caddy dials: owned by the servanago user, mode 0660.
@@ -119,7 +140,7 @@ func (a Actions) socketUnit(service string) (name, path string, ok bool) {
 }
 
 // poolTemplate is the per-site php-fpm pool; the socket is what Caddy dials.
-func poolTemplate(slug, user string) []byte {
+func poolTemplate(slug string, id siteIdentity) []byte {
 	return []byte(fmt.Sprintf(`; per-site pool for ServanaGo site %s; written by the helper
 [global]
 daemonize=no
@@ -138,7 +159,7 @@ pm.start_servers=2
 pm.min_spare_servers=1
 pm.max_spare_servers=3
 catch_workers_output=yes
-`, slug, slug, user, user, slug))
+`, slug, slug, id.User, id.Group, slug))
 }
 
 // phpUnitTemplate runs exactly one pool — its own php-fpm master per site.
@@ -147,7 +168,7 @@ catch_workers_output=yes
 // root-owned /run/servanago, and drops its workers to the site user through the pool's user=. A master
 // started as the site user could not create the socket. The runtime directory is declared (and preserved)
 // here as well as in the helper unit, so a helper restart does not delete every site socket.
-func phpUnitTemplate(user, fpmBin, confPath, ini, root string) []byte {
+func phpUnitTemplate(id siteIdentity, fpmBin, confPath, ini string) []byte {
 	args := "-F -y " + confPath
 	if ini != "" { // a source build reads the site's own ini (its extensions); distro builds keep their php.ini
 		args += " -c " + ini
@@ -171,7 +192,7 @@ ReadWritePaths=/run/servanago %s
 
 [Install]
 WantedBy=multi-user.target
-`, user, filepath.Base(fpmBin), fpmBin, args, root))
+`, id.User, filepath.Base(fpmBin), fpmBin, args, id.RW))
 }
 
 var fpmBinRE = regexp.MustCompile(`^(?:/usr/(?:sbin|bin)|/usr/local/bin)/php-fpm[0-9]+(?:\.[0-9]+)*$`)
@@ -182,6 +203,9 @@ func (a Actions) UserAdd(r Request) Response {
 	slug, err := r.Slug()
 	if err != nil {
 		return Response{Error: err.Error()}
+	}
+	if r.Vals.User != "" {
+		return a.userAddNamed(r.Vals)
 	}
 	if err := validateRoot(r.Vals.Root, true); err != nil {
 		return Response{Error: err.Error()}
@@ -254,8 +278,15 @@ func validateKindSpec(s Spec) error {
 		if !slices.Contains(runtimes.FCGIWrapPaths, s.FCGIBin) {
 			return fmt.Errorf("fcgiwrap binary %q must be one of %v", s.FCGIBin, runtimes.FCGIWrapPaths)
 		}
+	case "static": // only a site with its own user is served by a unit; the others stay in Caddy
+		if err := validateRoot(s.Root, false); err != nil {
+			return err
+		}
+		if s.User == "" {
+			return errors.New("static: a unit serves a site that has a user; a static site without one is served by Caddy")
+		}
 	default:
-		return fmt.Errorf("kind %q must be node, php, frankenphp or cgi", s.Kind)
+		return fmt.Errorf("kind %q must be node, php, frankenphp, cgi or static", s.Kind)
 	}
 	return nil
 }
@@ -308,18 +339,20 @@ func systemdEscape(s string) string {
 }
 
 // unitTemplates render the unit (and, for php, the pool) from validated fields only.
-func (a Actions) unitFor(s Spec) (unitPath string, content []byte) {
-	user := "sg-" + s.Slug
+func (a Actions) unitFor(s Spec, id siteIdentity, exe string) (unitPath string, content []byte) {
+	path := filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service")
 	switch s.Kind {
 	case "node":
-		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), nodeUnitTemplate(user, s.Root, s.Start)
+		return path, nodeUnitTemplate(id, s.Start)
 	case "frankenphp":
-		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), frankenUnitTemplate(user, s.FrankenBin, s.Root, s.Port)
+		return path, frankenUnitTemplate(id, s.FrankenBin, s.Port)
 	case "cgi":
-		return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), cgiServiceTemplate(s.Slug, s.FCGIBin, s.Root)
+		return path, cgiServiceTemplate(s.Slug, id, s.FCGIBin)
+	case "static":
+		return path, staticServiceTemplate(s.Slug, id, exe)
 	}
 	conf := filepath.Join("/etc/servanago/fpm", s.Slug+".conf")
-	return filepath.Join(systemdUnitDir, "servanago-"+s.Slug+".service"), phpUnitTemplate(user, s.FPMBin, conf, siteINI(s), s.Root)
+	return path, phpUnitTemplate(id, s.FPMBin, conf, siteINI(s))
 }
 
 // siteINIPath is a source build site's own php.ini; "" for a distro build, which keeps its php.ini and conf.d.
@@ -342,6 +375,22 @@ func (a Actions) UnitInstall(r Request) Response {
 		return Response{Error: err.Error()}
 	}
 	s := r.Vals
+	id, err := a.identity(s)
+	if err != nil {
+		return Response{Error: err.Error()}
+	}
+	exe := ""
+	if s.Kind == "static" { // the unit runs the helper's own binary
+		if exe, err = a.s.Exe(); err != nil || exe == "" {
+			return Response{Error: fmt.Sprintf("the helper cannot find its executable: %v", err)}
+		}
+		if err := validateRoot(exe, false); err != nil {
+			return Response{Error: fmt.Sprintf("helper executable: %v", err)}
+		}
+		if err := a.s.CheckBinary(exe); err != nil {
+			return Response{Error: fmt.Sprintf("helper executable: %v", err)}
+		}
+	}
 	// The unit runs this binary; refuse one the site user could have swapped.
 	if bin := map[string]string{"frankenphp": s.FrankenBin, "cgi": s.FCGIBin}[s.Kind]; bin != "" {
 		if err := a.s.CheckBinary(bin); err != nil {
@@ -372,18 +421,18 @@ func (a Actions) UnitInstall(r Request) Response {
 				return resp
 			}
 		}
-		if resp := a.put(conf, poolTemplate(slug, "sg-"+slug), func(path string) error {
+		if resp := a.put(conf, poolTemplate(slug, id), func(path string) error {
 			return a.s.FPMTest(s.FPMBin, path, ini)
 		}); !resp.OK {
 			return resp
 		}
 	}
-	unitPath, content := a.unitFor(s)
+	unitPath, content := a.unitFor(s, id, exe)
 	if resp := a.put(unitPath, content, a.s.VerifyUnit); !resp.OK {
 		return resp
 	}
 	name := "servanago-" + slug + ".service"
-	if s.Kind == "cgi" { // the socket is what is enabled and started; the service is activated by it
+	if s.Kind == "cgi" || s.Kind == "static" { // the socket is what is enabled and started; the service is activated by it
 		sockName := "servanago-" + slug + ".socket"
 		if resp := a.put(filepath.Join(systemdUnitDir, sockName), cgiSocketTemplate(slug), a.s.VerifyUnit); !resp.OK {
 			return resp

@@ -105,3 +105,45 @@ func FuzzDecodeRequest(f *testing.F) {
 		}
 	})
 }
+
+// FuzzNamedUserNoInjection: whatever the user, its home and group, the public folder and the root are, an accepted
+// install renders the same number of lines as a benign one, with one User=, one Group= and one ExecStart=.
+func FuzzNamedUserNoInjection(f *testing.F) {
+	f.Add("bob", "/home/bob", "bobgrp", "/home/bob/app", "public")
+	f.Add("bob\nUser=root", "/home/bob", "bobgrp", "/home/bob/app", "")
+	f.Add("bob", "/home/bob\nUser=root", "bobgrp", "/home/bob/app", "")
+	f.Add("bob", "/home/bob", "bobgrp\nUser=root", "/home/bob/app", "")
+	f.Add("bob", "/home/bob", "bobgrp", "/home/bob/app x", "")
+	f.Add("bob", "/home/bob", "bobgrp", "/home/bob/app", "public\nUser=root")
+	f.Add("bob", "/home/bob", "bobgrp", "/home/bob/app", "../..")
+	f.Add("bob", "/home/bob", "bobgrp", "/home/bob/app", "a b")
+	run := func(user, home, group, root, public string) (string, bool) {
+		seam := newFakeSeam()
+		seam.userData = map[string]UserData{user: {Exists: true, Home: home, Group: group, Login: true}}
+		seam.exist = map[string]bool{root + "/" + public: true, home + "/tmp": true}
+		spec := Spec{Kind: "frankenphp", Slug: "site1", User: user, Root: root, Public: public, Port: 8100, FrankenBin: "/usr/bin/frankenphp"}
+		if resp := NewActions(seam).UnitInstall(Request{Action: ActionUnitInstall, Vals: spec}); !resp.OK {
+			return "", false
+		}
+		return string(seam.written["/etc/systemd/system/servanago-site1.service"]), true
+	}
+	benign, ok := run("bob", "/home/bob", "bobgrp", "/home/bob/app", "public")
+	if !ok {
+		f.Fatal("benign named-user install failed")
+	}
+	want := strings.Count(benign, "\n")
+	f.Fuzz(func(t *testing.T, user, home, group, root, public string) {
+		u, ok := run(user, home, group, root, public)
+		if !ok {
+			return
+		}
+		if got := strings.Count(u, "\n"); got != want {
+			t.Fatalf("%d lines, benign has %d\nuser=%q home=%q group=%q root=%q public=%q\n%s", got, want, user, home, group, root, public, u)
+		}
+		for _, d := range []string{"\nUser=", "\nGroup=", "\nExecStart="} {
+			if strings.Count(u, d) != 1 {
+				t.Fatalf("%q count != 1:\n%s", d, u)
+			}
+		}
+	})
+}

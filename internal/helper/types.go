@@ -19,6 +19,7 @@ const (
 	ActionUnitStatus  = "unit-status"
 	ActionUnitLogs    = "unit-logs"
 	ActionUserAdd     = "user-add"
+	ActionUserCheck   = "user-check"
 	ActionUserRemove  = "user-remove"
 	ActionUnitRemove  = "unit-remove"
 	ActionUnitStart   = "unit-start"
@@ -71,8 +72,19 @@ type Spec struct {
 
 	Extensions []string `json:"extensions,omitempty"`  // php (source build): shared extensions from the allowlist; none = the core set
 	PHPVersion string   `json:"php_version,omitempty"` // php-build/php-install: 8.4.27; php-user-default: a label (8.4 or 8.4.27-1), "" clears
-	User       string   `json:"user,omitempty"`        // php-user-default: an existing login user
+	User       string   `json:"user,omitempty"`        // php-user-default: an existing login user; unit-install and user-add: the site's named user ("" = generated sg-<slug>)
 	Build      string   `json:"build,omitempty"`       // php-prune: a build directory name such as 8.4.27-1
+	Home       string   `json:"home,omitempty"`        // user-add: home of a user to create (under /home or /srv)
+	Shell      bool     `json:"shell,omitempty"`       // user-add: the created user gets a login shell (else nologin)
+	Public     string   `json:"public,omitempty"`      // unit-install, user-add: the served folder inside Root (php, frankenphp, static); "" = Root
+}
+
+// UserData is what user-check and user-add report about a named site user.
+type UserData struct {
+	Exists bool   `json:"exists"`
+	Home   string `json:"home,omitempty"`
+	Group  string `json:"group,omitempty"` // the user's primary group
+	Login  bool   `json:"login,omitempty"` // has a login shell
 }
 
 // Request is one newline-delimited action from the control plane. Spec is mandatory, even
@@ -96,7 +108,7 @@ func DecodeRequest(b []byte) (Request, error) {
 	}
 	switch r.Action {
 	case ActionPing, ActionUnitInstall, ActionUnitStatus, ActionUnitLogs,
-		ActionUserAdd, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop,
+		ActionUserAdd, ActionUserCheck, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop,
 		ActionPHPBuild, ActionPHPStatus, ActionPHPInstall, ActionPHPPrune, ActionPHPUserDefault, ActionComposer:
 	default:
 		return Request{}, fmt.Errorf("unknown action %q", r.Action)
@@ -135,6 +147,7 @@ type Response struct {
 	Status *StatusData     `json:"status,omitempty"`
 	Logs   []string        `json:"logs,omitempty"`
 	Build  *phpbuild.State `json:"build,omitempty"` // php-status
+	User   *UserData       `json:"user,omitempty"`  // user-check, user-add with a named user
 }
 
 // StatusData is one unit's systemd state.
