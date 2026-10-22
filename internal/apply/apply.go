@@ -127,7 +127,13 @@ func (s *Service) render(ctx context.Context, q *store.Store) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return caddycfg.Render(caddycfg.State{Domains: ds, Sites: rs}, s.opts)
+	sn, err := q.ListSnippets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	o := s.opts
+	o.Snippets = sn
+	return caddycfg.Render(caddycfg.State{Domains: ds, Sites: rs}, o)
 }
 
 // loadCfg skips Caddy when the config is byte-identical to the live one.

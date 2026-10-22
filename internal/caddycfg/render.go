@@ -36,6 +36,7 @@ type Options struct {
 	PropagationDelay    time.Duration // 0 = omit
 	PropagationTimeout  time.Duration // 0 = omit
 	Resolvers           []string
+	Snippets            []store.Snippet // bodies of the snippets sites attach by name; ponytail: here, not in State, to keep State's positional literals
 }
 
 type State struct {
@@ -79,8 +80,29 @@ func Render(st State, o Options) ([]byte, error) {
 	routes := []any{hostMatch(o.UIHost, m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": o.UIUpstream}}})}
 	own := map[int64][]string{} // hostnames that need a certificate of their own, by domain
 	var orphans []string        // hostnames under no domain: HTTP-01, one certificate each
+	bodies := map[string]string{}
+	for _, x := range o.Snippets {
+		bodies[x.Name] = x.Body
+	}
+	adapted := map[string][]any{} // each snippet is adapted once, however many sites attach it
 	for _, x := range hr {
-		h, err := siteHandler(x.host, x.r)
+		var snip []any
+		for _, n := range x.r.Snippets {
+			rs, ok := adapted[n]
+			if !ok {
+				body, known := bodies[n]
+				if !known {
+					return nil, fmt.Errorf("render: site %d: unknown snippet %q", x.r.ID, n)
+				}
+				var err error
+				if rs, err = AdaptSnippet(body); err != nil {
+					return nil, fmt.Errorf("render: snippet %q: %w", n, err)
+				}
+				adapted[n] = rs
+			}
+			snip = append(snip, rs...)
+		}
+		h, err := siteHandler(x.host, x.r, snip)
 		if err != nil {
 			return nil, err
 		}
@@ -172,8 +194,9 @@ func issuer(o Options) m {
 }
 
 // siteHandler is the site's terminal handler (reverse_proxy, file_server or the php_fastcgi
-// expansion) wrapped in the shared gate, allowlist and basic-auth chain when any of them is set.
-func siteHandler(host string, r store.Site) (any, error) {
+// expansion) wrapped in the shared gate, allowlist and basic-auth chain when any of them is set. snip holds the
+// adapted routes of the site's snippets: they run after that chain and before the handler, except under /.well-known/.
+func siteHandler(host string, r store.Site, snip []any) (any, error) {
 	var extras []any
 	if r.ExtraRoutes != "" {
 		var err error
@@ -237,7 +260,7 @@ func siteHandler(host string, r store.Site) (any, error) {
 			handlers = []any{m{"handler": "subroute", "routes": routes}}
 		}
 	}
-	if r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(handlers) == 1 {
+	if r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(snip) == 0 && len(handlers) == 1 {
 		return handlers[0], nil
 	}
 
@@ -257,6 +280,12 @@ func siteHandler(host string, r store.Site) (any, error) {
 			"hash":     m{"algorithm": "bcrypt"},
 			"accounts": []any{m{"username": r.BasicUser, "password": r.BasicHash}},
 		}}}}})
+	}
+	if len(snip) > 0 { // ACME-adjacent and app well-known endpoints must never be hidden or recompressed by a snippet
+		sub = append(sub, m{
+			"match":  []any{m{"not": []any{m{"path": []any{"/.well-known/*"}}}}},
+			"handle": []any{m{"handler": "subroute", "routes": snip}},
+		})
 	}
 	sub = append(sub, m{"handle": handlers})
 	return m{"handler": "subroute", "routes": sub}, nil

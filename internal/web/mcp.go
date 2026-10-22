@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/subtle"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -57,23 +58,24 @@ func (s *Server) mcpHandler() http.Handler {
 // value on update and its default on create. Access controls (gate, basic auth, upload limit) are not
 // settable here and are preserved.
 type siteArgs struct {
-	Kind          string   `json:"kind,omitempty" jsonschema:"proxy | static | node | php | frankenphp | fastcgi | cgi"`
-	Hostnames     []string `json:"hostnames,omitempty" jsonschema:"the first is the main address"`
-	StaticRoot    string   `json:"static_root,omitempty" jsonschema:"absolute folder (static, node, php, frankenphp, fastcgi, cgi)"`
-	Scheme        string   `json:"scheme,omitempty" jsonschema:"proxy: http or https"`
-	UpstreamHost  string   `json:"upstream_host,omitempty" jsonschema:"proxy: IP or hostname"`
-	UpstreamPort  int      `json:"upstream_port,omitempty" jsonschema:"proxy: port"`
-	Port          int      `json:"port,omitempty" jsonschema:"node and frankenphp: loopback port, 1024-65535"`
-	StartCommand  string   `json:"start_command,omitempty" jsonschema:"node: command systemd runs as the site user"`
-	InstallCmd    string   `json:"install_command,omitempty" jsonschema:"node: shown to the admin, never run"`
-	BuildCmd      string   `json:"build_command,omitempty" jsonschema:"node: shown to the admin, never run"`
-	FPMVersion    string   `json:"fpm_version,omitempty" jsonschema:"php: a detected php-fpm version such as 8.2"`
-	FCGIAddr      string   `json:"fcgi_addr,omitempty" jsonschema:"fastcgi: absolute socket path or host:port"`
-	Allowlist     string   `json:"allowlist,omitempty" jsonschema:"CIDR ranges or IPs, one per line; empty keeps the stored list"`
-	Enabled       *bool    `json:"enabled,omitempty" jsonschema:"default true on create; unchanged on update when left out"`
-	RecordIP      string   `json:"record_ip,omitempty" jsonschema:"IPv4 for this site's DNS record; empty = domain default"`
-	RecordIPv6    string   `json:"record_ip6,omitempty"`
-	TLSSkipVerify *bool    `json:"tls_skip_verify,omitempty" jsonschema:"proxy: skip verifying a self-signed https upstream"`
+	Kind          string    `json:"kind,omitempty" jsonschema:"proxy | static | node | php | frankenphp | fastcgi | cgi"`
+	Hostnames     []string  `json:"hostnames,omitempty" jsonschema:"the first is the main address"`
+	StaticRoot    string    `json:"static_root,omitempty" jsonschema:"absolute folder (static, node, php, frankenphp, fastcgi, cgi)"`
+	Scheme        string    `json:"scheme,omitempty" jsonschema:"proxy: http or https"`
+	UpstreamHost  string    `json:"upstream_host,omitempty" jsonschema:"proxy: IP or hostname"`
+	UpstreamPort  int       `json:"upstream_port,omitempty" jsonschema:"proxy: port"`
+	Port          int       `json:"port,omitempty" jsonschema:"node and frankenphp: loopback port, 1024-65535"`
+	StartCommand  string    `json:"start_command,omitempty" jsonschema:"node: command systemd runs as the site user"`
+	InstallCmd    string    `json:"install_command,omitempty" jsonschema:"node: shown to the admin, never run"`
+	BuildCmd      string    `json:"build_command,omitempty" jsonschema:"node: shown to the admin, never run"`
+	FPMVersion    string    `json:"fpm_version,omitempty" jsonschema:"php: a detected php-fpm version such as 8.2"`
+	FCGIAddr      string    `json:"fcgi_addr,omitempty" jsonschema:"fastcgi: absolute socket path or host:port"`
+	Allowlist     string    `json:"allowlist,omitempty" jsonschema:"CIDR ranges or IPs, one per line; empty keeps the stored list"`
+	Enabled       *bool     `json:"enabled,omitempty" jsonschema:"default true on create; unchanged on update when left out"`
+	RecordIP      string    `json:"record_ip,omitempty" jsonschema:"IPv4 for this site's DNS record; empty = domain default"`
+	RecordIPv6    string    `json:"record_ip6,omitempty"`
+	TLSSkipVerify *bool     `json:"tls_skip_verify,omitempty" jsonschema:"proxy: skip verifying a self-signed https upstream"`
+	Snippets      *[]string `json:"snippets,omitempty" jsonschema:"names of the snippets to attach (see list_snippets); [] detaches all, leaving it out keeps the stored ones"`
 }
 
 // overlay writes the fields the client set over v.
@@ -116,6 +118,9 @@ func (a siteArgs) overlay(v url.Values) {
 	str("record_ip6", a.RecordIPv6)
 	flag("enabled", a.Enabled)
 	flag("tls_skip_verify", a.TLSSkipVerify)
+	if a.Snippets != nil {
+		v["snippets"] = *a.Snippets
+	}
 }
 
 // formOf is the form the UI would post to save cur unchanged: update_site overlays the client's fields on it, so
@@ -133,6 +138,7 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v.Set("build_command", cur.BuildCommand)
 	v.Set("fpm_version", cur.FPMVersion)
 	v["php_ext"] = strings.Fields(cur.PHPExtensions)
+	v["snippets"] = cur.Snippets
 	v.Set("php_health_path", cur.PHPHealthPath)
 	v.Set("allowlist", cur.Allowlist)
 	v.Set("gate_mode", cur.GateMode)
@@ -194,12 +200,13 @@ type siteView struct {
 	Allowlist    string   `json:"allowlist,omitempty"`
 	GateMode     string   `json:"gate_mode,omitempty"`
 	BasicAuth    bool     `json:"basic_auth"`
+	Snippets     []string `json:"snippets,omitempty"`
 }
 
 // viewOf drops every secret: the basic-auth hash never leaves the process.
 func viewOf(x store.Site) siteView {
 	v := siteView{ID: x.ID, Slug: x.Slug, Kind: x.Kind, Hostnames: x.Hostnames, Enabled: x.Enabled, StaticRoot: x.StaticRoot,
-		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != ""}
+		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets}
 	switch {
 	case x.UpstreamPort != 0:
 		v.Upstream = net.JoinHostPort(x.UpstreamHost, strconv.Itoa(x.UpstreamPort))
@@ -207,6 +214,12 @@ func viewOf(x store.Site) siteView {
 		v.Upstream = x.UpstreamHost
 	}
 	return v
+}
+
+type snippetView struct {
+	Name   string   `json:"name"`
+	Body   string   `json:"body"`
+	UsedBy []string `json:"used_by,omitempty"`
 }
 
 type (
@@ -372,6 +385,64 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 			}
 			warn, err := s.mcpRun(ctx, ip, s.deleteSite, "DELETE", target, in.ID, nil)
 			return nil, changed{ID: in.ID, Hostnames: x.Hostnames, Warnings: warn}, err
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_snippets", Description: "Caddyfile snippets sites can attach (update_site snippets): name, directives and the sites using each.", Annotations: ro},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, struct {
+			Snippets []snippetView `json:"snippets"`
+		}, error) {
+			var out struct {
+				Snippets []snippetView `json:"snippets"`
+			}
+			all, err := s.deps.Store.ListSnippets(ctx)
+			for _, x := range all {
+				users, uerr := s.deps.Store.SnippetUsers(ctx, x.ID)
+				err = errors.Join(err, uerr)
+				out.Snippets = append(out.Snippets, snippetView{Name: x.Name, Body: x.Body, UsedBy: users})
+			}
+			return nil, out, err
+		})
+
+	// snippet runs a snippet handler for the named snippet (create passes id 0).
+	snippet := func(ctx context.Context, h http.HandlerFunc, method, name, body string) error {
+		var id int64
+		if method != "POST" {
+			all, err := s.deps.Store.ListSnippets(ctx)
+			if err != nil {
+				return err
+			}
+			for _, x := range all {
+				if x.Name == name {
+					id = x.ID
+				}
+			}
+			if id == 0 {
+				return fmt.Errorf("snippet %q not found", name)
+			}
+		}
+		_, err := s.mcpRun(ctx, ip, h, method, "/snippets", id, url.Values{"name": {name}, "body": {body}})
+		return err
+	}
+	type snippetArgs struct {
+		Name string `json:"name" jsonschema:"lowercase letters, digits, _ and -"`
+		Body string `json:"body" jsonschema:"Caddyfile directives: named matchers with respond, error, redir, header, request_header, request_body, encode"`
+	}
+	type snippetDone struct {
+		Name string `json:"name"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "create_snippet", Description: "Add a snippet. Directives that serve, proxy or authenticate are refused."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in snippetArgs) (*mcp.CallToolResult, snippetDone, error) {
+			return nil, snippetDone{in.Name}, snippet(ctx, s.addSnippet, "POST", in.Name, in.Body)
+		})
+	mcp.AddTool(srv, &mcp.Tool{Name: "update_snippet", Description: "Replace a snippet's directives; every site that uses it picks the change up at once."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in snippetArgs) (*mcp.CallToolResult, snippetDone, error) {
+			return nil, snippetDone{in.Name}, snippet(ctx, s.updateSnippet, "PUT", in.Name, in.Body)
+		})
+	mcp.AddTool(srv, &mcp.Tool{Name: "delete_snippet", Description: "Delete a snippet that no site uses."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			Name string `json:"name"`
+		}) (*mcp.CallToolResult, snippetDone, error) {
+			return nil, snippetDone{in.Name}, snippet(ctx, s.deleteSnippet, "DELETE", in.Name, "")
 		})
 	return srv
 }

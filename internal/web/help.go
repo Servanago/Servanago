@@ -44,6 +44,8 @@ var hints = map[string]string{
 	"skip_verify":     "Only for apps that use https with a self-signed certificate. Turns off checking that certificate. Fine on a trusted home network.",
 	"stream":          "Sends the app's answer to the visitor as it arrives instead of in chunks. Turn on for live streams, event feeds and terminals that seem to freeze or lag. Websockets work without it.",
 	"max_body":        "The biggest upload this site accepts, such as 2GB or 512MB (up to 100GB). Larger uploads get error 413. Leave empty for no limit.",
+	"snippets":        "Caddyfile snippets from the Snippets page that apply to this site, in name order. They run after the access checks and before the site itself. Paths under /.well-known/ are never touched by a snippet.",
+	"snippet_rules":   "Allowed: named matchers with respond, error, redir, header, request_header, request_body and encode. Anything that serves, proxies or authenticates is refused. Paths under /.well-known/ always bypass snippets. Snippets of a site run in name order, after its access checks and before the site itself.",
 	"extra_routes":    "Sends certain paths of this site to a different app. One per line in the form path=dial, such as /cryptpad_websocket=127.0.0.1:3303 (dial is also an absolute socket path such as /run/api.sock). The path matches itself and everything below it. Any access control still applies first.",
 	"record_ip":       "Leave blank to use the domain's default IP. Set it only if this one site's DNS record must point at a different server.",
 	"record_ip6":      "Leave blank to use the domain's default IPv6 address (or none). Set it only if this one site's AAAA record must point at a different server.",

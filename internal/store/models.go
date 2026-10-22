@@ -36,15 +36,16 @@ type Site struct {
 	RecordIP6      string // IPv6 override for this site's AAAA record; "" = domain default
 	Allowlist      string // newline-separated CIDRs
 	BasicUser      string
-	BasicHash      string // bcrypt
-	Stream         bool   // no response buffering (flush_interval -1)
-	MaxBody        int64  // request body limit in bytes; 0 = Caddy default
-	GateMode       string // "" | acl | open: the magic-link gate (gate.go)
-	ExtraRoutes    string // one route per line, path=dial (internal/config.ParseExtraRoutes): Caddy proxies each path to its own upstream before the site's main handler
-	PHPExtensions  string // php: space-separated shared extensions from the allowlist; "" = the core set
-	PHPHealthPath  string // php: path requested after a PHP switch; "" = only check that the unit stays up
-	SiteUser       string // node, php, frankenphp, cgi, static: the Unix user it runs as (one site per user); "" = the generated sg-<slug>
-	PublicDir      string // php, frankenphp, fastcgi, static: the served folder inside StaticRoot; "" = StaticRoot itself
+	BasicHash      string   // bcrypt
+	Stream         bool     // no response buffering (flush_interval -1)
+	MaxBody        int64    // request body limit in bytes; 0 = Caddy default
+	GateMode       string   // "" | acl | open: the magic-link gate (gate.go)
+	ExtraRoutes    string   // one route per line, path=dial (internal/config.ParseExtraRoutes): Caddy proxies each path to its own upstream before the site's main handler
+	PHPExtensions  string   // php: space-separated shared extensions from the allowlist; "" = the core set
+	PHPHealthPath  string   // php: path requested after a PHP switch; "" = only check that the unit stays up
+	SiteUser       string   // node, php, frankenphp, cgi, static: the Unix user it runs as (one site per user); "" = the generated sg-<slug>
+	PublicDir      string   // php, frankenphp, fastcgi, static: the served folder inside StaticRoot; "" = StaticRoot itself
+	Snippets       []string // attached snippet names, sorted; ListSites and GetSite fill it, Create and UpdateSite save it
 }
 
 // WebRoot is the folder Caddy or the app serves: StaticRoot, or its public folder.
@@ -183,7 +184,10 @@ func (s *Store) CreateSite(ctx context.Context, r Site) (Site, error) {
 			return fmt.Errorf("create site %s: %w", r.Hostnames[0], err)
 		}
 		id, _ = res.LastInsertId()
-		return tx.setHostnames(ctx, id, r.Hostnames)
+		if err := tx.setHostnames(ctx, id, r.Hostnames); err != nil {
+			return err
+		}
+		return tx.setSnippets(ctx, id, r.Snippets)
 	})
 	if err != nil {
 		return Site{}, err
@@ -201,12 +205,21 @@ func (s *Store) GetSite(ctx context.Context, id int64) (Site, error) {
 		return Site{}, err
 	}
 	r.Hostnames = hs[id]
+	sn, err := s.siteSnippets(ctx)
+	if err != nil {
+		return Site{}, err
+	}
+	r.Snippets = sn[id]
 	return r, nil
 }
 
 // ListSites returns all sites ordered by primary hostname.
 func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 	hs, err := s.hostnames(ctx)
+	if err != nil {
+		return nil, err
+	}
+	sn, err := s.siteSnippets(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -223,6 +236,7 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 			return nil, err
 		}
 		r.Hostnames = hs[r.ID]
+		r.Snippets = sn[r.ID]
 		out = append(out, r)
 	}
 	return out, rows.Err()
@@ -239,7 +253,10 @@ func (s *Store) UpdateSite(ctx context.Context, r Site) error {
 		if err != nil {
 			return fmt.Errorf("update site %d: %w", r.ID, err)
 		}
-		return tx.setHostnames(ctx, r.ID, r.Hostnames)
+		if err := tx.setHostnames(ctx, r.ID, r.Hostnames); err != nil {
+			return err
+		}
+		return tx.setSnippets(ctx, r.ID, r.Snippets)
 	})
 }
 

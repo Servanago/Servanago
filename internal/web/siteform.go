@@ -252,6 +252,7 @@ func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (st
 	if r.ExtraRoutes, err = extraRoutesText(v.Get("extra_routes")); err != nil {
 		return r, err
 	}
+	r.Snippets = v["snippets"] // the store rejects a name that does not exist
 	if pub := strings.TrimSpace(v.Get("public_dir")); pub != "" {
 		switch r.Kind {
 		case "php", "frankenphp", "fastcgi", "static":
@@ -389,7 +390,7 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	base.InstallCommand, base.BuildCommand = in.InstallCommand, in.BuildCommand
 	base.TLSSkipVerify, base.Enabled, base.RecordIP, base.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
 	base.FPMVersion, base.PHPExtensions, base.PHPHealthPath = in.FPMVersion, in.PHPExtensions, in.PHPHealthPath
-	base.ExtraRoutes = in.ExtraRoutes
+	base.ExtraRoutes, base.Snippets = in.ExtraRoutes, in.Snippets
 	base.SiteUser, base.PublicDir = in.SiteUser, in.PublicDir
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
@@ -628,8 +629,14 @@ type siteEditForm struct {
 	Node        runtimes.NodeReport
 	Franken     runtimes.FrankenReport
 	FCGIWrap    runtimes.FCGIWrapReport
-	Unit        *unitPanel // node and php sites: state and journal tail; nil otherwise
-	UserOffer   bool       // a new site and the helper answers: offer to run it as a user
+	Unit        *unitPanel   // node and php sites: state and journal tail; nil otherwise
+	UserOffer   bool         // a new site and the helper answers: offer to run it as a user
+	Snippets    []snippetOpt // every snippet and whether this site has it attached
+}
+
+type snippetOpt struct {
+	Name string
+	On   bool
 }
 
 // helperUp reports whether the privileged helper answers; a site's own user needs it.
@@ -684,6 +691,11 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 		form.Site.Kind = "proxy"
 	}
 	form.UserOffer = !edit && s.helperUp(r.Context())
+	if all, err := s.deps.Store.ListSnippets(r.Context()); err == nil {
+		for _, x := range all {
+			form.Snippets = append(form.Snippets, snippetOpt{x.Name, slices.Contains(rt.Snippets, x.Name)})
+		}
+	}
 	if edit {
 		title = "Edit " + rt.Hostnames[0]
 		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {

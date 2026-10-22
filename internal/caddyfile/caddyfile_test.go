@@ -63,19 +63,23 @@ dock.example.com {
 	reverse_proxy http://host.docker.internal:1111
 }
 `
-	sites, skipped := Parse(strings.NewReader(src))
+	sites, snippets, skipped := Parse(strings.NewReader(src))
 
+	cf := []string{"cloudflare"}
 	want := []Site{
-		{Hostname: "plain.example.com", Scheme: "http", Host: "192.168.25.165", Port: 8766},
+		{Hostname: "plain.example.com", Scheme: "http", Host: "192.168.25.165", Port: 8766, Imports: cf},
 		{Hostname: "secure.example.com", Scheme: "https", Host: "192.168.25.226", Port: 443, SkipVerify: true,
-			Dropped: []string{"header_up", "log"}},
-		{Hostname: "stream.example.com", Scheme: "http", Host: "192.168.25.165", Port: 8788, Stream: true, MaxBody: "2GB"},
+			Dropped: []string{"header_up", "log"}, Imports: cf},
+		{Hostname: "stream.example.com", Scheme: "http", Host: "192.168.25.165", Port: 8788, Stream: true, MaxBody: "2GB", Imports: cf},
 		{Hostname: "timed.example.com", Scheme: "http", Host: "192.168.25.165", Port: 1, MaxBody: "1GB",
 			Dropped: []string{"flush_interval", "request_body"}},
-		{Hostname: "dock.example.com", Scheme: "http", Host: "host.docker.internal", Port: 1111},
+		{Hostname: "dock.example.com", Scheme: "http", Host: "host.docker.internal", Port: 1111, Imports: cf},
 	}
 	if !reflect.DeepEqual(sites, want) {
 		t.Errorf("sites:\n got %+v\nwant %+v", sites, want)
+	}
+	if len(snippets) != 1 || snippets[0].Name != "cloudflare" || snippets[0].Body != "tls {\ndns cloudflare {$TOKEN}\n}" {
+		t.Errorf("snippets = %+v", snippets)
 	}
 	if len(skipped) != 1 || skipped[0].Hostname != "php.example.com" || !strings.Contains(skipped[0].Reason, "php_fastcgi") {
 		t.Errorf("skipped = %+v, want php.example.com for php_fastcgi", skipped)

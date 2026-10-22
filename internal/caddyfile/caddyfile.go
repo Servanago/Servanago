@@ -22,30 +22,53 @@ type Site struct {
 	Stream     bool     // flush_interval -1
 	MaxBody    string   // request_body max_size, as written ("2GB")
 	Dropped    []string // directives ServanaGo has no equivalent for
+	Imports    []string // names of the snippets the block imports, in order
 }
+
+// Snippet is a "(name) { ... }" block with its body kept as written (one trimmed line per line, no braces).
+type Snippet struct{ Name, Body string }
 
 // Skipped is a site block ServanaGo cannot model at all.
 type Skipped struct{ Hostname, Reason string }
 
-// Parse returns the importable sites and the blocks it had to skip. Snippets "(name) {" are ignored.
-func Parse(r io.Reader) ([]Site, []Skipped) {
+// Parse returns the importable sites, the snippets it found and the blocks it had to skip. Snippet bodies are not
+// interpreted here; the importer validates them.
+func Parse(r io.Reader) ([]Site, []Snippet, []Skipped) {
 	var (
-		sites   []Site
-		skipped []Skipped
-		cur     *Site
-		name    string
-		other   []string // directives that make a block unmodelable
-		bad     string
-		depth   int
-		inProxy bool
-		inBody  bool // inside request_body, which may come before or after reverse_proxy
-		maxBody string
-		drops   []string // directives with no ServanaGo equivalent, in order
+		sites    []Site
+		snippets []Snippet
+		snipName string   // inside a snippet: its name
+		snipBody []string // and the lines so far
+		imports  []string
+		skipped  []Skipped
+		cur      *Site
+		name     string
+		other    []string // directives that make a block unmodelable
+		bad      string
+		depth    int
+		inProxy  bool
+		inBody   bool // inside request_body, which may come before or after reverse_proxy
+		maxBody  string
+		drops    []string // directives with no ServanaGo equivalent, in order
 	)
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
 		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if snipName != "" { // capture the body by brace depth: a line ending "{" opens, a lone "}" closes
+			switch {
+			case line == "}" && depth == 1:
+				snippets = append(snippets, Snippet{snipName, strings.Join(snipBody, "\n")})
+				snipName, snipBody, depth = "", nil, 0
+				continue
+			case line == "}":
+				depth--
+			case strings.HasSuffix(line, "{"):
+				depth++
+			}
+			snipBody = append(snipBody, line)
 			continue
 		}
 		if line == "}" {
@@ -60,10 +83,10 @@ func Parse(r io.Reader) ([]Site, []Skipped) {
 				case cur == nil:
 					skipped = append(skipped, Skipped{name, "no reverse_proxy (has: " + strings.Join(other, ", ") + ")"})
 				default:
-					cur.MaxBody, cur.Dropped = maxBody, drops
+					cur.MaxBody, cur.Dropped, cur.Imports = maxBody, drops, imports
 					sites = append(sites, *cur)
 				}
-				name, cur, other, bad, maxBody, drops = "", nil, nil, "", "", nil
+				name, cur, other, bad, maxBody, drops, imports = "", nil, nil, "", "", nil, nil
 			}
 			continue
 		}
@@ -71,12 +94,19 @@ func Parse(r io.Reader) ([]Site, []Skipped) {
 		fields := strings.Fields(strings.TrimSuffix(line, "{"))
 		switch {
 		case depth == 0 && opens:
-			if !strings.HasPrefix(fields[0], "(") && len(fields) == 1 {
+			switch {
+			case strings.HasPrefix(fields[0], "(") && strings.HasSuffix(fields[0], ")") && len(fields) == 1:
+				snipName = strings.Trim(fields[0], "()")
+			case len(fields) == 1:
 				name = fields[0]
 			}
 		case depth == 1 && name != "":
 			switch fields[0] {
-			case "import", "encode":
+			case "import":
+				if len(fields) == 2 {
+					imports = append(imports, fields[1])
+				}
+			case "encode":
 			case "reverse_proxy":
 				if cur != nil {
 					bad = "more than one reverse_proxy"
@@ -113,7 +143,7 @@ func Parse(r io.Reader) ([]Site, []Skipped) {
 			depth++
 		}
 	}
-	return sites, skipped
+	return sites, snippets, skipped
 }
 
 func upstream(hostname string, args []string) (Site, error) {

@@ -166,6 +166,10 @@
 </details>
 <label>Extra routes (one per line, path=dial) <textarea name="extra_routes" rows="3" placeholder="/cryptpad_websocket=127.0.0.1:3303" aria-describedby="hint-extra_routes">{{.Site.ExtraRoutes}}</textarea></label>
 {{hintid "extra_routes"}}
+{{if .Snippets}}<fieldset aria-describedby="hint-snippets"><legend>Snippets</legend>
+{{range .Snippets}}<label><input type="checkbox" name="snippets" value="{{.Name}}"{{if .On}} checked{{end}}> {{.Name}}</label>
+{{end}}</fieldset>
+{{hintid "snippets"}}{{end}}
 <label><input type="checkbox" name="enabled"{{if .Site.Enabled}} checked{{end}} aria-describedby="hint-enabled"> Enabled</label>
 {{hintid "enabled"}}
 <p id="preview" class="preview" aria-live="polite" data-server-ip="{{.ServerIP}}" data-dns="{{if .DNSOn}}1{{end}}"></p>

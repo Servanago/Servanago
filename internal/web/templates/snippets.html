@@ -1,0 +1,34 @@
+{{define "content"}}
+<h1>Snippets</h1>
+{{$rows := .Data}}
+<p>A snippet is a few Caddyfile directives you attach to sites on the site's edit page, such as <code>encode gzip zstd</code>. {{hint "snippet_rules"}}</p>
+<article>
+{{if $rows}}
+<table>
+<thead><tr><th>Name</th><th>Used by</th><th></th></tr></thead>
+<tbody>
+{{range $rows}}
+<tr>
+<td><code>{{.Name}}</code></td><td>{{if .Users}}{{range $i, $u := .Users}}{{if $i}}, {{end}}{{$u}}{{end}}{{else}}no site{{end}}</td>
+<td><details class="edit-snippet"><summary>Edit</summary>
+<form hx-put="/snippets/{{.ID}}" hx-target="#msg">
+<label>Directives <textarea name="body" rows="8" spellcheck="false" required>{{.Body}}</textarea></label>
+<button type="submit">Save</button>
+</form></details>
+<button class="outline danger" hx-delete="/snippets/{{.ID}}" hx-target="#msg" hx-confirm="Remove {{.Name}}?">Remove</button></td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p>No snippets yet. Add one below.</p>{{end}}
+<p id="msg" role="alert"></p>
+</article>
+<article>
+<header>Add snippet</header>
+<form hx-post="/snippets" hx-target="#msg">
+<label>Name <input name="name" placeholder="block_sensitive" required autocomplete="off"></label>
+<label>Directives <textarea name="body" rows="8" spellcheck="false" placeholder="encode gzip zstd" required></textarea></label>
+<button type="submit">Add snippet</button>
+</form>
+</article>
+{{end}}

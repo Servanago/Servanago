@@ -1,8 +1,12 @@
 package caddycfg
 
 import (
+	"context"
+	"crypto/tls"
 	"net"
+	"net/http"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
@@ -63,4 +67,60 @@ func TestExtraRoutesServe(t *testing.T) {
 	if status != 200 || body != "ws" {
 		t.Fatalf("GET /cryptpad_websocket/other = %d %q; want 200 ws", status, body)
 	}
+}
+
+// TestSnippetsServe: block_sensitive answers 404 for dotfiles and lockfiles, /.well-known/ bypasses snippets,
+// and the encode snippet compresses what passes.
+func TestSnippetsServe(t *testing.T) {
+	storage := caddytest.TempDir(t)
+	caddytest.Cleanup(t)
+	t.Cleanup(func() { _ = caddy.Stop() })
+	up := caddytest.Upstream(t, strings.Repeat("hello ", 200))
+	_, upPort, _ := net.SplitHostPort(up)
+	n, _ := strconv.Atoi(upPort)
+	site := store.Site{ID: 2, Hostnames: []string{"snip.test"}, Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: n, Enabled: true,
+		Snippets: []string{"block_sensitive", "compress"}}
+	o := snipOpts()
+	o.Issuer = Internal
+	o.HTTPPort, o.HTTPSPort = caddytest.FreePort(t), caddytest.FreePort(t)
+	o.StoragePath = storage
+	b, err := Render(State{[]store.Domain{}, []store.Site{site}}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caddy.Load(b, false); err != nil {
+		t.Fatalf("caddy rejected the config: %v", err)
+	}
+	for path, want := range map[string]int{
+		"/": 200, "/index.html": 200, "/.env": 404, "/.git/config": 404, "/composer.lock": 404, "/go.sum": 404,
+		"/.well-known/security.txt": 200, "/sub/composer.lock": 200, // snippet paths are anchored at the root
+	} {
+		if status, _ := caddytest.GetPath(t, o.HTTPSPort, "snip.test", path); status != want {
+			t.Errorf("GET %s = %d; want %d", path, status, want)
+		}
+	}
+	for path, want := range map[string]string{"/": "zstd", "/.well-known/security.txt": ""} {
+		if got := encodingOf(t, o.HTTPSPort, "snip.test", path); got != want {
+			t.Errorf("GET %s Content-Encoding = %q; want %q", path, got, want)
+		}
+	}
+}
+
+// encodingOf requests path asking for zstd and returns the Content-Encoding the server chose.
+func encodingOf(t *testing.T, httpsPort int, host, path string) string {
+	t.Helper()
+	c := &http.Client{Transport: &http.Transport{
+		TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: host},
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", strconv.Itoa(httpsPort)))
+		},
+	}}
+	req, _ := http.NewRequest(http.MethodGet, "https://"+host+path, nil)
+	req.Header.Set("Accept-Encoding", "zstd")
+	resp, err := c.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	return resp.Header.Get("Content-Encoding")
 }

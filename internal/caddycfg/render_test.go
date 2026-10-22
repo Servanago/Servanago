@@ -30,6 +30,13 @@ var (
 
 func with(r store.Site, f func(*store.Site)) store.Site { f(&r); return r }
 
+// snipOpts is opts() plus the two snippets the snippet tests attach.
+func snipOpts() Options {
+	o := opts()
+	o.Snippets = []store.Snippet{{ID: 1, Name: "block_sensitive", Body: blockSensitive}, {ID: 2, Name: "compress", Body: "encode gzip zstd"}}
+	return o
+}
+
 // asStatic turns a proxy site into a static one serving root.
 func asStatic(r store.Site, root string) store.Site {
 	r.Kind, r.StaticRoot, r.Scheme, r.UpstreamHost, r.UpstreamPort = "static", root, "", "", 0
@@ -94,6 +101,11 @@ func TestRenderGolden(t *testing.T) {
 		{"http01_bootstrap", http01, State{}},
 		{"http01_wildcard_domain", http01, State{[]store.Domain{dom}, []store.Site{site, with(site, func(r *store.Site) { r.ID, r.Hostnames = 2, []string{"radarr.example.com"} }), with(site, func(r *store.Site) { r.ID, r.Hostnames, r.Enabled = 3, []string{"off.example.com"}, false })}}},
 		{"http01_per_host_domain", http01, State{[]store.Domain{perHost}, []store.Site{site}}},
+		// Snippets run after the access chain and before the handler, except under /.well-known/.
+		{"snippets_proxy", snipOpts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.Snippets = []string{"block_sensitive", "compress"} })}}},
+		{"snippets_static_gate_basic", snipOpts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/srv/www/blog"), func(r *store.Site) {
+			r.GateMode, r.BasicUser, r.BasicHash, r.Snippets = "acl", "u", "$2a$14$abc", []string{"compress"}
+		})}}},
 		{"banking_homelab", opts(), State{[]store.Domain{dom}, []store.Site{{ID: 1, Hostnames: []string{"banking.example.com"}, Scheme: "http", UpstreamHost: "192.168.25.165", UpstreamPort: 8766, Enabled: true}}}},
 		{"gate_acl", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "acl" })}}},
 		{"gate_open", opts(), State{[]store.Domain{dom}, []store.Site{with(site, func(r *store.Site) { r.GateMode = "open" })}}},
