@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type Domain struct {
@@ -46,7 +47,11 @@ type Site struct {
 	SiteUser       string   // node, php, frankenphp, cgi, static: the Unix user it runs as (one site per user); "" = the generated sg-<slug>
 	PublicDir      string   // php, frankenphp, fastcgi, static: the served folder inside StaticRoot; "" = StaticRoot itself
 	Snippets       []string // attached snippet names, sorted; ListSites and GetSite fill it, Create and UpdateSite save it
+	Notes          string   // admin notes for the Reference page, at most 10,000 characters
+	UpdatedAt      string   // RFC3339 UTC time of the last save; set by CreateSite and UpdateSite, never by the caller
 }
+
+func nowUTC() string { return time.Now().UTC().Format(time.RFC3339) }
 
 // WebRoot is the folder Caddy or the app serves: StaticRoot, or its public folder.
 func (s Site) WebRoot() string {
@@ -147,13 +152,13 @@ func (s *Store) DeleteDomain(ctx context.Context, id int64) error {
 
 const siteCols = "id, slug, kind, scheme, COALESCE(upstream_host,''), COALESCE(upstream_port,0), COALESCE(static_root,''), " +
 	"start_command, install_command, build_command, fpm_version, tls_skip_verify, enabled, " +
-	"COALESCE(record_ip,''), COALESCE(record_ip6,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), stream, max_body, gate_mode, extra_routes, php_extensions, php_health_path, site_user, public_dir"
+	"COALESCE(record_ip,''), COALESCE(record_ip6,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), stream, max_body, gate_mode, extra_routes, php_extensions, php_health_path, site_user, public_dir, notes, updated_at"
 
 func scanSite(r interface{ Scan(...any) error }) (Site, error) {
 	var x Site
 	err := r.Scan(&x.ID, &x.Slug, &x.Kind, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.StaticRoot, &x.StartCommand,
 		&x.InstallCommand, &x.BuildCommand, &x.FPMVersion, &x.TLSSkipVerify, &x.Enabled, &x.RecordIP, &x.RecordIP6,
-		&x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode, &x.ExtraRoutes, &x.PHPExtensions, &x.PHPHealthPath, &x.SiteUser, &x.PublicDir)
+		&x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode, &x.ExtraRoutes, &x.PHPExtensions, &x.PHPHealthPath, &x.SiteUser, &x.PublicDir, &x.Notes, &x.UpdatedAt)
 	return x, err
 }
 
@@ -175,11 +180,11 @@ func (s *Store) CreateSite(ctx context.Context, r Site) (Site, error) {
 			r.Scheme = "http"
 		}
 		res, err := tx.q.ExecContext(ctx, `INSERT INTO sites (slug, kind, scheme, upstream_host, upstream_port, static_root,
-			start_command, install_command, build_command, fpm_version, tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode, extra_routes, php_extensions, php_health_path, site_user, public_dir)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			start_command, install_command, build_command, fpm_version, tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode, extra_routes, php_extensions, php_health_path, site_user, public_dir, notes, updated_at)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			slug, r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot),
 			r.StartCommand, r.InstallCommand, r.BuildCommand, r.FPMVersion, r.TLSSkipVerify, r.Enabled,
-			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ExtraRoutes, r.PHPExtensions, r.PHPHealthPath, r.SiteUser, r.PublicDir)
+			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ExtraRoutes, r.PHPExtensions, r.PHPHealthPath, r.SiteUser, r.PublicDir, r.Notes, nowUTC())
 		if err != nil {
 			return fmt.Errorf("create site %s: %w", r.Hostnames[0], err)
 		}
@@ -246,10 +251,10 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 func (s *Store) UpdateSite(ctx context.Context, r Site) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		_, err := tx.q.ExecContext(ctx, `UPDATE sites SET kind=?, scheme=?, upstream_host=?, upstream_port=?, static_root=?,
-			start_command=?, install_command=?, build_command=?, fpm_version=?, tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=?, extra_routes=?, php_extensions=?, php_health_path=?, site_user=?, public_dir=? WHERE id=?`,
+			start_command=?, install_command=?, build_command=?, fpm_version=?, tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=?, extra_routes=?, php_extensions=?, php_health_path=?, site_user=?, public_dir=?, notes=?, updated_at=? WHERE id=?`,
 			r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot),
 			r.StartCommand, r.InstallCommand, r.BuildCommand, r.FPMVersion, r.TLSSkipVerify, r.Enabled,
-			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ExtraRoutes, r.PHPExtensions, r.PHPHealthPath, r.SiteUser, r.PublicDir, r.ID)
+			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ExtraRoutes, r.PHPExtensions, r.PHPHealthPath, r.SiteUser, r.PublicDir, r.Notes, nowUTC(), r.ID)
 		if err != nil {
 			return fmt.Errorf("update site %d: %w", r.ID, err)
 		}

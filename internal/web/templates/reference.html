@@ -1,0 +1,67 @@
+{{define "content"}}
+<h1>Reference</h1>
+{{$d := .Data}}
+{{if $d.HelperDown}}<p class="explain" role="alert">Status unavailable: the ServanaGo helper is not answering, so supervised sites show as issues. Check <code>systemctl status servanago-helper</code>.</p>{{end}}
+{{if $d.Rows}}
+<section id="ref" class="view-cards">
+<div class="ref-controls">
+<label>Search <input type="search" id="ref-q" autocomplete="off" placeholder="hostname, slug or kind"></label>
+<label>Kind <select id="ref-kind"><option value="">All</option>{{range $d.Kinds}}<option>{{.}}</option>{{end}}</select></label>
+<label>Status <select id="ref-status"><option value="">All</option><option value="ok">ok</option><option value="issue">issue</option><option value="disabled">disabled</option></select></label>
+{{if $d.Users}}<label>Site user <select id="ref-user"><option value="">All</option>{{range $d.Users}}<option>{{.}}</option>{{end}}</select></label>{{end}}
+{{if $d.PHPs}}<label>PHP <select id="ref-php"><option value="">All</option>{{range $d.PHPs}}<option>{{.}}</option>{{end}}</select></label>{{end}}
+<label>Sort <select id="ref-sort"><option value="name">Name A-Z</option><option value="kind">Kind</option><option value="health">Problems first</option><option value="updated">Recently changed</option></select></label>
+<label><input type="checkbox" id="ref-issue"> Issues only</label>
+<label><input type="radio" name="ref-view" value="cards" checked> Cards</label>
+<label><input type="radio" name="ref-view" value="list"> List</label>
+<span id="ref-count" role="status">{{len $d.Rows}} of {{len $d.Rows}} sites</span>
+<button type="button" class="outline secondary" id="ref-clear">Clear</button>
+</div>
+<nav class="ref-az" aria-label="Sites">{{range $d.Rows}}<a href="#{{.Slug}}">{{.Host}}</a> {{end}}</nav>
+<div id="ref-list">
+{{range $d.Rows}}
+<article id="{{.Slug}}" class="site health-{{.Health}}" data-name="{{.Host}}" data-kind="{{.Kind}}" data-health="{{.Health}}" data-user="{{.SiteUser}}" data-php="{{.FPMVersion}}" data-updated="{{.UpdatedAt}}" data-filter="{{.Filter}}">
+<header class="ref-row">
+<a class="ref-name" href="/sites/{{.ID}}" aria-label="Edit {{.Host}}">{{.Host}}</a>
+<span class="ref-kind">{{.Kind}}</span>
+<span class="ref-health" data-health="{{.Health}}">{{.Health}}</span>
+<span class="ref-target">{{.Target}}</span>
+<span class="ref-user">{{.SiteUser}}</span>
+<span class="ref-php">{{.FPMVersion}}</span>
+<span class="ref-dns">{{if .DNSOn}}{{if .HasDNS}}{{.DNSState}}{{else}}pending{{end}}{{end}}</span>
+</header>
+<div class="ref-detail">
+<dl>
+<dt>Hostnames</dt><dd>{{range $i, $h := .Hostnames}}{{if $i}}, {{end}}{{$h}}{{end}}</dd>
+<dt>Slug</dt><dd><code>{{.Slug}}</code></dd>
+<dt>Status</dt><dd>{{.Health}}{{if .Issues}}: {{range $i, $x := .Issues}}{{if $i}}; {{end}}{{$x}}{{end}}{{end}}{{if .Unit}} (unit {{.Unit}}){{end}}</dd>
+{{if .RootErr}}<dt>Folder</dt><dd>{{.RootErr}}</dd>{{end}}
+<dt>Serves</dt><dd>{{.Target}}{{if .PublicDir}} <small>(public folder {{.PublicDir}})</small>{{end}}</dd>
+{{if .SiteUser}}<dt>Site user</dt><dd>{{.SiteUser}}</dd>{{end}}
+{{if .FPMVersion}}<dt>PHP</dt><dd>{{.FPMVersion}}{{if .PHPExtensions}}, {{.PHPExtensions}}{{end}}</dd>{{end}}
+{{if .StartCommand}}<dt>Start</dt><dd><code>{{.StartCommand}}</code></dd>{{end}}
+{{if .InstallCommand}}<dt>Install</dt><dd><code>{{.InstallCommand}}</code></dd>{{end}}
+{{if .BuildCommand}}<dt>Build</dt><dd><code>{{.BuildCommand}}</code></dd>{{end}}
+{{if .Snippets}}<dt>Snippets</dt><dd>{{range $i, $x := .Snippets}}{{if $i}}, {{end}}{{$x}}{{end}}</dd>{{end}}
+{{if .Allowlist}}<dt>Allowlist</dt><dd><pre>{{.Allowlist}}</pre></dd>{{end}}
+{{if .GateMode}}<dt>Gate</dt><dd>{{if eq .GateMode "open"}}magic link, any email{{else}}magic link, allowlist{{end}}</dd>{{end}}
+<dt>Basic auth</dt><dd>{{if .BasicUser}}on{{else}}off{{end}}</dd>
+{{if .ExtraRoutes}}<dt>Extra routes</dt><dd><pre>{{.ExtraRoutes}}</pre></dd>{{end}}
+{{if or .Stream .MaxBody}}<dt>Tuning</dt><dd>{{if .Stream}}streaming{{end}}{{if .MaxBody}} upload limit {{size .MaxBody}}{{end}}</dd>{{end}}
+{{if .Probed}}<dt>Certificate</dt><dd>{{.Cert.State}}{{if not .Cert.NotAfter.IsZero}}, expires {{.Cert.NotAfter.Format "2006-01-02"}}{{end}}</dd>{{end}}
+{{if .HasUpstream}}{{if .Upstream}}<dt>Upstream</dt><dd>{{.Upstream}}</dd>{{end}}{{end}}
+{{if .DNSOn}}<dt>DNS</dt><dd>{{if .HasDNS}}{{range $i, $r := .DNS}}{{if $i}}, {{end}}{{$r.Family}} {{$r.Content}} ({{$r.State}}){{end}}{{else}}pending{{end}}</dd>{{end}}
+<dt>Saved</dt><dd>{{.Updated}}</dd>
+</dl>
+{{if .Notes}}<h4>Notes</h4>
+{{if .NotesLong}}<details class="ref-notes"><summary>Show notes</summary><pre class="notes">{{.Notes}}</pre></details>{{else}}<pre class="notes">{{.Notes}}</pre>{{end}}{{end}}
+<p><a href="/sites/{{.ID}}">Edit {{.Host}}</a></p>
+</div>
+</article>
+{{end}}
+</div>
+<p id="ref-empty" hidden>No site matches.</p>
+</section>
+<script src="/static/reference.js" defer></script>
+{{else}}<p>No sites yet. <a href="/sites/new">Add one.</a></p>{{end}}
+{{end}}

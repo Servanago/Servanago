@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
@@ -24,6 +25,8 @@ import (
 	"github.com/servanago/servanago/internal/runtimes"
 	"github.com/servanago/servanago/internal/store"
 )
+
+const maxNotes = 10000 // characters; the schema CHECK says the same
 
 var hostnameRE = regexp.MustCompile(`^[A-Za-z0-9]([A-Za-z0-9_.-]*[A-Za-z0-9])?$`)
 
@@ -253,6 +256,10 @@ func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (st
 		return r, err
 	}
 	r.Snippets = v["snippets"] // the store rejects a name that does not exist
+	r.Notes = strings.ReplaceAll(strings.TrimSpace(v.Get("notes")), "\r\n", "\n")
+	if utf8.RuneCountInString(r.Notes) > maxNotes {
+		return r, fmt.Errorf("notes: at most 10,000 characters")
+	}
 	if pub := strings.TrimSpace(v.Get("public_dir")); pub != "" {
 		switch r.Kind {
 		case "php", "frankenphp", "fastcgi", "static":
@@ -391,7 +398,7 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	base.TLSSkipVerify, base.Enabled, base.RecordIP, base.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
 	base.FPMVersion, base.PHPExtensions, base.PHPHealthPath = in.FPMVersion, in.PHPExtensions, in.PHPHealthPath
 	base.ExtraRoutes, base.Snippets = in.ExtraRoutes, in.Snippets
-	base.SiteUser, base.PublicDir = in.SiteUser, in.PublicDir
+	base.SiteUser, base.PublicDir, base.Notes = in.SiteUser, in.PublicDir, in.Notes
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
 	}

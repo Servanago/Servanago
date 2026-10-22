@@ -84,7 +84,7 @@ func (s *Server) takeFlashes() []string {
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "siteedit", "snippets", "logs", "help", "php"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "siteedit", "snippets", "logs", "help", "php", "reference"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -203,6 +203,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /domains", s.protected(s.addDomain))
 	mux.Handle("PUT /domains/{id}", s.protected(s.updateDomain))
 	mux.Handle("DELETE /domains/{id}", s.protected(s.deleteDomain))
+	mux.Handle("GET /reference", s.protected(s.referencePage))
 	mux.Handle("GET /snippets", s.protected(s.snippetsPage))
 	mux.Handle("POST /snippets", s.protected(s.addSnippet))
 	mux.Handle("PUT /snippets/{id}", s.protected(s.updateSnippet))

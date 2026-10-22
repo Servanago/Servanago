@@ -76,6 +76,7 @@ type siteArgs struct {
 	RecordIPv6    string    `json:"record_ip6,omitempty"`
 	TLSSkipVerify *bool     `json:"tls_skip_verify,omitempty" jsonschema:"proxy: skip verifying a self-signed https upstream"`
 	Snippets      *[]string `json:"snippets,omitempty" jsonschema:"names of the snippets to attach (see list_snippets); [] detaches all, leaving it out keeps the stored ones"`
+	Notes         *string   `json:"notes,omitempty" jsonschema:"admin notes shown on the Reference page, plain text, at most 10,000 characters; \"\" clears them, leaving it out keeps the stored ones"`
 }
 
 // overlay writes the fields the client set over v.
@@ -121,6 +122,9 @@ func (a siteArgs) overlay(v url.Values) {
 	if a.Snippets != nil {
 		v["snippets"] = *a.Snippets
 	}
+	if a.Notes != nil {
+		v.Set("notes", *a.Notes)
+	}
 }
 
 // formOf is the form the UI would post to save cur unchanged: update_site overlays the client's fields on it, so
@@ -140,6 +144,7 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v["php_ext"] = strings.Fields(cur.PHPExtensions)
 	v["snippets"] = cur.Snippets
 	v.Set("php_health_path", cur.PHPHealthPath)
+	v.Set("notes", cur.Notes)
 	v.Set("allowlist", cur.Allowlist)
 	v.Set("gate_mode", cur.GateMode)
 	v.Set("basic_user", cur.BasicUser)
@@ -201,12 +206,14 @@ type siteView struct {
 	GateMode     string   `json:"gate_mode,omitempty"`
 	BasicAuth    bool     `json:"basic_auth"`
 	Snippets     []string `json:"snippets,omitempty"`
+	Notes        string   `json:"notes,omitempty"`
+	UpdatedAt    string   `json:"updated_at,omitempty"`
 }
 
 // viewOf drops every secret: the basic-auth hash never leaves the process.
 func viewOf(x store.Site) siteView {
 	v := siteView{ID: x.ID, Slug: x.Slug, Kind: x.Kind, Hostnames: x.Hostnames, Enabled: x.Enabled, StaticRoot: x.StaticRoot,
-		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets}
+		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, UpdatedAt: x.UpdatedAt}
 	switch {
 	case x.UpstreamPort != 0:
 		v.Upstream = net.JoinHostPort(x.UpstreamHost, strconv.Itoa(x.UpstreamPort))

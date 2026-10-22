@@ -221,6 +221,31 @@ article[id] { scroll-margin-top: 1rem; }
 dt { font-weight: 600; margin-top: 0.8rem; }
 dd { margin-left: 0; color: var(--sg-text-secondary); }
 
+/* Reference page: one DOM, the view is a class on #ref. */
+.ref-controls { display: flex; flex-wrap: wrap; align-items: end; gap: 0.4rem 1rem; margin-bottom: 1rem; }
+.ref-controls label { margin: 0; }
+.ref-controls input[type="search"], .ref-controls select { margin-bottom: 0; }
+.ref-controls button { margin: 0; width: auto; }
+.ref-az { display: flex; flex-wrap: wrap; gap: 0.2rem 1rem; margin-bottom: 1rem; font-size: 0.9rem; }
+.site.health-disabled { opacity: 0.65; }
+.ref-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 1rem; }
+.ref-name { font-weight: 600; }
+.ref-health { padding: 0 0.5rem; border-radius: var(--sg-radius-md); font-size: 0.85rem; }
+.ref-health[data-health="ok"] { color: var(--sg-success); background: color-mix(in srgb, var(--sg-success) 12%, transparent); }
+.ref-health[data-health="issue"] { color: var(--sg-danger); background: color-mix(in srgb, var(--sg-danger) 12%, transparent); }
+.ref-health[data-health="disabled"] { color: var(--sg-text-muted); border: 1px solid var(--sg-border); }
+.ref-target, .ref-user, .ref-php, .ref-dns { color: var(--sg-text-secondary); font-size: 0.9rem; overflow-wrap: anywhere; }
+.view-cards .ref-user, .view-cards .ref-php, .view-cards .ref-dns { display: none; }
+.view-cards .site .ref-row { margin-bottom: 0.4rem; }
+pre.notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9rem; overflow: auto; }
+.ref-notes pre.notes { max-height: none; }
+.view-list .site { margin: 0; padding: 0.4rem 0.8rem; border-radius: 0; }
+.view-list .ref-row { display: grid; grid-template-columns: 2fr 0.8fr 0.8fr 2fr 1fr 0.6fr 0.8fr; cursor: pointer; }
+.view-list .ref-detail { display: none; padding: 0.5rem 0 0.2rem; }
+.view-list .site[data-open] .ref-detail { display: block; }
+.view-list .site:hover { background: var(--sg-surface-raised); }
+
+
 @media (max-width: 640px) {
   body > header nav { flex-wrap: wrap; }
   .wordmark { font-size: 1.05rem; }
