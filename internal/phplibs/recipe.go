@@ -78,6 +78,8 @@ func Recipe(r Resolved, prefix string, deps map[string]string, jobs int) []Cmd {
 		return c
 	case "oniguruma":
 		return std()
+	case "gmp":
+		return std("--disable-cxx")
 	case "sqlite":
 		// PHP's sqlite3 and pdo_sqlite use the column metadata API.
 		c := std()

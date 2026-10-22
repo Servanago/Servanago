@@ -118,7 +118,7 @@ func TestResolveRejects(t *testing.T) {
 // TestPinned: the three libraries without a feed sum resolve from the table, flagged as pinned, and nothing
 // else is flagged. A pinned entry is held to the same rules as a feed one.
 func TestPinned(t *testing.T) {
-	for _, n := range []string{"libpng", "freetype", "libwebp"} {
+	for _, n := range []string{"libpng", "freetype", "libwebp", "gmp"} {
 		r, err := Resolve(context.Background(), nil, n) // pinned entries touch no feed
 		if err != nil {
 			t.Fatalf("%s: %v", n, err)

@@ -25,6 +25,7 @@ func PHPConfigure(version, prefix string, deps map[string]string) (args, env []s
 		"--enable-gd=shared", "--with-jpeg", "--with-freetype", "--with-webp",
 		"--with-mysqli=shared,mysqlnd", "--with-pdo-mysql=shared,mysqlnd",
 		"--with-pgsql=shared", "--with-pdo-pgsql=shared",
+		"--enable-bcmath=shared", "--enable-soap=shared", "--with-gmp=shared," + deps["gmp"],
 	}
 	if (runtimes.Ext{Name: "opcache"}).Shared(runtimes.Branch(version)) { // 8.5 and later: always built in, the flag is gone
 		args = append(args, "--enable-opcache=shared")

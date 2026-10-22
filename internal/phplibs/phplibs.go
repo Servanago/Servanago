@@ -50,6 +50,11 @@ var pinned = map[string]Resolved{
 	// 1.5.0). Key ownership is not documented on a project page, so it is trusted on first use.
 	"libwebp": {Name: "libwebp", Version: "1.6.0", URL: "https://storage.googleapis.com/downloads.webmproject.org/releases/webp/libwebp-1.6.0.tar.gz", Algo: AlgoSHA256,
 		Sum: "e4ab7009bf0629fd11982d4c2aa83964cf244cffba7347ecd39019a9e38c4564", Pinned: true},
+	// gmp 6.3.0 (2023-07-29): tarball from ftp.gnu.org. GPG verified: good signature by Niels Möller
+	// <nisse@lysator.liu.se>, fingerprint 343C 2FF0 FBEE 5EC2 EDBE F399 F359 9FF8 28C6 7298 (key from
+	// keyserver.ubuntu.com; it has since expired, the signature predates that). No sha file is published.
+	"gmp": {Name: "gmp", Version: "6.3.0", URL: "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz", Algo: AlgoSHA256,
+		Sum: "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898", Pinned: true},
 }
 
 // Algo values: sha256 everywhere except sqlite, which publishes only SHA3-256 (stdlib crypto/sha3).
@@ -59,7 +64,7 @@ const (
 )
 
 // names is the build order: a library comes after the ones its recipe links against.
-var names = []string{"zlib", "openssl", "curl", "libxml2", "libpng", "libjpeg-turbo", "freetype", "libwebp", "imagemagick", "libzip", "icu", "oniguruma", "sqlite", "libpq"}
+var names = []string{"zlib", "openssl", "curl", "libxml2", "libpng", "libjpeg-turbo", "freetype", "libwebp", "imagemagick", "libzip", "icu", "oniguruma", "sqlite", "libpq", "gmp"}
 
 // Names returns the build order, dependencies first.
 func Names() []string { return append([]string(nil), names...) }
@@ -101,7 +106,7 @@ func Resolve(ctx context.Context, get Getter, name string) (Resolved, error) {
 		r, err = sqlite(ctx, get)
 	case "libpq":
 		r, err = postgres(ctx, get)
-	case "libpng", "freetype", "libwebp":
+	case "libpng", "freetype", "libwebp", "gmp":
 		r = pinned[name]
 	default:
 		return Resolved{}, fmt.Errorf("unknown library %q", name)

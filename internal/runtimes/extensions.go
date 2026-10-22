@@ -19,7 +19,8 @@ type Ext struct {
 var PHPExtensions = []Ext{
 	{"mbstring", "core", false}, {"opcache", "core", true}, {"sqlite3", "core", false}, {"pdo_sqlite", "core", false},
 	{"dom", "web", false}, {"simplexml", "web", false}, {"xml", "web", false}, {"xmlreader", "web", false}, {"xmlwriter", "web", false},
-	{"curl", "web", false}, {"zip", "web", false}, {"gd", "web", false}, {"intl", "web", false},
+	{"curl", "web", false}, {"zip", "web", false}, {"gd", "web", false}, {"intl", "web", false}, {"soap", "web", false},
+	{"bcmath", "core", false}, {"gmp", "core", false},
 	{"mysqli", "db", false}, {"pdo_mysql", "db", false}, {"pgsql", "db", false}, {"pdo_pgsql", "db", false},
 	{"apcu", "extra", false}, {"imagick", "extra", false}, // PECL packages (apcu/apcu, imagick/imagick), built from their Packagist source
 }

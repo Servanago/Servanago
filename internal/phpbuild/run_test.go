@@ -433,9 +433,9 @@ func TestBuildNeedsAPlan(t *testing.T) {
 }
 
 func TestPHPConfigure(t *testing.T) {
-	args, env := PHPConfigure("8.4.27", "/opt/servanago/php/8.4.27-1", map[string]string{"openssl": "/opt/servanago/php/libs/openssl-3.5.0"})
+	args, env := PHPConfigure("8.4.27", "/opt/servanago/php/8.4.27-1", map[string]string{"openssl": "/opt/servanago/php/libs/openssl-3.5.0", "gmp": "/opt/servanago/php/libs/gmp-6.3.0"})
 	got := strings.Join(args, " ")
-	for _, want := range []string{"--prefix=/opt/servanago/php/8.4.27-1", "--enable-fpm", "--disable-cgi", "--without-pear", "--with-openssl ", "--enable-opcache=shared",
+	for _, want := range []string{"--enable-bcmath=shared", "--enable-soap=shared", "--with-gmp=shared,/opt/servanago/php/libs/gmp-6.3.0", "--prefix=/opt/servanago/php/8.4.27-1", "--enable-fpm", "--disable-cgi", "--without-pear", "--with-openssl ", "--enable-opcache=shared",
 		"--enable-mbstring=shared", "--with-curl=shared", "--with-mysqli=shared,mysqlnd", "--with-pdo-pgsql=shared"} {
 		if !strings.Contains(got+" ", want) {
 			t.Errorf("configure missing %q:\n%s", want, got)
