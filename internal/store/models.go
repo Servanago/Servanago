@@ -43,6 +43,16 @@ type Site struct {
 	ExtraRoutes    string // one route per line, path=dial (internal/config.ParseExtraRoutes): Caddy proxies each path to its own upstream before the site's main handler
 	PHPExtensions  string // php: space-separated shared extensions from the allowlist; "" = the core set
 	PHPHealthPath  string // php: path requested after a PHP switch; "" = only check that the unit stays up
+	SiteUser       string // node, php, frankenphp, cgi, static: the Unix user it runs as (one site per user); "" = the generated sg-<slug>
+	PublicDir      string // php, frankenphp, fastcgi, static: the served folder inside StaticRoot; "" = StaticRoot itself
+}
+
+// WebRoot is the folder Caddy or the app serves: StaticRoot, or its public folder.
+func (s Site) WebRoot() string {
+	if s.PublicDir == "" {
+		return s.StaticRoot
+	}
+	return s.StaticRoot + "/" + s.PublicDir
 }
 
 // HasUpstream is true for kinds Caddy reaches over TCP (proxy, node, frankenphp): the ones whose upstream
@@ -51,9 +61,10 @@ func (s Site) HasUpstream() bool {
 	return s.Kind == "" || s.Kind == "proxy" || s.Kind == "node" || s.Kind == "frankenphp"
 }
 
-// IsRuntime is true for kinds ServanaGo supervises as a unit under a site user (node, php, frankenphp, cgi).
+// IsRuntime is true for kinds ServanaGo supervises as a unit under a site user (node, php, frankenphp, cgi), and
+// for a static site that has its own user (Caddy proxies to a unit that serves the folder as that user).
 func (s Site) IsRuntime() bool {
-	return s.Kind == "node" || s.Kind == "php" || s.Kind == "frankenphp" || s.Kind == "cgi"
+	return s.Kind == "node" || s.Kind == "php" || s.Kind == "frankenphp" || s.Kind == "cgi" || s.Kind == "static" && s.SiteUser != ""
 }
 
 // Record families: one DNS row per site (and one for the UI host) per family.
@@ -135,13 +146,13 @@ func (s *Store) DeleteDomain(ctx context.Context, id int64) error {
 
 const siteCols = "id, slug, kind, scheme, COALESCE(upstream_host,''), COALESCE(upstream_port,0), COALESCE(static_root,''), " +
 	"start_command, install_command, build_command, fpm_version, tls_skip_verify, enabled, " +
-	"COALESCE(record_ip,''), COALESCE(record_ip6,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), stream, max_body, gate_mode, extra_routes, php_extensions, php_health_path"
+	"COALESCE(record_ip,''), COALESCE(record_ip6,''), allowlist, COALESCE(basic_user,''), COALESCE(basic_hash,''), stream, max_body, gate_mode, extra_routes, php_extensions, php_health_path, site_user, public_dir"
 
 func scanSite(r interface{ Scan(...any) error }) (Site, error) {
 	var x Site
 	err := r.Scan(&x.ID, &x.Slug, &x.Kind, &x.Scheme, &x.UpstreamHost, &x.UpstreamPort, &x.StaticRoot, &x.StartCommand,
 		&x.InstallCommand, &x.BuildCommand, &x.FPMVersion, &x.TLSSkipVerify, &x.Enabled, &x.RecordIP, &x.RecordIP6,
-		&x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode, &x.ExtraRoutes, &x.PHPExtensions, &x.PHPHealthPath)
+		&x.Allowlist, &x.BasicUser, &x.BasicHash, &x.Stream, &x.MaxBody, &x.GateMode, &x.ExtraRoutes, &x.PHPExtensions, &x.PHPHealthPath, &x.SiteUser, &x.PublicDir)
 	return x, err
 }
 
@@ -163,11 +174,11 @@ func (s *Store) CreateSite(ctx context.Context, r Site) (Site, error) {
 			r.Scheme = "http"
 		}
 		res, err := tx.q.ExecContext(ctx, `INSERT INTO sites (slug, kind, scheme, upstream_host, upstream_port, static_root,
-			start_command, install_command, build_command, fpm_version, tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode, extra_routes, php_extensions, php_health_path)
-			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+			start_command, install_command, build_command, fpm_version, tls_skip_verify, enabled, record_ip, record_ip6, allowlist, basic_user, basic_hash, stream, max_body, gate_mode, extra_routes, php_extensions, php_health_path, site_user, public_dir)
+			VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 			slug, r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot),
 			r.StartCommand, r.InstallCommand, r.BuildCommand, r.FPMVersion, r.TLSSkipVerify, r.Enabled,
-			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ExtraRoutes, r.PHPExtensions, r.PHPHealthPath)
+			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ExtraRoutes, r.PHPExtensions, r.PHPHealthPath, r.SiteUser, r.PublicDir)
 		if err != nil {
 			return fmt.Errorf("create site %s: %w", r.Hostnames[0], err)
 		}
@@ -221,10 +232,10 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 func (s *Store) UpdateSite(ctx context.Context, r Site) error {
 	return s.Tx(ctx, func(tx *Store) error {
 		_, err := tx.q.ExecContext(ctx, `UPDATE sites SET kind=?, scheme=?, upstream_host=?, upstream_port=?, static_root=?,
-			start_command=?, install_command=?, build_command=?, fpm_version=?, tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=?, extra_routes=?, php_extensions=?, php_health_path=? WHERE id=?`,
+			start_command=?, install_command=?, build_command=?, fpm_version=?, tls_skip_verify=?, enabled=?, record_ip=?, record_ip6=?, allowlist=?, basic_user=?, basic_hash=?, stream=?, max_body=?, gate_mode=?, extra_routes=?, php_extensions=?, php_health_path=?, site_user=?, public_dir=? WHERE id=?`,
 			r.Kind, r.Scheme, nullStr(r.UpstreamHost), nullInt(r.UpstreamPort), nullStr(r.StaticRoot),
 			r.StartCommand, r.InstallCommand, r.BuildCommand, r.FPMVersion, r.TLSSkipVerify, r.Enabled,
-			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ExtraRoutes, r.PHPExtensions, r.PHPHealthPath, r.ID)
+			nullStr(r.RecordIP), nullStr(r.RecordIP6), r.Allowlist, nullStr(r.BasicUser), nullStr(r.BasicHash), r.Stream, r.MaxBody, r.GateMode, r.ExtraRoutes, r.PHPExtensions, r.PHPHealthPath, r.SiteUser, r.PublicDir, r.ID)
 		if err != nil {
 			return fmt.Errorf("update site %d: %w", r.ID, err)
 		}

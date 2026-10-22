@@ -188,21 +188,25 @@ func siteHandler(host string, r store.Site) (any, error) {
 		// file_server's own "hide" would also match dot-directories in the root's location.
 		routes := []any{dotfile404()}
 		routes = append(routes, extras...)
-		routes = append(routes, m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}})
+		if r.SiteUser != "" { // the site's own unit serves the folder as that user, over its socket
+			routes = append(routes, m{"handle": []any{m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": "unix//run/servanago/" + r.Slug + ".sock"}}}}})
+		} else {
+			routes = append(routes, m{"handle": []any{m{"handler": "file_server", "root": r.WebRoot()}}})
+		}
 		handlers = []any{m{"handler": "subroute", "routes": routes}}
 	case "php":
 		handlers = []any{phpRoute(r, extras)}
 	case "fastcgi": // every request goes to the FastCGI upstream; the script path is root + the request path
 		routes := []any{dotfile404()}
 		routes = append(routes, extras...)
-		routes = append(routes, m{"handle": []any{fastcgiProxy(fastcgiDial(r), r.StaticRoot)}})
+		routes = append(routes, m{"handle": []any{fastcgiProxy(fastcgiDial(r), r.WebRoot())}})
 		handlers = []any{m{"handler": "subroute", "routes": routes}}
 	case "cgi": // /cgi-bin/* runs through the site's own fcgiwrap; everything else is a plain file
 		routes := []any{dotfile404()}
 		routes = append(routes, extras...)
 		routes = append(routes,
-			m{"match": []any{m{"path": []any{"/cgi-bin/*"}}}, "handle": []any{fastcgiProxy("unix//run/servanago/"+r.Slug+".sock", r.StaticRoot)}, "terminal": true},
-			m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
+			m{"match": []any{m{"path": []any{"/cgi-bin/*"}}}, "handle": []any{fastcgiProxy("unix//run/servanago/"+r.Slug+".sock", r.WebRoot())}, "terminal": true},
+			m{"handle": []any{m{"handler": "file_server", "root": r.WebRoot()}}},
 		)
 		handlers = []any{m{"handler": "subroute", "routes": routes}}
 	default:
@@ -306,21 +310,22 @@ func phpRoute(r store.Site, extras []any) any {
 	proxy := m{
 		"handler":   "reverse_proxy",
 		"upstreams": []any{m{"dial": dial}},
-		"transport": m{"protocol": "fastcgi", "root": r.StaticRoot, "split_path": []any{".php"}},
+		"transport": m{"protocol": "fastcgi", "root": r.WebRoot(), "split_path": []any{".php"}},
 	}
+	root := r.WebRoot() // the file matchers look in their own root, which is Caddy's working directory when unset
 	routes := []any{dotfile404()}
 	routes = append(routes, extras...)
 	routes = append(routes,
 		m{
-			"match":  []any{m{"file": m{"try_files": []any{"{http.request.uri.path}/index.php"}}, "not": []any{m{"path": []any{"*/"}}}}},
+			"match":  []any{m{"file": m{"root": root, "try_files": []any{"{http.request.uri.path}/index.php"}}, "not": []any{m{"path": []any{"*/"}}}}},
 			"handle": []any{m{"handler": "static_response", "status_code": "308", "headers": m{"Location": []any{"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"}}}},
 		},
 		m{
-			"match":  []any{m{"file": m{"try_files": []any{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"}, "try_policy": "first_exist_fallback", "split_path": []any{".php"}}}},
+			"match":  []any{m{"file": m{"root": root, "try_files": []any{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"}, "try_policy": "first_exist_fallback", "split_path": []any{".php"}}}},
 			"handle": []any{m{"handler": "rewrite", "uri": "{http.matchers.file.relative}"}},
 		},
 		m{"match": []any{m{"path": []any{"*.php"}}}, "handle": []any{proxy}},
-		m{"handle": []any{m{"handler": "file_server", "root": r.StaticRoot}}},
+		m{"handle": []any{m{"handler": "file_server", "root": root}}},
 	)
 	return m{"handler": "subroute", "routes": routes}
 }

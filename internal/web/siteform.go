@@ -9,10 +9,13 @@ import (
 	"net/http"
 	"net/netip"
 	"net/url"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/servanago/servanago/internal/cfdns"
@@ -43,10 +46,99 @@ func parseHostnames(text string) ([]string, error) {
 	return out, nil
 }
 
+// userKinds are the kinds that can run as a named user.
+var userKinds = map[string]bool{"static": true, "node": true, "php": true, "frankenphp": true, "cgi": true}
+
+// userChoice is how the site's user was picked. It is not stored: only the user's name is.
+type userChoice struct {
+	Mode string // "" (the generated user), "existing", "create", or "fixed": an edit keeps the user the site has
+	User string
+	Home string // create only: the home to make
+}
+
+// parseUserChoice reads the user part of the form. An absent user_mode keeps the generated sg-<slug> user (and a
+// static site in Caddy), so old callers and MCP do not create users. A site keeps its user for life (fixed).
+func parseUserChoice(v url.Values, kind, host, fixed string) (userChoice, error) {
+	if fixed != "" {
+		if !userKinds[kind] {
+			return userChoice{}, fmt.Errorf("this site runs as the user %s; a %s site cannot, delete it and add the other kind", fixed, kind)
+		}
+		return userChoice{Mode: "fixed", User: fixed}, nil
+	}
+	mode := v.Get("user_mode")
+	switch mode {
+	case "", "generated":
+		return userChoice{}, nil
+	case "existing", "create":
+	default:
+		return userChoice{}, fmt.Errorf("user_mode %q must be generated, existing or create", mode)
+	}
+	if !userKinds[kind] {
+		return userChoice{}, nil
+	}
+	name := strings.TrimSpace(v.Get("site_user"))
+	if name == "" {
+		if mode == "existing" {
+			return userChoice{}, errors.New("user: type the name of the existing user")
+		}
+		var err error
+		if name, err = helper.DeriveUser(host); err != nil {
+			return userChoice{}, fmt.Errorf("user name from %s: %w; type a user name instead", host, err)
+		}
+	}
+	if err := helper.ValidateUser(name); err != nil {
+		return userChoice{}, err
+	}
+	uc := userChoice{Mode: mode, User: name}
+	if mode == "create" {
+		if uc.Home = strings.TrimSpace(v.Get("user_home")); uc.Home == "" {
+			uc.Home = "/home/" + name
+		}
+		if err := helper.ValidateNewHome(uc.Home); err != nil {
+			return uc, err
+		}
+	}
+	return uc, nil
+}
+
+// rootFor validates the site folder. A user's folder is checked by its spelling here (the web process often cannot
+// read a home, and a new home does not exist yet) and again by the helper, which resolves it. Any other folder must
+// exist and pass config.ValidateStaticRoot (stored symlink-resolved).
+func rootFor(kind string, v url.Values, cfg config.Config, uc userChoice) (string, error) {
+	if uc.User == "" {
+		if kind == "static" {
+			root, err := config.ValidateStaticRoot(strings.TrimSpace(v.Get("static_root")), cfg.DataDir, cfg.StaticRoots)
+			if err != nil {
+				return "", fmt.Errorf("static folder: %w", err)
+			}
+			return root, nil
+		}
+		return rootOrErr(v, cfg)
+	}
+	root := strings.TrimSpace(v.Get("static_root"))
+	if root == "" && uc.Mode == "create" {
+		root = uc.Home + "/public_html"
+	}
+	if err := helper.ValidateRoot(root); err != nil {
+		return "", fmt.Errorf("folder: %w", err)
+	}
+	if len(cfg.StaticRoots) > 0 && !slices.ContainsFunc(cfg.StaticRoots, func(a string) bool { return root == a || strings.HasPrefix(root, a+"/") }) {
+		return "", fmt.Errorf("folder %q: outside the allowed roots (SERVANAGO_STATIC_ROOTS)", root)
+	}
+	return root, nil
+}
+
 // parseSite validates the fields shared by create and edit. A proxy site needs an upstream; a static,
 // node or php site needs a folder that passes config.ValidateStaticRoot (stored symlink-resolved).
 func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
+	r, _, err := parseSiteFor(v, cfg, "")
+	return r, err
+}
+
+// parseSiteFor is parseSite for a site that already has fixed as its user ("" = a new site or one with the generated user).
+func parseSiteFor(v url.Values, cfg config.Config, fixed string) (store.Site, userChoice, error) {
 	var r store.Site
+	var uc userChoice
 	var err error
 	if r.Kind = v.Get("kind"); r.Kind == "" {
 		r.Kind = "proxy"
@@ -54,19 +146,30 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 	switch r.Kind {
 	case "proxy", "static", "node", "php", "frankenphp", "fastcgi", "cgi":
 	default:
-		return r, fmt.Errorf("kind %q must be proxy, static, node, php, frankenphp, fastcgi or cgi", r.Kind)
+		return r, uc, fmt.Errorf("kind %q must be proxy, static, node, php, frankenphp, fastcgi or cgi", r.Kind)
 	}
 	if r.Hostnames, err = parseHostnames(v.Get("hostnames")); err != nil {
-		return r, err
+		return r, uc, err
 	}
+	if uc, err = parseUserChoice(v, r.Kind, r.Hostnames[0], fixed); err != nil {
+		return r, uc, err
+	}
+	r.SiteUser = uc.User
+	r, err = parseKind(r, v, cfg, uc)
+	return r, uc, err
+}
+
+// parseKind fills in the kind-specific fields and the shared ones.
+func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (store.Site, error) {
+	var err error
 	switch r.Kind {
 	case "static":
-		if r.StaticRoot, err = config.ValidateStaticRoot(strings.TrimSpace(v.Get("static_root")), cfg.DataDir, cfg.StaticRoots); err != nil {
-			return r, fmt.Errorf("static folder: %w", err)
+		if r.StaticRoot, err = rootFor("static", v, cfg, uc); err != nil {
+			return r, err
 		}
 		r.Scheme = "http" // unused outside proxy; the column is NOT NULL
 	case "node":
-		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+		if r.StaticRoot, err = rootFor("node", v, cfg, uc); err != nil {
 			return r, err
 		}
 		r.Scheme, r.UpstreamHost = "http", "127.0.0.1"
@@ -86,7 +189,7 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 			return r, err
 		}
 	case "frankenphp":
-		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+		if r.StaticRoot, err = rootFor("frankenphp", v, cfg, uc); err != nil {
 			return r, err
 		}
 		r.Scheme, r.UpstreamHost = "http", "127.0.0.1"
@@ -102,7 +205,7 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 			return r, err
 		}
 	case "cgi":
-		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+		if r.StaticRoot, err = rootFor("cgi", v, cfg, uc); err != nil {
 			return r, err
 		}
 		r.Scheme = "http"
@@ -111,7 +214,7 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 		if r.FPMVersion == "" {
 			return r, errors.New("kind php: pick a php-fpm version from the detected list")
 		}
-		if r.StaticRoot, err = rootOrErr(v, cfg); err != nil {
+		if r.StaticRoot, err = rootFor("php", v, cfg, uc); err != nil {
 			return r, err
 		}
 		r.Scheme = "http"
@@ -148,6 +251,22 @@ func parseSite(v url.Values, cfg config.Config) (store.Site, error) {
 	}
 	if r.ExtraRoutes, err = extraRoutesText(v.Get("extra_routes")); err != nil {
 		return r, err
+	}
+	if pub := strings.TrimSpace(v.Get("public_dir")); pub != "" {
+		switch r.Kind {
+		case "php", "frankenphp", "fastcgi", "static":
+		default:
+			return r, fmt.Errorf("public folder: a %s site has none", r.Kind)
+		}
+		if err := helper.ValidatePublic(pub); err != nil {
+			return r, err
+		}
+		if uc.User == "" { // a user's folder may be unreadable here; the helper checks it then
+			if fi, err := os.Stat(filepath.Join(r.StaticRoot, pub)); err != nil || !fi.IsDir() {
+				return r, fmt.Errorf("public folder %q: not a folder inside %s", pub, r.StaticRoot)
+			}
+		}
+		r.PublicDir = pub
 	}
 	r.Enabled = v.Get("enabled") != ""
 	return r, nil
@@ -242,9 +361,14 @@ func parseCommand(text string, required bool) (string, error) {
 // readSiteForm parses the posted form into a site plus its gate grants: parseSite, then the access controls,
 // then the gate (which needs the controls' gate mode). Static sites carry none of the proxy-only tuning.
 func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []store.Grant, error) {
-	in, err := parseSite(r.PostForm, s.deps.Cfg)
+	in, uc, err := parseSiteFor(r.PostForm, s.deps.Cfg, base.SiteUser)
 	if err != nil {
 		return in, nil, userError{http.StatusUnprocessableEntity, err.Error()}
+	}
+	if uc.User != "" {
+		if err := s.checkUser(r.Context(), in, uc); err != nil {
+			return in, nil, err
+		}
 	}
 	// A php site's version must be one the host actually has: the picker lists detected binaries.
 	if in.Kind == "php" {
@@ -266,6 +390,7 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	base.TLSSkipVerify, base.Enabled, base.RecordIP, base.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
 	base.FPMVersion, base.PHPExtensions, base.PHPHealthPath = in.FPMVersion, in.PHPExtensions, in.PHPHealthPath
 	base.ExtraRoutes = in.ExtraRoutes
+	base.SiteUser, base.PublicDir = in.SiteUser, in.PublicDir
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
 	}
@@ -274,6 +399,41 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	}
 	grants, err := s.parseGate(r.Context(), base, r.PostForm)
 	return base, grants, err
+}
+
+// checkUser asks the helper about the site's user before anything is saved: a new user must not exist, an existing
+// one must (and may run a site), and the folder must lie inside its home. An edit of a site that already has its
+// user is not blocked when the helper cannot be reached; the apply step reports that.
+func (s *Server) checkUser(ctx context.Context, in store.Site, uc userChoice) error {
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := s.helperClient().Call(cctx, helper.ActionUserCheck, helper.Spec{User: uc.User})
+	if err != nil {
+		if uc.Mode == "fixed" {
+			return nil
+		}
+		return userError{http.StatusUnprocessableEntity, fmt.Sprintf("Cannot check the user %s: %s. A site with its own user needs the ServanaGo helper running.", uc.User, strings.TrimPrefix(err.Error(), "helper: "))}
+	}
+	var u helper.UserData
+	if resp.User != nil {
+		u = *resp.User
+	}
+	if uc.Mode == "create" {
+		if u.Exists {
+			return userError{http.StatusUnprocessableEntity, fmt.Sprintf("The user %s already exists. Choose \"Use an existing user\", or type another name.", uc.User)}
+		}
+		if !strings.HasPrefix(in.StaticRoot, uc.Home+"/") {
+			return userError{http.StatusUnprocessableEntity, fmt.Sprintf("The folder must be inside the new home %s.", uc.Home)}
+		}
+		return nil
+	}
+	if !u.Exists {
+		return userError{http.StatusUnprocessableEntity, fmt.Sprintf("The user %s does not exist.", uc.User)}
+	}
+	if !strings.HasPrefix(in.StaticRoot, u.Home+"/") {
+		return userError{http.StatusUnprocessableEntity, fmt.Sprintf("The folder must be inside the home of %s (%s).", uc.User, u.Home)}
+	}
+	return nil
 }
 
 // checkHostnames refuses the UI host, any name another site already answers on, and a loopback port another
@@ -287,6 +447,13 @@ func (s *Server) checkHostnames(r *http.Request, tx *store.Store, rt store.Site)
 		for _, x := range all {
 			if x.ID != rt.ID && (x.Kind == "node" || x.Kind == "frankenphp") && x.UpstreamPort == rt.UpstreamPort {
 				return userError{http.StatusConflict, fmt.Sprintf("Port %d is already used by the app for %s; choose another port.", rt.UpstreamPort, x.Hostnames[0])}
+			}
+		}
+	}
+	if rt.SiteUser != "" { // one site per user
+		for _, x := range all {
+			if x.ID != rt.ID && x.SiteUser == rt.SiteUser {
+				return userError{http.StatusConflict, fmt.Sprintf("The user %s already runs the site %s. Type another user name.", rt.SiteUser, x.Hostnames[0])}
 			}
 		}
 	}
@@ -462,6 +629,15 @@ type siteEditForm struct {
 	Franken     runtimes.FrankenReport
 	FCGIWrap    runtimes.FCGIWrapReport
 	Unit        *unitPanel // node and php sites: state and journal tail; nil otherwise
+	UserOffer   bool       // a new site and the helper answers: offer to run it as a user
+}
+
+// helperUp reports whether the privileged helper answers; a site's own user needs it.
+func (s *Server) helperUp(ctx context.Context) bool {
+	cctx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	_, err := s.helperClient().Call(cctx, helper.ActionPing, helper.Spec{})
+	return err == nil
 }
 
 // IsStatic picks which half of the form is shown. (Kinds node/php have their own data-for blocks.)
@@ -507,6 +683,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
 	}
+	form.UserOffer = !edit && s.helperUp(r.Context())
 	if edit {
 		title = "Edit " + rt.Hostnames[0]
 		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {
@@ -515,8 +692,8 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 		if rows, err := s.buildRows(r, []store.Site{rt}); err == nil && len(rows) == 1 {
 			form.Row = &rows[0]
 		}
-		if rt.Kind != "proxy" {
-			if err := config.StaticRootReadable(rt.StaticRoot); err != nil {
+		if rt.Kind != "proxy" && !(rt.Kind == "static" && rt.SiteUser != "") { // a user's static site is read by its own unit, not by Caddy
+			if err := config.StaticRootReadable(rt.WebRoot()); err != nil {
 				form.RootNote = err.Error()
 			}
 		}

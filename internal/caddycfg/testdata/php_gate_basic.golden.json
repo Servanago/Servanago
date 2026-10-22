@@ -106,6 +106,7 @@
                               "match": [
                                 {
                                   "file": {
+                                    "root": "/srv/www/blog",
                                     "try_files": [
                                       "{http.request.uri.path}/index.php"
                                     ]
@@ -130,6 +131,7 @@
                               "match": [
                                 {
                                   "file": {
+                                    "root": "/srv/www/blog",
                                     "split_path": [
                                       ".php"
                                     ],

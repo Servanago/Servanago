@@ -36,7 +36,11 @@ CREATE TABLE sites (
   extra_routes    TEXT NOT NULL DEFAULT '',   -- path prefixes Caddy proxies to their own upstream before the site's handler: one per line, path=dial
   php_extensions  TEXT NOT NULL DEFAULT '',   -- php: space-separated shared extensions loaded by the site's own php.ini; '' = the core set
   php_health_path TEXT NOT NULL DEFAULT '',   -- php: path requested after a PHP switch; '' = only check that the unit stays up
+  site_user       TEXT NOT NULL DEFAULT '',   -- node, php, frankenphp, cgi, static: the Unix user the site runs as, one site per user; '' = the generated sg-<slug> (a static site is then served by Caddy)
+  public_dir      TEXT NOT NULL DEFAULT '',   -- php, frankenphp, fastcgi, static: the served folder inside static_root; '' = static_root itself
   CHECK (kind = 'php' OR (php_extensions = '' AND php_health_path = '')),
+  CHECK (site_user = '' OR kind IN ('node','php','frankenphp','cgi','static')),
+  CHECK (public_dir = '' OR kind IN ('php','frankenphp','fastcgi','static')),
   CHECK (
        (kind = 'proxy'  AND upstream_host IS NOT NULL AND upstream_port IS NOT NULL AND static_root IS NULL
                       AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')
@@ -55,6 +59,8 @@ CREATE TABLE sites (
                       AND start_command = '' AND install_command = '' AND build_command = '' AND fpm_version = '')
   )
 );
+
+CREATE UNIQUE INDEX sites_site_user ON sites (site_user) WHERE site_user != '';
 
 -- A site answers on one or more free FQDNs. Its domain (Cloudflare zone, default IPs, cert mode) is the
 -- longest-suffix match in domains and may not exist. Exactly one hostname per site is primary.

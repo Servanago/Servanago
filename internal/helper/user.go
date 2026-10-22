@@ -56,6 +56,9 @@ func ValidatePublic(p string) error {
 	return nil
 }
 
+// ValidateNewHome is validateNewHome for the web form, so a bad home is refused before anything is saved.
+func ValidateNewHome(home string) error { return validateNewHome(home) }
+
 // validateNewHome: a home ServanaGo may create is one directory directly under /home or /srv.
 func validateNewHome(home string) error {
 	if home == "" {

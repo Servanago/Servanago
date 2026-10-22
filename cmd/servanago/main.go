@@ -43,6 +43,8 @@ func main() {
 			cmd = runHelper
 		case "php-job":
 			cmd = func() error { return runPHPJob(os.Args[2:]) }
+		case "serve-static":
+			cmd = func() error { return runServeStatic(os.Args[2:]) }
 		case "import":
 			cmd = func() error { return runImport(os.Args[2:], os.Stdout) }
 		case "user":

@@ -45,10 +45,30 @@
 {{hintid "scheme"}} {{hintid "upstream_host"}} {{hintid "upstream_port"}}
 </div>
 <div data-for="static node php frankenphp fastcgi cgi"{{if eq .Site.Kind "proxy"}} hidden{{end}}>
-<label>Folder
-<input name="static_root" id="static_root" value="{{.Site.StaticRoot}}" placeholder="/srv/www/blog" autocomplete="off" required aria-describedby="hint-static_root"></label>
+{{if .UserOffer}}<fieldset>
+<legend>Runs as</legend>
+<label><input type="radio" name="user_mode" value="create" checked> A new user named after the site</label>
+<label><input type="radio" name="user_mode" value="existing"> An existing user</label>
+<label><input type="radio" name="user_mode" value=""> The generated user (static sites: served by Caddy)</label>
+<label>User name (blank: the first hostname)
+<input name="site_user" placeholder="luckyedward.com" autocomplete="off" aria-describedby="hint-site_user"></label>
+{{hintid "site_user"}}
+<label>Home folder of a new user (blank: /home/NAME)
+<input name="user_home" placeholder="/home/luckyedward.com" autocomplete="off" aria-describedby="hint-user_home"></label>
+{{hintid "user_home"}}
+<label><input type="checkbox" name="shell_login" aria-describedby="hint-shell_login"> Allow shell login for a new user</label>
+{{hintid "shell_login"}}
+</fieldset>{{end}}
+{{if .Site.SiteUser}}<p>Runs as the system user <code>{{.Site.SiteUser}}</code>. A site keeps its user.</p>{{end}}
+<label>Folder{{if .UserOffer}} (blank for a new user: its home/public_html){{end}}
+<input name="static_root" id="static_root" value="{{.Site.StaticRoot}}" placeholder="/srv/www/blog" autocomplete="off"{{if not .UserOffer}} required{{end}} aria-describedby="hint-static_root"></label>
 {{hintid "static_root"}}
 {{if .RootNote}}<p class="explain" role="alert">ServanaGo cannot read this folder: {{.RootNote}}</p>{{end}}
+</div>
+<div data-for="static php frankenphp fastcgi">
+<label>Public folder (optional, inside the folder above)
+<input name="public_dir" value="{{.Site.PublicDir}}" placeholder="public" autocomplete="off" aria-describedby="hint-public_dir"></label>
+{{hintid "public_dir"}}
 </div>
 <div data-for="node"{{if ne .Site.Kind "node"}} hidden{{end}}>
 <label>Port the app listens on (1024-65535)

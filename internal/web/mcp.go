@@ -127,6 +127,7 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v.Set("hostnames", strings.Join(cur.Hostnames, "\n"))
 	v.Set("scheme", cur.Scheme)
 	v.Set("static_root", cur.StaticRoot)
+	v.Set("public_dir", cur.PublicDir)
 	v.Set("start_command", cur.StartCommand)
 	v.Set("install_command", cur.InstallCommand)
 	v.Set("build_command", cur.BuildCommand)

@@ -38,18 +38,36 @@ func (s *Server) detect(ctx context.Context) runtimes.Report {
 func (s *Server) runtimeApply(r *http.Request, rt store.Site) error {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 60*time.Second)
 	defer cancel()
-	return s.applyRuntime(ctx, rt, nil)
+	mk := userMake{}
+	if rt.SiteUser != "" && r.PostForm.Get("user_mode") == "create" { // only a new user needs the home and shell choice
+		if mk.Home = strings.TrimSpace(r.PostForm.Get("user_home")); mk.Home == "" {
+			mk.Home = "/home/" + rt.SiteUser
+		}
+		mk.Shell = r.PostForm.Get("shell_login") != ""
+	}
+	return s.applyRuntimeWith(ctx, rt, nil, mk)
+}
+
+// userMake is what creating a site's user needs beyond the site: its home and whether it gets a login shell.
+type userMake struct {
+	Home  string
+	Shell bool
 }
 
 // applyRuntime is runtimeApply without a request. A php site normally runs the build its label resolves to;
 // force names another one (a PHP switch and its revert).
 func (s *Server) applyRuntime(ctx context.Context, rt store.Site, force *runtimes.PHPVersion) error {
+	return s.applyRuntimeWith(ctx, rt, force, userMake{})
+}
+
+func (s *Server) applyRuntimeWith(ctx context.Context, rt store.Site, force *runtimes.PHPVersion, mk userMake) error {
 	if !rt.IsRuntime() {
 		return nil
 	}
 	hc := s.helperClient()
-	install := helper.Spec{Slug: rt.Slug, Kind: rt.Kind, Root: rt.StaticRoot}
+	install := helper.Spec{Slug: rt.Slug, Kind: rt.Kind, Root: rt.StaticRoot, User: rt.SiteUser, Public: rt.PublicDir}
 	switch rt.Kind {
+	case "static": // nothing more than the user and folders
 	case "node":
 		install.Port, install.Start = rt.UpstreamPort, rt.StartCommand
 	case "frankenphp":
@@ -79,22 +97,31 @@ func (s *Server) applyRuntime(ctx context.Context, rt store.Site, force *runtime
 			install.Extensions = strings.Fields(rt.PHPExtensions)
 		}
 	}
-	if _, err := hc.Call(ctx, helper.ActionUserAdd, helper.Spec{Slug: rt.Slug, Root: rt.StaticRoot}); err != nil {
+	added, err := hc.Call(ctx, helper.ActionUserAdd, helper.Spec{Slug: rt.Slug, Root: rt.StaticRoot, User: rt.SiteUser, Home: mk.Home, Shell: mk.Shell, Public: rt.PublicDir})
+	if err != nil {
 		return fmt.Errorf("site user: %w", err)
 	}
 	if _, err := hc.Call(ctx, helper.ActionUnitInstall, install); err != nil {
 		return err
 	}
+	// A php site's user gets the site's PHP on the command line (when the user can log in). A failure here is
+	// reported after the unit is started: the site itself is fine.
+	var cliErr error
+	if rt.Kind == "php" && rt.SiteUser != "" && added.User != nil && added.User.Login {
+		if _, err := hc.Call(ctx, helper.ActionPHPUserDefault, helper.Spec{User: rt.SiteUser, PHPVersion: rt.FPMVersion, Slug: rt.Slug}); err != nil {
+			cliErr = fmt.Errorf("command-line php for %s: %w", rt.SiteUser, err)
+		}
+	}
 	if !rt.Enabled { // a disabled runtime site has a stopped unit
 		if _, err := hc.Call(ctx, helper.ActionUnitStop, helper.Spec{Slug: rt.Slug}); err != nil {
 			return err
 		}
-		return nil
+		return cliErr
 	}
 	if _, err := hc.Call(ctx, helper.ActionUnitStart, helper.Spec{Slug: rt.Slug}); err != nil {
 		return err
 	}
-	return nil
+	return cliErr
 }
 
 // unitPanel is what the edit page shows for a node or php site: the unit's state and its journal tail.
@@ -139,6 +166,14 @@ func (s *Server) runtimeRemove(r *http.Request, rt store.Site) {
 	if _, err := hc.Call(ctx, helper.ActionUnitRemove, helper.Spec{Slug: rt.Slug}); err != nil {
 		slog.Error("remove site unit", "slug", rt.Slug, "error", err)
 		s.flash(fmt.Sprintf("Could not remove the unit for %s: %v", rt.Hostnames[0], err))
+		return
+	}
+	if rt.SiteUser != "" { // a named user stays for the admin to remove; only its command-line php is cleared
+		if rt.Kind == "php" {
+			if _, err := hc.Call(ctx, helper.ActionPHPUserDefault, helper.Spec{User: rt.SiteUser}); err != nil {
+				slog.Warn("clear command-line php", "user", rt.SiteUser, "error", err) // a user without a login shell never had one
+			}
+		}
 		return
 	}
 	if _, err := hc.Call(ctx, helper.ActionUserRemove, helper.Spec{Slug: rt.Slug}); err != nil {

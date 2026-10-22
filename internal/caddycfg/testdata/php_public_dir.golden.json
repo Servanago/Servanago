@@ -1,0 +1,233 @@
+{
+  "admin": {
+    "config": {
+      "persist": false
+    },
+    "disabled": true
+  },
+  "apps": {
+    "http": {
+      "http_port": 80,
+      "https_port": 443,
+      "servers": {
+        "srv0": {
+          "listen": [
+            ":443"
+          ],
+          "routes": [
+            {
+              "handle": [
+                {
+                  "handler": "reverse_proxy",
+                  "upstreams": [
+                    {
+                      "dial": "127.0.0.1:8080"
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "servanago.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "static_response",
+                          "status_code": "404"
+                        }
+                      ],
+                      "match": [
+                        {
+                          "path_regexp": {
+                            "pattern": "(^|/)\\."
+                          }
+                        }
+                      ],
+                      "terminal": true
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "static_response",
+                          "headers": {
+                            "Location": [
+                              "{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"
+                            ]
+                          },
+                          "status_code": "308"
+                        }
+                      ],
+                      "match": [
+                        {
+                          "file": {
+                            "root": "/srv/www/blog/public",
+                            "try_files": [
+                              "{http.request.uri.path}/index.php"
+                            ]
+                          },
+                          "not": [
+                            {
+                              "path": [
+                                "*/"
+                              ]
+                            }
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "rewrite",
+                          "uri": "{http.matchers.file.relative}"
+                        }
+                      ],
+                      "match": [
+                        {
+                          "file": {
+                            "root": "/srv/www/blog/public",
+                            "split_path": [
+                              ".php"
+                            ],
+                            "try_files": [
+                              "{http.request.uri.path}",
+                              "{http.request.uri.path}/index.php",
+                              "index.php"
+                            ],
+                            "try_policy": "first_exist_fallback"
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "transport": {
+                            "protocol": "fastcgi",
+                            "root": "/srv/www/blog/public",
+                            "split_path": [
+                              ".php"
+                            ]
+                          },
+                          "upstreams": [
+                            {
+                              "dial": "unix//run/servanago/blog.sock"
+                            }
+                          ]
+                        }
+                      ],
+                      "match": [
+                        {
+                          "path": [
+                            "*.php"
+                          ]
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "file_server",
+                          "root": "/srv/www/blog/public"
+                        }
+                      ]
+                    }
+                  ]
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "sonarr.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            }
+          ]
+        }
+      }
+    },
+    "tls": {
+      "automation": {
+        "policies": [
+          {
+            "issuers": [
+              {
+                "challenges": {
+                  "dns": {
+                    "provider": {
+                      "api_token": "{env.CLOUDFLARE_API_TOKEN}",
+                      "name": "cloudflare"
+                    },
+                    "resolvers": [
+                      "1.1.1.1",
+                      "8.8.8.8"
+                    ]
+                  }
+                },
+                "email": "me@example.com",
+                "module": "acme"
+              }
+            ],
+            "subjects": [
+              "servanago.example.com"
+            ]
+          },
+          {
+            "issuers": [
+              {
+                "challenges": {
+                  "dns": {
+                    "provider": {
+                      "api_token": "{env.CLOUDFLARE_API_TOKEN}",
+                      "name": "cloudflare"
+                    },
+                    "resolvers": [
+                      "1.1.1.1",
+                      "8.8.8.8"
+                    ]
+                  }
+                },
+                "email": "me@example.com",
+                "module": "acme"
+              }
+            ],
+            "subjects": [
+              "*.example.com"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "logging": {
+    "logs": {
+      "default": {
+        "encoder": {
+          "format": "json"
+        },
+        "level": "INFO",
+        "writer": {
+          "output": "servanago"
+        }
+      }
+    }
+  },
+  "storage": {
+    "module": "file_system",
+    "root": "/data/caddy"
+  }
+}

@@ -119,6 +119,8 @@ func TestRenderGolden(t *testing.T) {
 		{"cgi", opts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/srv/www/legacy"), func(r *store.Site) { r.Kind, r.Slug = "cgi", "legacy" })}}},
 		// PHP sites render the documented php_fastcgi expansion over the per-site socket.
 		{"php", opts(), State{[]store.Domain{dom}, []store.Site{asPHP(site, "blog", "8.2")}}},
+		{"php_public_dir", opts(), State{[]store.Domain{dom}, []store.Site{with(asPHP(site, "blog", "8.2"), func(r *store.Site) { r.PublicDir = "public" })}}},
+		{"static_user", opts(), State{[]store.Domain{dom}, []store.Site{with(asStatic(site, "/home/blog/public_html"), func(r *store.Site) { r.Slug, r.SiteUser, r.PublicDir = "blog", "blog.example.com", "public" })}}},
 		{"php_gate_basic", opts(), State{[]store.Domain{dom}, []store.Site{with(asPHP(site, "blog", "8.2"), func(r *store.Site) {
 			r.GateMode, r.BasicUser, r.BasicHash = "acl", "u", "$2a$14$abc"
 		})}}},
@@ -323,5 +325,72 @@ func TestFrankenPHPBlocksDotfilesBeforeProxy(t *testing.T) {
 	}
 	if !walk(cfg) {
 		t.Errorf("frankenphp route must start with a terminal dotfile 404 ahead of the upstream:\n%s", got)
+	}
+}
+
+// A public folder is what Caddy serves and what php-fpm resolves scripts against.
+func TestPublicDirIsTheServedRoot(t *testing.T) {
+	for name, st := range map[string]store.Site{
+		"php":     with(asPHP(site, "blog", "8.2"), func(r *store.Site) { r.PublicDir = "public" }),
+		"static":  with(asStatic(site, "/srv/www/blog"), func(r *store.Site) { r.Slug, r.PublicDir = "blog", "public" }),
+		"fastcgi": with(asStatic(site, "/srv/www/blog"), func(r *store.Site) { r.Kind, r.UpstreamHost, r.PublicDir = "fastcgi", "/run/app/fcgi.sock", "public" }),
+	} {
+		got, err := Render(State{[]store.Domain{dom}, []store.Site{st}}, opts())
+		if err != nil {
+			t.Fatal(err)
+		}
+		if strings.Count(string(got), `"root":"/srv/www/blog/public"`) == 0 || strings.Contains(string(got), `"root":"/srv/www/blog"`) {
+			t.Errorf("%s: the served root is not the public folder:\n%s", name, got)
+		}
+	}
+}
+
+// A static site with its own user is served by that user's unit over its socket; Caddy only proxies, so it
+// answers dotfiles itself and has no file_server for the site.
+func TestStaticWithUserProxiesToItsSocket(t *testing.T) {
+	st := with(asStatic(site, "/home/docs/public_html"), func(r *store.Site) { r.Slug, r.SiteUser = "docs", "docs.example.com" })
+	got, err := Render(State{[]store.Domain{dom}, []store.Site{st}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), `"dial":"unix//run/servanago/docs.sock"`) || strings.Contains(string(got), "file_server") || !strings.Contains(string(got), `(^|/)\\.`) {
+		t.Errorf("static with a user:\n%s", got)
+	}
+}
+
+// The php `file` matchers resolve try_files against their root; without one that is Caddy's working directory.
+func TestPHPFileMatchersUseTheSiteRoot(t *testing.T) {
+	st := with(asPHP(site, "blog", "8.2"), func(r *store.Site) { r.PublicDir = "public" })
+	got, err := Render(State{[]store.Domain{dom}, []store.Site{st}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg any
+	if err := json.Unmarshal(got, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	var files, rooted int
+	var walk func(v any)
+	walk = func(v any) {
+		switch x := v.(type) {
+		case map[string]any:
+			if f, ok := x["file"].(map[string]any); ok {
+				files++
+				if f["root"] == "/srv/www/blog/public" {
+					rooted++
+				}
+			}
+			for _, c := range x {
+				walk(c)
+			}
+		case []any:
+			for _, c := range x {
+				walk(c)
+			}
+		}
+	}
+	walk(cfg)
+	if files != 2 || rooted != files {
+		t.Errorf("%d file matchers, %d with the site root:\n%s", files, rooted, got)
 	}
 }
