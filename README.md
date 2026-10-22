@@ -30,8 +30,8 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 Debian 12+ or Ubuntu 22.04+ with systemd. One deb: the binary, a `servanago` system user, `/etc/servanago/servanago.env`, the `servanago.service` unit and `/var/lib/servanago` (`DATA_DIR`) plus `/var/log/servanago`.
 
 ```sh
-make deb                                    # bin/servanago_0.4.0_amd64.deb
-sudo apt-get install ./bin/servanago_0.4.0_amd64.deb
+make deb                                    # bin/servanago_0.4.1_amd64.deb
+sudo apt-get install ./bin/servanago_0.4.1_amd64.deb
 ```
 
 Or all of it with nothing but this checkout: `sudo packaging/install.sh`.
