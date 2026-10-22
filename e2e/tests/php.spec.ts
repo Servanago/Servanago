@@ -5,7 +5,7 @@ import { login } from './helpers';
 test('the PHP page renders without a helper or a build', async ({ page }) => {
   await login(page);
   await page.goto('/php');
-  await expect(page.getByRole('heading', { name: 'PHP', exact: true })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /^PHP/ })).toBeVisible();
   await expect(page.getByText('No ServanaGo PHP build yet')).toBeVisible();
   await expect(page.getByRole('button', { name: 'Build', exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Check now' })).toBeVisible();

@@ -10,7 +10,7 @@
 </div>{{end}}
 
 {{define "content"}}
-<h1>PHP</h1>
+<h1>PHP {{helplink "php-builds"}}</h1>
 <p>ServanaGo can compile PHP itself from php.net's source, so a security release does not wait for your distribution's package mirrors. Builds live in <code>/opt/servanago/php</code>. PHP from your distribution keeps working; sites pick either on the site's page.</p>
 {{with .Data}}
 {{if .Updates}}

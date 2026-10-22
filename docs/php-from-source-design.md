@@ -1,6 +1,6 @@
 # PHP from source: design
 
-Input: `docs/php-from-source-requirements.md`. Rule applied throughout: reuse what exists, add the least that meets a requirement, say where a shortcut has a ceiling.
+Status: implemented. Sections 1 to 15 are the design as written before building; **section 16 lists where the code differs and wins**. Input: `docs/php-from-source-requirements.md`. Rule applied throughout: reuse what exists, add the least that meets a requirement, say where a shortcut has a ceiling.
 
 Things checked against the code and php.net while designing are marked **(verified)**. Things I did not read are listed in section 12 and must be checked before implementation.
 

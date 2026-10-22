@@ -1,6 +1,6 @@
 # PHP from source: requirements
 
-Status: requirements only (output of brainstorm). Architecture and helper action design come next (`/sc:design`).
+Status: implemented (milestones 1 to 5) on branch `php-from-source`. This file is the requirements as agreed before building; where the result differs (PECL is only apcu and imagick, source trust, extension list, FrankenPHP not built) `php-from-source-design.md` section 16 is the record.
 
 ## Goal
 
