@@ -66,3 +66,4 @@ Multi-tenant isolation claims, deployment releases and rollback, Git integration
 - Hostnames are free FQDNs (M2). Without Cloudflare there is no zone lookup, so a hostname that matches no domain added by hand simply has none: it is served with its own HTTP-01 certificate and gets no DNS record.
 - The mark is shipped as processed PNGs; a traced vector replaces them later (`docs/brand/README.md`).
 - Form field borders are about 1.7:1 against the page; WCAG 1.4.11 asks for 3:1.
+- TODO: the site form cannot tie a site to an existing system user (for example `/home/luckyedward.com/public_html` served as that account). Node, PHP and FrankenPHP sites always run as the generated `sg-<slug>` user, and site files are never chowned. Requested earlier, not built. Open: pick an existing user or type one, which users are allowed (never root or system accounts), how it fits the no-chown rule and the helper's typed actions, and which kinds it covers.
