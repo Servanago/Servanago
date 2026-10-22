@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -242,7 +243,7 @@ func TestRequire2FALimitedSession(t *testing.T) {
 	if w := s.do(req{path: "/security", cookies: ck}); w.Code != 200 {
 		t.Fatalf("/security: %d", w.Code)
 	}
-	if w := postForm(s, "/security/passkeys/begin", url.Values{"password": {"pw"}}, ck, httpsHdr); w.Code != 403 {
+	if w := postForm(s, "/security/passkeys/begin", url.Values{"password": {"pw"}}, ck, httpsHdr); w.Code != 200 {
 		t.Fatalf("passkey begin in limited session: %d", w.Code)
 	}
 	_, _, up := enrollTOTP(t, s, now, ck)
@@ -504,5 +505,87 @@ func TestPasskeysUnavailableOnPlainHTTPHost(t *testing.T) {
 	w := s.do(req{method: "POST", path: "/login/passkey/begin", host: "localhost:8080", hdr: map[string]string{"HX-Request": "true", "Origin": "http://localhost:8080"}})
 	if w.Code != 200 {
 		t.Errorf("localhost: %d %s", w.Code, w.Body)
+	}
+}
+
+func addPasskeyFor(t *testing.T, s *Server, name, id string) {
+	t.Helper()
+	u, ok, err := s.deps.Store.GetUserByName(context.Background(), name)
+	if err != nil || !ok {
+		t.Fatalf("user %s: %v", name, err)
+	}
+	if err := s.deps.Store.AddPasskey(context.Background(), u.ID, store.Passkey{ID: id, RPID: "h", CredentialID: []byte(id), Credential: "{}", Name: id}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestPasswordAloneOpensNothingWithAPasskey(t *testing.T) {
+	cfg := cfg2fa()
+	cfg.Require2FA = true
+	s, _ := newServerCfg(t, cfg)
+	addPasskeyFor(t, s, "admin", "k1")
+	w := login(s, "pw", nil, "")
+	if w.Code != 401 || cookieNamed(w, sessionCookieName) != nil {
+		t.Fatalf("password login with a passkey: %d %v", w.Code, w.Header())
+	}
+	cfg.Require2FA = false
+	s2, _ := newServerCfg(t, cfg)
+	addPasskeyFor(t, s2, "admin", "k1")
+	if w := login(s2, "pw", nil, ""); w.Code != 204 {
+		t.Fatalf("opt-out: %d", w.Code)
+	}
+}
+
+func TestLastFactorCannotBeRemoved(t *testing.T) {
+	cfg := cfg2fa()
+	cfg.Require2FA = true
+	s, now := newServerCfg(t, cfg)
+	_, _, up := enrollTOTP(t, s, now, sessionOf(t, s)) // enroll-only session, upgraded by TOTP
+	ck := []*http.Cookie{up}
+	addPasskeyFor(t, s, "admin", "k1")
+	del := func(id string) int {
+		return s.do(req{method: "DELETE", path: "/security/passkeys/" + id, hdr: htmxPost, cookies: ck}).Code
+	}
+	if c := del("k1"); c != 204 {
+		t.Fatalf("delete passkey while TOTP is on: %d", c)
+	}
+	if w := postForm(s, "/security/totp/disable", url.Values{"password": {"pw"}}, ck); w.Code != 403 {
+		t.Fatalf("disable the last factor: %d", w.Code)
+	}
+	addPasskeyFor(t, s, "admin", "k2")
+	// with a passkey left the guard passes and the request reaches re-auth (no code sent: 401, not 403)
+	if w := postForm(s, "/security/totp/disable", url.Values{"password": {"pw"}}, ck); w.Code != 401 {
+		t.Fatalf("disable with a passkey left: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestPasskeyLiftsTheEnrollOnlyLimit(t *testing.T) {
+	cfg := cfg2fa()
+	cfg.Require2FA = true
+	s, _ := newServerCfg(t, cfg)
+	ck := []*http.Cookie{sessionCookie(t, login(s, "pw", nil, ""))}
+	if levelOf(s, ck...) != levelEnroll {
+		t.Fatal("not limited")
+	}
+	h := merge(htmxPost, httpsHdr)
+	w := s.do(req{method: "POST", path: "/security/passkeys/begin", body: url.Values{"password": {"pw"}}.Encode(), cookies: ck, hdr: h})
+	var out struct {
+		ID      string          `json:"id"`
+		Options json.RawMessage `json:"options"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &out); err != nil || w.Code != 200 {
+		t.Fatalf("begin: %d %s", w.Code, w.Body)
+	}
+	ao, err := virtualwebauthn.ParseAttestationOptions(string(out.Options))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rp := virtualwebauthn.RelyingParty{Name: "ServanaGo", ID: testHost, Origin: "https://" + testHost}
+	authn := virtualwebauthn.NewAuthenticatorWithOptions(virtualwebauthn.AuthenticatorOptions{UserHandle: []byte(ao.UserID)})
+	attest := virtualwebauthn.CreateAttestationResponse(rp, authn, virtualwebauthn.NewCredential(virtualwebauthn.KeyTypeEC2), *ao)
+	w = s.do(req{method: "POST", path: "/security/passkeys/finish?id=" + url.QueryEscape(out.ID), body: attest, cookies: ck, hdr: h})
+	up := cookieNamed(w, sessionCookieName)
+	if w.Code != 204 || up == nil || levelOf(s, up) != levelFull {
+		t.Fatalf("finish did not upgrade: %d %v", w.Code, w.Header())
 	}
 }

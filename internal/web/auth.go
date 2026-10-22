@@ -35,7 +35,7 @@ const (
 	maxCeremonies     = 64 // unauthenticated begin calls allocate state: bound it
 
 	levelFull   = "f"
-	levelEnroll = "e" // REQUIRE_2FA and no TOTP yet: only /security until one is confirmed
+	levelEnroll = "e" // REQUIRE_2FA and no TOTP or passkey yet: only /security until one is set up
 )
 
 type pending struct {
@@ -428,6 +428,20 @@ func (s *Server) loginSubmit(w http.ResponseWriter, r *http.Request) {
 		s.setPending(w, r, s.auth.newPending(u.ID), int(pendingTTL.Seconds()))
 		hxRedirect(w, "/login/totp")
 		return
+	}
+	if s.deps.Cfg.Require2FA {
+		ps, err := s.deps.Store.ListPasskeys(r.Context(), u.ID)
+		if err != nil {
+			slog.Error("login: read passkeys", "error", err)
+			http.Error(w, "Internal error.", http.StatusInternalServerError)
+			return
+		}
+		if len(ps) > 0 { // a passkey is their factor: the password alone opens nothing; same answer as a wrong password
+			slog.Warn("login failed", "event", "login", "method", "password", "user", name, "ip", ip, "why", "passkey required")
+			s.auditAs(r, name, "login.failed", "password: passkey required")
+			http.Error(w, "Wrong username or password.", http.StatusUnauthorized)
+			return
+		}
 	}
 	s.auth.clear(ip)
 	if s.deps.Cfg.Require2FA {

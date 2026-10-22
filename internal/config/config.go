@@ -93,6 +93,7 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 
 	c := Config{
+		Require2FA:         true, // REQUIRE_2FA=false opts out
 		CFBaseURL:          strings.TrimSpace(getenv("CLOUDFLARE_BASE_URL")),
 		HTTPPort:           port("HTTP_PORT", 80),
 		HTTPSPort:          port("HTTPS_PORT", 443),
@@ -154,9 +155,6 @@ func Load(getenv func(string) string) (Config, error) {
 		if err := ValidateUsername(c.AdminUser); err != nil {
 			errs = append(errs, fmt.Errorf("ADMIN_USER: %w", err))
 		}
-	}
-	if c.Require2FA && c.SecretKey == "" {
-		errs = append(errs, errors.New("REQUIRE_2FA needs SERVANAGO_SECRET_KEY"))
 	}
 	if (c.TurnstileSiteKey == "") != (c.TurnstileSecret == "") {
 		if c.TurnstileSiteKey == "" {

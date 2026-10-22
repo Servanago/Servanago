@@ -208,11 +208,26 @@ func (s *Server) passkeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("passkey added", "event", "passkey.added", "user", cu.Username, "rp", rp)
 	s.audit(r, "passkey.added", name)
+	if s.auth.level(r) == levelEnroll {
+		s.setSession(w, r, levelFull, cu)
+	}
 	w.WriteHeader(http.StatusNoContent)
 }
 
 func (s *Server) passkeyDelete(w http.ResponseWriter, r *http.Request) {
 	cu, _ := currentUser(r)
+	if s.deps.Cfg.Require2FA {
+		ps, err := s.deps.Store.ListPasskeys(r.Context(), cu.ID)
+		t, hasTOTP, terr := s.deps.Store.GetTOTP(r.Context(), cu.ID)
+		if err != nil || terr != nil {
+			fail(w, http.StatusInternalServerError, "Internal error.")
+			return
+		}
+		if len(ps) <= 1 && !(hasTOTP && t.Enabled) {
+			fail(w, http.StatusForbidden, "This is your only second factor. Set up the authenticator app first.")
+			return
+		}
+	}
 	ok, err := s.deps.Store.DeletePasskey(r.Context(), cu.ID, r.PathValue("id"))
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())

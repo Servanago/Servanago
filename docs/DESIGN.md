@@ -404,7 +404,7 @@ Source: brainstorm of 2026-10-15; modelled on `../gochatserver` (`service/totp.g
 | TOTP seed | AES-256-GCM, key = HKDF-SHA256(`SERVANAGO_SECRET_KEY`). Backup codes: SHA-256 hex (high entropy, no bcrypt). Passkey public keys: plain. |
 | Turnstile | Opt-in. Password step only. Enforced only when the request `Host` equals `SERVANAGO_HOST`; the `UI_LISTEN` recovery listener (LAN IP / localhost Host) is exempt. |
 | Passkey RP | RP ID = hostname of the request `Host`, accepted only if it equals `SERVANAGO_HOST` or is `localhost`. Origin = `https://` or `http://` (localhost only) + `Host`, port included. No new env var. Deviation from the brainstorm ("from `SERVANAGO_HOST`" only): `localhost` is a secure context, so on-box recovery and e2e can use passkeys. |
-| Enforcement | `REQUIRE_2FA=true`: a password login without TOTP yields a *limited* session (only `/security`, `/logout`, static) until TOTP is confirmed. Passkey login is always full. Needs `ADMIN_PASSWORD` and `SERVANAGO_SECRET_KEY`, else startup fails. |
+| Enforcement | `REQUIRE_2FA` (default true; `false` opts out): a password login with neither TOTP nor a passkey yields a *limited* session (only `/security`, `/logout`, static) until TOTP is confirmed or a passkey is registered. A user who has a passkey but no TOTP gets a 401 from the password form (same text as a wrong password). Passkey login is always full. The last factor cannot be removed. Every restart already ends all sessions (the signing key is per boot), so existing password-only sessions do not survive an upgrade. |
 | Recovery | Backup codes; `servanago 2fa-reset` wipes TOTP, backup codes, passkeys. It reads only `DATA_DIR`, not the full config. Run it on the server with the service stopped, as the same user and `DATA_DIR` as the service. Sessions are stateless, so restart to drop live ones. |
 | Audit | `slog` only: event, method, never codes, seeds or tokens. |
 | Skipped | Passkey rename (delete and re-add), mobile handoff, API tokens, audit table, "recently verified" state. |
@@ -413,7 +413,7 @@ Source: brainstorm of 2026-10-15; modelled on `../gochatserver` (`service/totp.g
 | Env | Rule |
 |---|---|
 | `SERVANAGO_SECRET_KEY` | Optional, at least 32 chars. Unset: TOTP enrollment disabled in UI (hint explains); passkeys and Turnstile still work. |
-| `REQUIRE_2FA` | Bool. True needs `ADMIN_PASSWORD` and `SERVANAGO_SECRET_KEY`; error names the missing variable. |
+| `REQUIRE_2FA` | Bool, default true. |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | Both or neither; one alone fails startup naming the other. With no `ADMIN_PASSWORD`: warn, inert. |
 | `TURNSTILE_BASE_URL` | Test hook only (like `CLOUDFLARE_BASE_URL`): siteverify endpoint override. |
 
@@ -477,7 +477,7 @@ Store gets small methods on the existing `Store`: `GetTOTP/SaveTOTP/EnableTOTP/B
 | `GET /security` | full or limited | TOTP status and enrollment, backup-code count, passkey list, add/delete. Limited sessions see only the TOTP section. |
 | `POST /security/totp/begin` | full or limited | Needs password. Stores pending seed, returns fragment with secret, `otpauth://` URI and a QR PNG data URI (`key.Image`, uses `boombuler/barcode`, already a dependency of `pquerna/otp`). |
 | `POST /security/totp/confirm` | full or limited | Valid code enables TOTP, creates backup codes, upgrades a limited cookie to full, answers 200 with the codes fragment, shown once. Deliberate exception to "mutating handlers answer 204": the codes cannot be redirected through. |
-| `POST /security/totp/disable`, `/security/backup-codes/regenerate` | full | Need password + current code. Disabled under `REQUIRE_2FA`. |
+| `POST /security/totp/disable`, `/security/backup-codes/regenerate` | full | Need password + current code. Refused under `REQUIRE_2FA` when no passkey exists. |
 | `POST /security/passkeys/begin`, `/finish`; `DELETE /security/passkeys/{id}` | full | Begin re-authenticates with password (+ code when TOTP is on). |
 | `POST /logout` | any | Unchanged. |
 
@@ -491,7 +491,7 @@ All errors go through `fail()`; new hints, `statusHelp` and `errTable` entries i
 - Host change: stored passkeys keep their old `rp_id`, are listed as "other host", and never match; deletable.
 - Passkey registered at `localhost` and one at the public host coexist.
 - Caddy must keep the original `Host` and set `X-Forwarded-For` toward the UI upstream (reverse_proxy defaults); an integration test pins this because both the Turnstile exemption and the throttle rely on it.
-- `REQUIRE_2FA` with only passkeys enrolled: password login still lands in a limited session. Deliberate: the password path always needs TOTP.
+- `REQUIRE_2FA` with only passkeys enrolled: the password form refuses the login. A lost passkey is recovered with `servanago 2fa-reset NAME` on the host.
 - Turnstile token is single use: the widget resets after every failed submit.
 
 ### 17.8 Test plan

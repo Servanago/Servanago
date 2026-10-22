@@ -1,6 +1,6 @@
 {{define "content"}}
 <h1>Security {{helplink "sign-in"}}</h1>
-{{if .Data.Limited}}<div class="banner warn" role="alert"><strong>Set up the authenticator app to continue.</strong> REQUIRE_2FA is on, so the rest of ServanaGo stays locked until you confirm a code.</div>{{end}}
+{{if .Data.Limited}}<div class="banner warn" role="alert"><strong>Set up the authenticator app or a passkey to continue.</strong> A password alone is not enough, so the rest of ServanaGo stays locked until you do.</div>{{end}}
 
 <article>
 <h2>Authenticator app</h2>
@@ -15,14 +15,12 @@
 <button type="submit" class="outline">New backup codes</button>
 <div id="backup-msg" role="alert"></div>
 </form>
-{{if not .Data.Require2FA}}
 <form hx-post="/security/totp/disable" hx-target="#disable-msg" hx-confirm="Turn off the authenticator app?">
 <input type="password" name="password" placeholder="Password" aria-label="Password to turn off" autocomplete="current-password" required>
 <input type="text" name="code" placeholder="Code" aria-label="Code to turn off" autocomplete="one-time-code" required>
 <button type="submit" class="outline secondary">Turn off</button>
 <p id="disable-msg" role="alert"></p>
 </form>
-{{end}}
 {{else}}
 <p>Off. Adds a 6-digit code after the password.</p>
 <form hx-post="/security/totp/begin" hx-target="#totp-setup">
@@ -66,7 +64,6 @@
 </article>
 {{end}}
 
-{{if not .Data.Limited}}
 <article>
 <h2>Passkeys</h2>
 {{if .Data.Passkeys}}
@@ -91,7 +88,6 @@
 {{else}}<p><small>Passkeys can be added when you use the HTTPS address or localhost.</small></p>{{end}}
 <p id="passkey-msg" role="alert"></p>
 </article>
-{{end}}
 <script src="/static/auth.js" defer></script>
 {{end}}
 

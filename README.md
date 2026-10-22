@@ -30,8 +30,8 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 Debian 12+ or Ubuntu 22.04+ with systemd. One deb: the binary, a `servanago` system user, `/etc/servanago/servanago.env`, the `servanago.service` unit and `/var/lib/servanago` (`DATA_DIR`) plus `/var/log/servanago`.
 
 ```sh
-make deb                                    # bin/servanago_0.3.0_amd64.deb
-sudo apt-get install ./bin/servanago_0.3.0_amd64.deb
+make deb                                    # bin/servanago_0.4.0_amd64.deb
+sudo apt-get install ./bin/servanago_0.4.0_amd64.deb
 ```
 
 Or all of it with nothing but this checkout: `sudo packaging/install.sh`.
@@ -90,7 +90,7 @@ scoped to the zones you want to manage. The same token is used for certificate i
 | `ADMIN_PASSWORD` | no | Creates the first administrator (named by `ADMIN_USER`) on the first start, when no administrators exist yet. After that it is **ignored**: passwords live in the database and are changed in the UI. **Unset with no administrators means the UI is open** (warning in the log and a red banner). |
 | `ADMIN_USER` | no | Name of that first administrator: lower-case letters, digits, `.`, `_`, `-`. Default `admin`. |
 | `SERVANAGO_SECRET_KEY` | no | At least 32 characters (`openssl rand -hex 32`). Encrypts the authenticator-app seed and the SMTP password in SQLite, and signs magic-link sessions; without it those options are off. Back it up with the data directory: if it is lost, run `servanago 2fa-reset NAME` for each administrator. |
-| `REQUIRE_2FA` | no | `true`: a password login must be followed by an authenticator code, and a password-only session is limited to the Security page until one is set up. Applies to every administrator. Needs `SERVANAGO_SECRET_KEY`. |
+| `REQUIRE_2FA` | no | Default `true`: no administrator signs in with a password alone. A user with an authenticator app is asked for its code; a user with a passkey must sign in with it (the password is refused); a user with neither gets a session limited to the Security page until one is set up. The last second factor cannot be removed. `false` turns this off. |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | no | Both or neither. Adds a Cloudflare Turnstile check to the password form on `SERVANAGO_HOST`. The `UI_LISTEN` recovery address is exempt. Passkey and code steps have no widget. |
 | `SERVANAGO_STATIC_ROOTS` | no | Colon-separated absolute prefixes that a static site's folder must sit under, such as `/srv/www:/home`. Unset allows any folder except `DATA_DIR`, `/etc`, `/proc`, `/sys`, `/dev`, `/root` and `/`. Symlinks are resolved before the check. ServanaGo never changes permissions: the user it runs as needs execute on the parent directories and read on the folder. |
 | `ACME_ISSUER` | no | `internal` serves self-signed certificates from Caddy's local CA (offline setups and tests). Default is Let's Encrypt. |

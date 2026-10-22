@@ -246,7 +246,7 @@ func (s *Server) reauth(w http.ResponseWriter, r *http.Request) bool {
 
 type securityData struct {
 	UserID         int64 // the signed-in admin, for the change-password form
-	Limited        bool  // REQUIRE_2FA session that must enroll TOTP first
+	Limited        bool  // REQUIRE_2FA session that must set up TOTP or a passkey first
 	Require2FA     bool
 	HasKey         bool
 	TOTPEnabled    bool
@@ -276,13 +276,11 @@ func (s *Server) securityPage(w http.ResponseWriter, r *http.Request) {
 	} else {
 		slog.Error("gate identities", "error", err)
 	}
-	if !d.Limited {
-		d.PasskeysOK = s.rpAllowed(r)
-		d.Passkeys, err = s.passkeyViews(r)
-		if err != nil {
-			fail(w, http.StatusInternalServerError, err.Error())
-			return
-		}
+	d.PasskeysOK = s.rpAllowed(r)
+	d.Passkeys, err = s.passkeyViews(r)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
 	}
 	s.render(w, "security", http.StatusOK, page{Title: "Security", Data: d})
 }
@@ -378,8 +376,16 @@ func (s *Server) totpConfirm(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) totpDisable(w http.ResponseWriter, r *http.Request) {
 	if s.deps.Cfg.Require2FA {
-		fail(w, http.StatusForbidden, "REQUIRE_2FA is set, so the authenticator cannot be removed.")
-		return
+		cu, _ := currentUser(r)
+		ps, err := s.deps.Store.ListPasskeys(r.Context(), cu.ID)
+		if err != nil {
+			fail(w, http.StatusInternalServerError, "Internal error.")
+			return
+		}
+		if len(ps) == 0 {
+			fail(w, http.StatusForbidden, "This is your only second factor. Add a passkey first.")
+			return
+		}
 	}
 	if !s.reauth(w, r) {
 		return
