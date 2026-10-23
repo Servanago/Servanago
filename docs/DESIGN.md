@@ -610,7 +610,7 @@ Deleting a route cascades its grants; identities survive (an email may still hol
 The route form's protection section only exists when the route is enabled; disabling a gated route ungates silently (Caddy never sees the route). `POST /routes`/`PUT /routes/{id}` keep the 204+`HX-Redirect` contract. The gate pages are plain Go templates rendered by `caddygate` (no htmx, no UI session, no flash machinery) — `text/html` with the same brand tokens is enough.
 
 ### 18.6 Edge cases
-- Gate + allowlist on one route: both apply (gate middleware passes only valid sessions, then the 403 static handler still blocks disallowed IPs; order does the composition).
+- Gate + allowlist on one route: **changed after 0.7.0, see below.** Originally both applied (gate first, then a 403 for disallowed IPs). Now either one gets in: the gate route carries a `not remote_ip` matcher, so an address in the allowlist skips the gate and every other address needs a link; the 403 route is rendered only for ungated sites. Basic auth, snippets and the handler still apply to both. Aliases and the `ml.` host are unaffected (the `ml.` route has no IP check; it serves only gate pages).
 - Gate + basic auth: both pass; basic-auth browsers additionally answer to Caddy. Documented combination, not tested against real deployments — e2e covers gate alone.
 - Route renamed: the rendered `host` config changes via `Mutate`; old magic tokens stay host-pinned and now check against the old host, so they fail (page says expired).
 - Route deleted mid-login: grants cascade away; a token row verifies but no grant exists at check time, so the identity is minted and immediately invalid for that host — harmless dead row for 7/30 days.

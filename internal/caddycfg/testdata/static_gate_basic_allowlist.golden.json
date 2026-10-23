@@ -68,14 +68,6 @@
                           "primary": "sonarr.example.com",
                           "site_id": 1
                         }
-                      ]
-                    },
-                    {
-                      "handle": [
-                        {
-                          "handler": "static_response",
-                          "status_code": "403"
-                        }
                       ],
                       "match": [
                         {
@@ -89,8 +81,7 @@
                             }
                           ]
                         }
-                      ],
-                      "terminal": true
+                      ]
                     },
                     {
                       "handle": [

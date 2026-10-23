@@ -159,3 +159,106 @@ func TestGateBehindRealCaddy(t *testing.T) {
 		t.Fatalf("after revoke: %q", bodyV)
 	}
 }
+
+// An address in the site's IP allowlist walks in without a link; any other address needs one and then passes:
+// the allowlist and the gate are alternatives, not two locks.
+func TestGateWithIPAllowlistIsEitherOr(t *testing.T) {
+	storage := caddytest.TempDir(t)
+	caddytest.Cleanup(t)
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { st.Close() })
+	ctx := context.Background()
+	d, err := st.CreateDomain(ctx, store.Domain{Name: "example.test", DefaultIP: "192.168.1.1", CertMode: "per_host"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	upHost, upPort, _ := net.SplitHostPort(caddytest.Upstream(t, "SECRET PAGE"))
+	upN, _ := strconv.Atoi(upPort)
+	mk := func(name, allow string) store.Site {
+		s, err := st.CreateSite(ctx, store.Site{Hostnames: []string{name + "." + d.Name}, Scheme: "http",
+			UpstreamHost: upHost, UpstreamPort: upN, Enabled: true, GateMode: "acl", Allowlist: allow})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return s
+	}
+	mk("near", "127.0.0.0/8")          // the test client is 127.0.0.1
+	out := mk("far", "203.0.113.0/24") // it is not
+	m := newFakeMailer()
+	httpsPort := caddytest.FreePort(t)
+	Install(New(st, func(int64) (Mailer, string, bool) { return m, "access@example.com", true },
+		"gate-test-secret-0123456789abcdef-1", httpsPort))
+	svc := apply.New(st, caddycfg.Options{UIHost: "servanago.example.test", UIUpstream: "127.0.0.1:1", Email: "me@example.test",
+		Issuer: caddycfg.Internal, HTTPPort: caddytest.FreePort(t), HTTPSPort: httpsPort, StoragePath: storage})
+	if err := svc.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	for _, h := range []string{"near.example.test", "far.example.test", "ml.far.example.test"} {
+		caddytest.WaitCert(t, httpsPort, h)
+	}
+	cl := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, fmt.Sprintf("127.0.0.1:%d", httpsPort))
+			},
+		}}
+	get := func(host, target string, form string, cookie *http.Cookie) (*http.Response, string) {
+		t.Helper()
+		method := "GET"
+		var body io.Reader
+		if form != "" {
+			method, body = "POST", strings.NewReader(form)
+		}
+		req, err := http.NewRequest(method, "https://"+host+target, body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if form != "" {
+			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		}
+		if cookie != nil {
+			req.AddCookie(cookie)
+		}
+		resp, err := cl.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		b, _ := io.ReadAll(resp.Body)
+		return resp, string(b)
+	}
+
+	// Allowed address: straight to the upstream, no link, no portal.
+	if _, body := get("near.example.test", "/", "", nil); !strings.Contains(body, "SECRET PAGE") {
+		t.Fatalf("allowed address did not reach the site: %q", body)
+	}
+	// Other address without a session: the portal, never the site.
+	if _, body := get("far.example.test", "/", "", nil); strings.Contains(body, "SECRET PAGE") || !strings.Contains(body, "Send me a link") {
+		t.Fatalf("outside address skipped the gate: %q", body)
+	}
+	// With a link it gets in, although its address is not in the list.
+	if err := st.ReplaceGrants(ctx, out.ID, []store.Grant{{Mode: "email", Value: "alice@example.com"}}); err != nil {
+		t.Fatal(err)
+	}
+	get("far.example.test", "/_gate/request", "email=alice@example.com", nil)
+	_, token := m.link(t)
+	resp, _ := get("ml.far.example.test", "/_gate/verify/"+token, "", nil)
+	prefix := fmt.Sprintf("https://far.example.test:%d", httpsPort)
+	resp, _ = get("far.example.test", strings.TrimPrefix(resp.Header.Get("Location"), prefix), "", nil)
+	var cookie *http.Cookie
+	for _, c := range resp.Cookies() {
+		if c.Name == CookieName {
+			cookie = c
+		}
+	}
+	if cookie == nil {
+		t.Fatalf("no session minted: %d", resp.StatusCode)
+	}
+	if resp, body := get("far.example.test", "/", "", cookie); resp.StatusCode != 200 || !strings.Contains(body, "SECRET PAGE") {
+		t.Fatalf("link holder outside the allowlist was blocked: %d %q", resp.StatusCode, body)
+	}
+}

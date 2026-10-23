@@ -271,10 +271,15 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 	}
 
 	var sub []any
+	cidrs := strings.Fields(r.Allowlist)
 	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
-		sub = append(sub, m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}}})
+		gate := m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}}}
+		if len(cidrs) > 0 { // either one gets in: an allowed address skips the gate, any other needs a link
+			gate["match"] = []any{m{"not": []any{m{"remote_ip": m{"ranges": cidrs}}}}}
+		}
+		sub = append(sub, gate)
 	}
-	if cidrs := strings.Fields(r.Allowlist); len(cidrs) > 0 {
+	if len(cidrs) > 0 && r.GateMode == "" {
 		sub = append(sub, m{
 			"match":    []any{m{"not": []any{m{"remote_ip": m{"ranges": cidrs}}}}},
 			"handle":   []any{m{"handler": "static_response", "status_code": "403"}},
