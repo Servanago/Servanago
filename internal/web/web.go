@@ -2,6 +2,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"embed"
 	"html/template"
@@ -254,11 +255,15 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, p page) 
 	if v, ok := s.cfErr.Load().(string); ok {
 		p.CFErr = v
 	}
+	var buf bytes.Buffer // a template error must not leave the browser with half a page and a 200
+	if err := s.pages[name].ExecuteTemplate(&buf, "layout", p); err != nil {
+		slog.Error("render page", "page", name, "error", err)
+		http.Error(w, "This page failed to render. The error is in the ServanaGo log.", http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(status)
-	if err := s.pages[name].ExecuteTemplate(w, "layout", p); err != nil {
-		slog.Error("render page", "page", name, "error", err)
-	}
+	_, _ = buf.WriteTo(w)
 }
 
 // status renders just the routes table; the dashboard polls it every 10s.

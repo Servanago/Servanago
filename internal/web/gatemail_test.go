@@ -72,6 +72,22 @@ func TestGateRowsAddRemoveAndSurviveSiteSave(t *testing.T) {
 	}
 }
 
+// The edit page of a gated site with access rows once stopped rendering at the first row (a template error
+// answered 200 with half a page), so the Save button was missing.
+func TestGatedSiteEditPageRendersToTheEnd(t *testing.T) {
+	s, id, c := gatedSite(t) // one row: alice@example.com
+	w := s.do(req{path: "/sites/" + itoa(id), cookies: []*http.Cookie{c}})
+	body := w.Body.String()
+	if w.Code != 200 {
+		t.Fatalf("edit page: %d", w.Code)
+	}
+	for _, want := range []string{"alice@example.com", "/gate/grants/delete", "Add entry", "Send test", ">Save</button>", "</form>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("edit page of a gated site lacks %q (page cut short?)", want)
+		}
+	}
+}
+
 func TestGateMailSecretSealedAndKept(t *testing.T) {
 	s, id, c := gatedSite(t)
 	ctx := context.Background()

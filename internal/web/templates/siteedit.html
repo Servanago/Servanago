@@ -149,12 +149,13 @@
 <label>SMTP password or Postmark server token <input type="password" name="gate_secret" autocomplete="new-password" aria-describedby="hint-gate_secret" placeholder="{{if .Site.GateSecret}}leave blank to keep the current one{{end}}"></label>
 {{hintid "gate_secret"}}
 {{if .Edit}}
+{{$id := .Site.ID}}
 <table>
 <caption>Who may ask for a link</caption>
 <thead><tr><th>Entry</th><th>Added by</th><th>Added</th><th></th></tr></thead>
 <tbody>
 {{range .Grants}}<tr><td>{{if eq .Mode "domain"}}@{{end}}{{.Value}}</td><td>{{.AddedBy}}</td><td>{{.AddedAt}}</td>
-<td><button type="button" class="secondary" hx-post="/sites/{{$.Site.ID}}/gate/grants/delete" hx-vals='{"mode":"{{.Mode}}","value":"{{.Value}}"}' hx-confirm="Remove {{.Value}}? Their session ends unless another rule still admits them.">Remove</button></td></tr>
+<td><button type="button" class="secondary" hx-post="/sites/{{$id}}/gate/grants/delete" hx-vals='{"mode":"{{.Mode}}","value":"{{.Value}}"}' hx-confirm="Remove {{.Value}}? Their session ends unless another rule still admits them.">Remove</button></td></tr>
 {{else}}<tr><td colspan="4">Nobody yet.</td></tr>{{end}}
 </tbody>
 </table>
