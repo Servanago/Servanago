@@ -531,6 +531,8 @@ All errors go through `fail()`; new hints, `statusHelp` and `errTable` entries i
 
 ## 18. Site access gate: magic-link auth for served routes
 
+> **Superseded in part by §18.11 (v0.7.0).** Sections 18.1 to 18.10 are the original design and still say "route", a single global SMTP account and a gate that lives only on the route's own host. §18.11 records what is built now: per-site mail, the `ml.` host and the access rows.
+
 Source: brainstorm of 2026-10-15, from the specs in `../caddy-access-gateway` (external forward-auth service). That design is superseded where it conflicts: no second binary, no YAML, no systemd unit, no Postmark, no separate DB, and sessions are not indefinite. What carries over: threat model (single-use hashed tokens, enumeration neutrality, open-redirect safety, fail-closed, host normalization) and its test lists. This protects *served sites*, not the ServanaGo UI; magic-link identities are fully decoupled from the admin login and grant no UI access.
 
 ### 18.1 Decisions
@@ -646,3 +648,25 @@ The route form's protection section only exists when the route is enabled; disab
 3. `caddycfg` golden goldens for gate modes + `caddygate` pass/guard + in-process Caddy integration tests.
 4. Web: route form section + ACL editor + validation + Security page gate section + help text.
 5. SMTP mailer + portal pages + full flow + e2e + docs (REQUIREMENTS, README env table).
+
+### 18.11 As built in 0.7.0: per-site mail, `ml.` host, access rows
+
+Changes against 18.1 to 18.10. Everything not mentioned here (tokens, sessions, sliding windows, enumeration neutrality, rate limits, fail closed) is unchanged.
+
+**Per-site mail.** Migration `004_gate_mail.sql` adds `sites.gate_provider` (`''`, `smtp`, `postmark`), `gate_from`, `gate_smtp_host`, `gate_smtp_port` (587), `gate_smtp_user` and `gate_secret` (a `secretbox` blob: the SMTP password or the Postmark server token). `caddygate.SettingsSource` is now `func(siteID) (Mailer, from, ok)`; `caddygate.SiteMailer` builds `smtpx.Dialer` or `postmark.Client` from the site row. Postmark is the HTTP API (`internal/postmark`, `X-Postmark-Server-Token`); the token never appears in an error. The global `settings` row stays for ServanaGo's own mail (the PHP release notice) and the gate no longer reads it. `Site.GateMailReady()` is the one readiness check; the form refuses a gate without it, without `SERVANAGO_SECRET_KEY` and without Cloudflare.
+
+**Three roles by hostname.** `caddygate.Handler` gains `Primary` (the site's first hostname; empty means the old single-host behaviour, which keeps the unit tests small). The handler decides its role from `Host`:
+
+| Host | Role |
+|---|---|
+| `Primary` | Serves the site behind the session check; also serves `/_gate/request` and `/_gate/verify/<code>` |
+| `ml.<Primary>` | `/_gate/request` and `/_gate/verify/<token>` only; every other path is 404, never `next` |
+| any other hostname of the site | 302 to the same path on the primary |
+
+`Site.MLHost()` is `ml.<primary>` for a gated site and `""` otherwise. Render adds one route for it (the gate handler alone), so it gets a certificate through the normal per-host path; the DNS syncer treats it as one more name of the site, so its A/AAAA records are created and, when the gate is switched off, pruned. `checkHostnames` refuses a gated site whose `ml.` name another site already answers on.
+
+**Handoff.** A request (from the primary or the ml host) issues a token bound to the ml host and mails `https://ml.<primary>/_gate/verify/<token>`. Verifying on the ml host consumes it (exactly once, host-pinned), issues a second token bound to the primary with a one-minute life and redirects to `https://<primary>/_gate/verify/<code>`. The primary's existing verify consumes that code, mints the identity cookie and redirects to `/`. The cookie stays host-only on the primary; no `Domain=` cookie, so nothing widens across sibling sites. The link token is useless on the primary and the code is useless on the ml host.
+
+**Access rows.** `gate_grants` gains `added_by` and `added_at`. `Store.AddGrant` and `RemoveGrant` go through `ReplaceGrants`, so removing a row still deletes the identities it alone admitted. Routes `POST /sites/{id}/gate/grants`, `/gate/grants/delete` and `/gate/test` (send-test, to an address typed in the form) answer 204 + `HX-Redirect` or an error body. A site save whose form has no `gate_acl` field (the edit page, MCP) leaves the rows alone; the create form still takes the textarea.
+
+**Not done.** No session revoke when the primary hostname changes: identities are global per email and cookies are host-bound, so nothing site-specific exists to revoke. No rate limit on send-test (it audits). No dedicated MCP row tools; rows are set through `update_site`'s `gate_acl`, and the provider secret is UI-only. Not run against real Cloudflare or Postmark.

@@ -29,7 +29,7 @@ One native Linux host publishes several kinds of web sites (reverse proxy, stati
 | `ADMIN_USER`, `ADMIN_PASSWORD` | `admin`, unset | create the first administrator when none exists |
 | `REQUIRE_2FA` | true | `false` opts out |
 | `SERVANAGO_STATIC_ROOTS` | unset | optional colon-separated allowlist for static roots |
-| `SERVANAGO_SECRET_KEY` | unset | seals SMTP password and TOTP seeds |
+| `SERVANAGO_SECRET_KEY` | unset | seals TOTP seeds, the Settings SMTP password and each gated site's mail credential; signs magic-link sessions |
 | `SERVANAGO_MCP_TOKEN` | unset | enables `/mcp`; at least 32 characters |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | unset | optional Turnstile on sign-in |
 | `ACME_ISSUER`, `ACME_STAGING`, `ACME_RESOLVERS`, `ACME_PROPAGATION_*` | see code | certificate tuning |
@@ -44,6 +44,7 @@ One native Linux host publishes several kinds of web sites (reverse proxy, stati
 - **FR-4 Runtime units.** For node, php, frankenphp, cgi and static-with-user sites, the helper installs the user and the systemd unit after the database commit. A failure is reported to the administrator and recorded in the audit log; the stored site stays as desired state.
 - **FR-5 Startup reconcile.** At startup every runtime site's user and unit are applied again from SQLite, so a unit lost with the host or a save made while the helper was down converges without another save. A failure for one site is logged and does not stop the others.
 - **FR-6 Per-site controls.** Enable/disable, CIDR allowlist, basic auth, magic-link gate, attached Caddyfile snippets (handler allowlist; `/.well-known/*` bypasses them).
+- **FR-6a Magic-link gate mail and host.** A gated site (allowlist or any email) mails its links through its own provider: SMTP or the Postmark HTTP API, each with its own sender and sealed credential, and a send-test button. There is no fallback to the Settings SMTP account, which only sends ServanaGo's own notices. The link opens on `ml.<primary hostname>`, which serves only the gate's pages; verifying it redirects to the primary host with a one-time code (one minute) that sets the session cookie there. Other hostnames of a gated site redirect to the primary. Gating needs Cloudflare (the `ml.` host's A/AAAA records and certificate) and `SERVANAGO_SECRET_KEY`. The allowlist is a list of rows (an address, or `@domain`) with who added each and when; changes apply at once, and removing a row ends the sessions it alone admitted.
 - **FR-7 Certificates and DNS.** HTTP-01/TLS-ALPN by default. With a Cloudflare token: DNS-01 and A/AAAA records per hostname. An AAAA record needs its A record.
 
 ### Administration
@@ -65,7 +66,7 @@ One native Linux host publishes several kinds of web sites (reverse proxy, stati
 - **SR-4 Named users.** A site may run as an existing user only if its uid is 1000 to 65533, it is in none of root, sudo, wheel, admin, adm, docker, lxd, and the site folder is inside its home after symlink resolution. `root`, `servanago` and `sg-*` are reserved.
 - **SR-5 Executed binaries.** A binary a unit runs (FrankenPHP, fcgiwrap, php-fpm, the helper itself) must be root-owned and not group or world writable.
 - **SR-6 Files.** Site files are never chowned or chmodded, except directories the helper creates in a home it just created.
-- **SR-7 Secrets.** Operator secrets come from the environment or root-owned files, never SQLite or logs. SMTP passwords and TOTP seeds are sealed; site environment values are sealed and write-only.
+- **SR-7 Secrets.** Operator secrets come from the environment or root-owned files, never SQLite or logs. SMTP passwords, Postmark tokens and TOTP seeds are sealed; site environment values are sealed and write-only.
 - **SR-8 No isolation claim.** Unix-user separation is not a sandbox for mutually untrusted tenants, and no document may claim multi-tenant security. Anyone who controls the UI session can run a shell command as any eligible user (SR-4) through a node site's start command.
 
 ## Non-functional requirements
