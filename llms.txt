@@ -24,7 +24,7 @@ Environment variables (secrets are read from the environment only, never stored 
 - `SERVANAGO_STATIC_ROOTS`: optional colon-separated prefixes a static site's folder must sit under (default: any folder outside `DATA_DIR`, `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/`).
 - `SERVANAGO_HOST_ZONE`: Cloudflare zone of the host; set it if zone auto-detection fails.
 - `ADMIN_PASSWORD` + optional `ADMIN_USER`: create the first administrator once, then are ignored (administrators live in the DB: Users page, equal powers, each with their own password, authenticator, backup codes and passkeys; every action is on the Audit page). `SERVANAGO_SECRET_KEY` (32+ chars) enables the authenticator app; `REQUIRE_2FA` enforces it for everyone; `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` add Turnstile to the password form.
-- Email for the optional magic-link site gate is set on the Settings page (SMTP host, port, user, password, MAIL FROM), not in env. The password is stored sealed with `SERVANAGO_SECRET_KEY`.
+- Email for the optional magic-link site gate is set per site in the site's form (SMTP or Postmark API token, sender), not in env. The credential is stored sealed with `SERVANAGO_SECRET_KEY`. Links open on `ml.<main hostname>`, created in Cloudflare, so gating needs Cloudflare. The Settings page SMTP account is only for ServanaGo's own notices.
 - `ACME_STAGING`, `ACME_ISSUER` (`internal` = self-signed), `ACME_PROPAGATION_DELAY` / `ACME_PROPAGATION_TIMEOUT` (`2m` / `10m` fixes "timed out waiting for record to fully propagate"), `ACME_RESOLVERS` (default `1.1.1.1,8.8.8.8`).
 - `UI_LISTEN` (default `127.0.0.1:8080`), `DATA_DIR` (default `/data`, a container-era default; set it explicitly), `HTTP_PORT` / `HTTPS_PORT` (default 80/443).
 

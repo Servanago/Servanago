@@ -133,9 +133,39 @@
 </select></label>
 {{hintid "gate_mode"}}
 <label>Allowlist (one per line; addresses starting with @ cover a whole domain)
-<textarea name="gate_acl" rows="3" placeholder="alice@example.com&#10;@contractor.example" aria-describedby="hint-gate_acl">{{.GateACL}}</textarea></label>
+<textarea name="gate_acl" rows="3" placeholder="alice@example.com&#10;@contractor.example" aria-describedby="hint-gate_acl"{{if .Edit}} disabled{{end}}>{{.GateACL}}</textarea></label>
 {{hintid "gate_acl"}}
-{{else}}<p>Set up email delivery under <a href="/settings">Settings</a> first; the picker and allowlist unlock afterwards.</p>
+<label>Mail provider
+<select name="gate_provider" aria-describedby="hint-gate_provider">
+<option value=""{{if not .Site.GateProvider}} selected{{end}}>None</option>
+<option value="smtp"{{if eq .Site.GateProvider "smtp"}} selected{{end}}>SMTP</option>
+<option value="postmark"{{if eq .Site.GateProvider "postmark"}} selected{{end}}>Postmark (HTTP API)</option>
+</select></label>
+{{hintid "gate_provider"}}
+<label>Sender (From address) <input name="gate_from" value="{{.Site.GateFrom}}" placeholder="access@example.com" autocomplete="off"></label>
+<label>SMTP host <input name="gate_smtp_host" value="{{.Site.GateSMTPHost}}" placeholder="smtp.example.com" autocomplete="off"></label>
+<label>SMTP port <input name="gate_smtp_port" value="{{if .Site.GateSMTPPort}}{{.Site.GateSMTPPort}}{{else}}587{{end}}" inputmode="numeric" autocomplete="off"></label>
+<label>SMTP user <input name="gate_smtp_user" value="{{.Site.GateSMTPUser}}" autocomplete="off"></label>
+<label>SMTP password or Postmark server token <input type="password" name="gate_secret" autocomplete="new-password" aria-describedby="hint-gate_secret" placeholder="{{if .Site.GateSecret}}leave blank to keep the current one{{end}}"></label>
+{{hintid "gate_secret"}}
+{{if .Edit}}
+<table>
+<caption>Who may ask for a link</caption>
+<thead><tr><th>Entry</th><th>Added by</th><th>Added</th><th></th></tr></thead>
+<tbody>
+{{range .Grants}}<tr><td>{{if eq .Mode "domain"}}@{{end}}{{.Value}}</td><td>{{.AddedBy}}</td><td>{{.AddedAt}}</td>
+<td><button type="button" class="secondary" hx-post="/sites/{{$.Site.ID}}/gate/grants/delete" hx-vals='{"mode":"{{.Mode}}","value":"{{.Value}}"}' hx-confirm="Remove {{.Value}}? Their session ends unless another rule still admits them.">Remove</button></td></tr>
+{{else}}<tr><td colspan="4">Nobody yet.</td></tr>{{end}}
+</tbody>
+</table>
+<label>Add an address or @domain <input id="gate-rule" name="rule" placeholder="alice@example.com or @contractor.example" autocomplete="off" form="none"></label>
+<button type="button" hx-post="/sites/{{.Site.ID}}/gate/grants" hx-include="#gate-rule" hx-target="#msg">Add entry</button>
+{{hintid "gate_rows"}}
+<label>Send a test mail to <input id="gate-test-to" name="to" type="email" autocomplete="off" form="none"></label>
+<button type="button" class="secondary" hx-post="/sites/{{.Site.ID}}/gate/test" hx-include="#gate-test-to" hx-target="#msg">Send test</button>
+<p>Magic links open on <code>ml.{{index .Site.Hostnames 0}}</code>; ServanaGo creates its DNS records in Cloudflare.</p>
+{{end}}
+{{else}}<p>Magic-link access needs Cloudflare to be connected (the site gets an <code>ml.</code> host there) and SERVANAGO_SECRET_KEY in the environment file.</p>
 {{hintid "smtp_setup"}}
 {{end}}
 </fieldset>

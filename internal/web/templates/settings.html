@@ -2,8 +2,8 @@
 <h1>Settings {{helplink "settings"}}</h1>
 <article>
 <h2>Email delivery</h2>
-{{if .Data.MailReady}}<p>On. Magic-link sites send their links from here.</p>
-{{else}}<p>Not set. Magic-link sites stay blocked until this works.</p>{{hint "smtp_setup"}}{{end}}
+{{if .Data.MailReady}}<p>On. ServanaGo's own notices (such as new PHP releases) are sent from here. Magic links use each site's own mail provider.</p>
+{{else}}<p>Not set. ServanaGo's own notices are not emailed. Magic links do not need this: each gated site has its own mail provider.</p>{{end}}
 <form hx-post="/settings/smtp" hx-target="#smtp-msg">
 <label>SMTP host <input name="smtp_host" value="{{.Data.Host}}" placeholder="smtp.example.com" autocomplete="off"></label>
 {{hint "smtp_host"}}

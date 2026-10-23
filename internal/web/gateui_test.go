@@ -34,33 +34,48 @@ func gateServer(t *testing.T) *Server {
 	return s
 }
 
+// gateMail is the form block of a site with its own SMTP provider.
+var gateMail = []string{"gate_provider", "smtp", "gate_from", "access@example.com", "gate_smtp_host", "127.0.0.1", "gate_smtp_port", "28097"}
+
 func TestParseGate(t *testing.T) {
 	ctx := context.Background()
 	v := url.Values{"gate_acl": {"alice@example.com\n@dev.example"}}
 	s := gateServer(t)
-	gs, err := s.parseGate(ctx, store.Site{GateMode: "acl"}, v)
+	ready := store.Site{GateMode: "acl", GateProvider: "smtp", GateFrom: "access@example.com", GateSMTPHost: "127.0.0.1"}
+	gs, err := s.parseGate(ctx, ready, v)
 	if err != nil || len(gs) != 2 || gs[0].Mode != "email" || gs[1].Mode != "domain" {
 		t.Fatalf("acl: %v %v", gs, err)
 	}
-	if gs, err = s.parseGate(ctx, store.Site{GateMode: "open"}, url.Values{}); err != nil || len(gs) != 0 {
+	// An edit page has no gate_acl field: the stored rows are left alone (nil), never cleared.
+	if gs, err = s.parseGate(ctx, ready, url.Values{}); err != nil || gs != nil {
+		t.Fatalf("acl without rows field: %v %v", gs, err)
+	}
+	open := ready
+	open.GateMode = "open"
+	if gs, err = s.parseGate(ctx, open, url.Values{}); err != nil || gs == nil || len(gs) != 0 {
 		t.Fatalf("open: %v %v", gs, err)
 	}
 	if gs, err = s.parseGate(ctx, store.Site{GateMode: ""}, v); err != nil || len(gs) != 0 {
 		t.Fatalf("none: %v %v", gs, err)
 	}
-	// No secret key: saving a gated site is refused naming it (mail is ready here).
-	s2 := newServer(t, "pw")
-	if err := s2.deps.Store.SaveSettings(ctx, gateSettings()); err != nil {
-		t.Fatal(err)
+	// This site has no mail provider: refused, even though the global Settings mail works.
+	if _, err := s.parseGate(ctx, store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "mail provider") {
+		t.Fatalf("provider refusal: %v", err)
 	}
-	if _, err := s2.parseGate(ctx, store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
+	// Postmark needs its token, not a host.
+	if _, err := s.parseGate(ctx, store.Site{GateMode: "acl", GateProvider: "postmark", GateFrom: "a@x.test"}, v); err == nil {
+		t.Fatal("postmark without a token accepted")
+	}
+	// No secret key: saving a gated site is refused naming it.
+	s2 := newServer(t, "pw")
+	if _, err := s2.parseGate(ctx, ready, v); err == nil || !strings.Contains(err.Error(), "SECRET_KEY") {
 		t.Fatalf("secret-key refusal: %v", err)
 	}
-	// Mail not ready: refused pointing at Settings.
+	// No Cloudflare: the ml host cannot get its records.
 	s3 := newServer(t, "pw")
 	s3.deps.Cfg = config.Config{SecretKey: "e2e-secret-key-0123456789abcdef-e2e"}
-	if _, err := s3.parseGate(ctx, store.Site{GateMode: "acl"}, v); err == nil || !strings.Contains(err.Error(), "Settings") {
-		t.Fatalf("mail refusal: %v", err)
+	if _, err := s3.parseGate(ctx, ready, v); err == nil || !strings.Contains(err.Error(), "Cloudflare") {
+		t.Fatalf("cloudflare refusal: %v", err)
 	}
 }
 
@@ -145,7 +160,7 @@ func TestRouteFormShowsGateSection(t *testing.T) {
 		if strings.Contains(w2.Body.String(), "gate_mode") {
 			t.Fatalf("%s: controls rendered while mail is unconfigured", path)
 		}
-		if !strings.Contains(w2.Body.String(), "unlock afterwards") {
+		if !strings.Contains(w2.Body.String(), "needs Cloudflare") {
 			t.Fatalf("%s: disabled note missing: %s", path, w2.Body.String())
 		}
 	}
@@ -162,7 +177,7 @@ func TestCreateGatedRouteAndSecurityListing(t *testing.T) {
 	}
 	c := sessionCookie(t, login(s, "pw", nil, ""))
 	w := s.do(req{method: "POST", path: "/sites",
-		body: form("enabled", "on", "gate_mode", "acl", "gate_acl", "alice@example.com\n@dev.example").Encode(),
+		body: form(append([]string{"enabled", "on", "gate_mode", "acl", "gate_acl", "alice@example.com\n@dev.example"}, gateMail...)...).Encode(),
 		hdr:  htmxPost, cookies: []*http.Cookie{c}})
 	if w.Code != 204 {
 		t.Fatalf("create: %d %s", w.Code, w.Body.String())

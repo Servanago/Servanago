@@ -29,8 +29,6 @@ import (
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/dnssync"
 	"github.com/servanago/servanago/internal/probe"
-	"github.com/servanago/servanago/internal/secretbox"
-	"github.com/servanago/servanago/internal/smtpx"
 	"github.com/servanago/servanago/internal/store"
 	"github.com/servanago/servanago/internal/web"
 )
@@ -85,28 +83,21 @@ func run() error {
 	}
 	// The gate module reads SQLite directly in the Caddy request path; without an installed
 	// service every gated site fails closed with 503, never open.
-	// Mail comes from the settings row (Settings page); the password is unsealed only at send time.
-	caddygate.Install(caddygate.New(st, func() (caddygate.Mailer, string, bool) {
+	// Mail comes from the site's own row (provider, sender, sealed credential), unsealed only at send time.
+	caddygate.Install(caddygate.New(st, func(siteID int64) (caddygate.Mailer, string, bool) {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		set, err := st.GetSettings(ctx)
+		site, err := st.GetSite(ctx, siteID)
 		if err != nil {
-			slog.Error("gate mail settings", "error", err)
+			slog.Error("gate mail site", "site", siteID, "error", err)
 			return nil, "", false
 		}
-		if !set.MailReady() {
+		m, from, err := caddygate.SiteMailer(cfg.SecretKey, site)
+		if err != nil {
+			slog.Error("gate mail setup", "site", siteID, "error", err)
 			return nil, "", false
 		}
-		var pw string
-		if set.SMTPPass != nil {
-			b, err := secretbox.Open(cfg.SecretKey, set.SMTPPass)
-			if err != nil {
-				slog.Error("gate mail password", "error", err)
-				return nil, "", false
-			}
-			pw = string(b)
-		}
-		return smtpx.Dialer{Host: set.SMTPHost, Port: set.SMTPPort, User: set.SMTPUser, Pass: pw}, set.MailFrom, true
+		return m, from, true
 	}, cfg.SecretKey, cfg.HTTPSPort))
 	svc := apply.New(st, caddycfg.Options{
 		UIHost: cfg.Host, UIUpstream: uiUpstream, Email: cfg.ACMEEmail, Staging: cfg.Staging,

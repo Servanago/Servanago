@@ -43,7 +43,7 @@ func TestGateBehindRealCaddy(t *testing.T) {
 	}
 	m := newFakeMailer()
 	httpsPort := caddytest.FreePort(t)
-	Install(New(st, func() (Mailer, string, bool) { return m, "access@example.com", true },
+	Install(New(st, func(int64) (Mailer, string, bool) { return m, "access@example.com", true },
 		"gate-test-secret-0123456789abcdef-1", httpsPort))
 	svc := apply.New(st, caddycfg.Options{UIHost: "servanago.example.test", UIUpstream: "127.0.0.1:1", Email: "me@example.test",
 		Issuer: caddycfg.Internal, HTTPPort: caddytest.FreePort(t), HTTPSPort: httpsPort, StoragePath: storage})
@@ -51,27 +51,27 @@ func TestGateBehindRealCaddy(t *testing.T) {
 		t.Fatal(err)
 	}
 	caddytest.WaitCert(t, httpsPort, "acl.example.test")
+	caddytest.WaitCert(t, httpsPort, "ml.acl.example.test")
 	cl := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: "acl.example.test"},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, // SNI follows the request URL's host
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				return (&net.Dialer{}).DialContext(ctx, network, fmt.Sprintf("127.0.0.1:%d", httpsPort))
 			},
 		}}
-	do := func(method, target, form string, cookie *http.Cookie) (*http.Response, string) {
+	doAt := func(host, method, target, form string, cookie *http.Cookie) (*http.Response, string) {
 		t.Helper()
 		var body io.Reader
 		if form != "" {
 			body = strings.NewReader(form)
 		}
-		req, err := http.NewRequest(method, "https://acl.example.test"+target, body)
+		req, err := http.NewRequest(method, "https://"+host+target, body)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if form != "" {
 			req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 		}
-		req.Host = "acl.example.test"
 		if cookie != nil {
 			req.AddCookie(cookie)
 		}
@@ -82,6 +82,10 @@ func TestGateBehindRealCaddy(t *testing.T) {
 		defer resp.Body.Close()
 		b, _ := io.ReadAll(resp.Body)
 		return resp, string(b)
+	}
+	do := func(method, target, form string, cookie *http.Cookie) (*http.Response, string) {
+		t.Helper()
+		return doAt("acl.example.test", method, target, form, cookie)
 	}
 
 	// Unauthenticated: the portal page, never the upstream.
@@ -103,8 +107,19 @@ func TestGateBehindRealCaddy(t *testing.T) {
 	}
 	_, token := m.link(t)
 
-	// Magic link verifies, sets the session cookie, redirects to the site root.
-	resp, _ := do("GET", "/_gate/verify/"+token, "", nil)
+	// The emailed link lives on the ml host and never serves the site; it hands over to the site host.
+	if _, body := doAt("ml.acl.example.test", "GET", "/", "", nil); !strings.Contains(body, "404") {
+		t.Fatalf("ml host root: %q", body)
+	}
+	resp, _ := doAt("ml.acl.example.test", "GET", "/_gate/verify/"+token, "", nil)
+	prefix := fmt.Sprintf("https://acl.example.test:%d/_gate/verify/", httpsPort)
+	if resp.StatusCode != http.StatusSeeOther || !strings.HasPrefix(resp.Header.Get("Location"), prefix) {
+		t.Fatalf("ml verify redirect: %d %q", resp.StatusCode, resp.Header.Get("Location"))
+	}
+	code := strings.TrimPrefix(resp.Header.Get("Location"), prefix)
+
+	// The one-time code verifies on the site host, sets the session cookie, redirects to the site root.
+	resp, _ = do("GET", "/_gate/verify/"+code, "", nil)
 	if resp.StatusCode != http.StatusSeeOther || resp.Header.Get("Location") != "/" {
 		t.Fatalf("verify redirect: %d %q", resp.StatusCode, resp.Header.Get("Location"))
 	}
@@ -130,7 +145,7 @@ func TestGateBehindRealCaddy(t *testing.T) {
 	}
 
 	// Replay of the verified link: expired page, no fresh cookie.
-	resp2, bodyR := do("GET", "/_gate/verify/"+token, "", nil)
+	resp2, bodyR := doAt("ml.acl.example.test", "GET", "/_gate/verify/"+token, "", nil)
 	if !strings.Contains(bodyR, "expired or was already used") || strings.Contains(resp2.Header.Get("Set-Cookie"), CookieName) {
 		t.Fatalf("replay: %d %q", resp2.StatusCode, bodyR)
 	}

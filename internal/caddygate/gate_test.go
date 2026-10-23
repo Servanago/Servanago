@@ -92,7 +92,7 @@ func gateStore(t *testing.T) (*store.Store, int64, int64) {
 func gateService(t *testing.T, st *store.Store) (*Service, *fakeMailer) {
 	t.Helper()
 	m := newFakeMailer()
-	s := New(st, func() (Mailer, string, bool) { return m, "access@example.com", true },
+	s := New(st, func(int64) (Mailer, string, bool) { return m, "access@example.com", true },
 		"e2e-secret-key-0123456789abcdef-e2e", 443)
 	s.now = nowUTC
 	return s, m
@@ -328,7 +328,7 @@ func TestRateLimits(t *testing.T) {
 func TestSessionSecretDerivationStableAndRotating(t *testing.T) {
 	st, _, _ := gateStore(t)
 	ctx := context.Background()
-	s := New(st, func() (Mailer, string, bool) { return nil, "", false }, "e2e-secret-key-0123456789abcdef-e2e", 443)
+	s := New(st, func(int64) (Mailer, string, bool) { return nil, "", false }, "e2e-secret-key-0123456789abcdef-e2e", 443)
 	if err := st.UpsertIdentity(ctx, "a@b.c", "n1", sha256hex(s.sessionSecret("a@b.c", "n1")), nowStr, 24*time.Hour); err != nil {
 		t.Fatal(err)
 	}
@@ -352,7 +352,7 @@ func TestIssuanceRefusedWithoutConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 	h := Handler{SiteID: acl, Host: "acl.example.com", Mode: "acl"}
-	s := New(st, func() (Mailer, string, bool) { return nil, "", false }, "", 443) // nothing configured
+	s := New(st, func(int64) (Mailer, string, bool) { return nil, "", false }, "", 443) // nothing configured
 	s.now = nowUTC
 	w, reached := s.call(t, h, "POST", Prefix+"/request", "email="+aclEmail, nil, false, nextBody)
 	if reached {
@@ -377,5 +377,73 @@ func TestClientIPIgnoresForwardedHeaderAndHandlesIPv6(t *testing.T) {
 		if got := clientIP(r); got != tc.want {
 			t.Errorf("clientIP(%q, xff %q) = %q, want %q", tc.remote, tc.xff, got, tc.want)
 		}
+	}
+}
+
+// mlHandlers are the three roles of one gated site with an ml host.
+func mlHandlers(site int64) (primary, ml, alias Handler) {
+	b := Handler{SiteID: site, Mode: "acl", Primary: "acl.example.com"}
+	primary, ml, alias = b, b, b
+	primary.Host, ml.Host, alias.Host = "acl.example.com", "ml.acl.example.com", "www.example.com"
+	return
+}
+
+func TestMLHostFlowHandsSessionToPrimary(t *testing.T) {
+	st, acl, _ := gateStore(t)
+	s, m := gateService(t, st)
+	ctx := context.Background()
+	if err := st.ReplaceGrants(ctx, acl, []store.Grant{{Mode: "email", Value: aclEmail}}); err != nil {
+		t.Fatal(err)
+	}
+	primary, ml, _ := mlHandlers(acl)
+
+	if _, reached := s.call(t, primary, "POST", Prefix+"/request", "email="+aclEmail, nil, false, nextBody); reached {
+		t.Fatal("upstream reached")
+	}
+	_, token := m.link(t)
+	m.mu.Lock()
+	body := m.all[len(m.all)-1].Body
+	m.mu.Unlock()
+	if !strings.Contains(body, "https://ml.acl.example.com"+Prefix+"/verify/") {
+		t.Fatalf("link not on the ml host: %s", body)
+	}
+
+	// The link means nothing on the primary: the token is bound to the ml host.
+	if w, _ := s.call(t, primary, "GET", Prefix+"/verify/"+token, "", nil, false, nextBody); w.Header().Get("Set-Cookie") != "" {
+		t.Fatal("ml token minted a cookie on the primary")
+	}
+	w, _ := s.call(t, ml, "GET", Prefix+"/verify/"+token, "", nil, false, nextBody)
+	loc := w.Header().Get("Location")
+	if w.Code != http.StatusSeeOther || !strings.HasPrefix(loc, "https://acl.example.com"+Prefix+"/verify/") || w.Header().Get("Set-Cookie") != "" {
+		t.Fatalf("ml verify: %d %q cookie=%q", w.Code, loc, w.Header().Get("Set-Cookie"))
+	}
+	if w, _ := s.call(t, ml, "GET", Prefix+"/verify/"+token, "", nil, false, nextBody); w.Header().Get("Location") != "" {
+		t.Fatal("ml link worked twice")
+	}
+
+	code := strings.TrimPrefix(loc, "https://acl.example.com")
+	w, _ = s.call(t, primary, "GET", code, "", nil, false, nextBody)
+	cookies := w.Result().Cookies()
+	if w.Code != http.StatusSeeOther || len(cookies) != 1 {
+		t.Fatalf("primary verify: %d %v", w.Code, cookies)
+	}
+	if _, reached := s.call(t, primary, "GET", "/", "", cookies[0], false, nextBody); !reached {
+		t.Fatal("session from the handoff did not pass")
+	}
+	if w, _ := s.call(t, primary, "GET", code, "", nil, false, nextBody); w.Header().Get("Set-Cookie") != "" {
+		t.Fatal("handoff code worked twice")
+	}
+}
+
+func TestMLHostNeverServesSiteAndAliasRedirects(t *testing.T) {
+	st, acl, _ := gateStore(t)
+	s, _ := gateService(t, st)
+	_, ml, alias := mlHandlers(acl)
+	if w, reached := s.call(t, ml, "GET", "/secret", "", nil, false, nextBody); reached || w.Code != http.StatusNotFound {
+		t.Fatalf("ml host served the site: %d reached=%v", w.Code, reached)
+	}
+	w, reached := s.call(t, alias, "GET", "/a?b=1", "", nil, false, nextBody)
+	if reached || w.Code != http.StatusFound || w.Header().Get("Location") != "https://acl.example.com/a?b=1" {
+		t.Fatalf("alias: %d %q reached=%v", w.Code, w.Header().Get("Location"), reached)
 	}
 }

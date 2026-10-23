@@ -147,6 +147,11 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v.Set("notes", cur.Notes)
 	v.Set("allowlist", cur.Allowlist)
 	v.Set("gate_mode", cur.GateMode)
+	v.Set("gate_provider", cur.GateProvider) // the sealed secret is never read back; blank keeps it
+	v.Set("gate_from", cur.GateFrom)
+	v.Set("gate_smtp_host", cur.GateSMTPHost)
+	v.Set("gate_smtp_port", strconv.Itoa(cur.GateSMTPPort))
+	v.Set("gate_smtp_user", cur.GateSMTPUser)
 	v.Set("basic_user", cur.BasicUser)
 	v.Set("record_ip", cur.RecordIP)
 	v.Set("record_ip6", cur.RecordIP6)

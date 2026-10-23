@@ -25,6 +25,9 @@ import (
 	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 
 	"github.com/servanago/servanago/internal/gatelogic"
+	"github.com/servanago/servanago/internal/postmark"
+	"github.com/servanago/servanago/internal/secretbox"
+	"github.com/servanago/servanago/internal/smtpx"
 	"github.com/servanago/servanago/internal/store"
 )
 
@@ -39,9 +42,28 @@ type Mailer interface {
 	Send(from, to, subject, body string) error
 }
 
-// SettingsSource returns the current mail setup from app state; ok=false means cannot deliver
-// right now. Wired at boot: reads SQLite and opens the sealed password.
-type SettingsSource func() (Mailer, string, bool)
+// SettingsSource returns the site's own mail setup from app state; ok=false means cannot deliver
+// right now. Wired at boot: reads the site row in SQLite and opens its sealed credential.
+type SettingsSource func(siteID int64) (Mailer, string, bool)
+
+// SiteMailer builds the site's mailer and sender from its row, unsealing the credential with the secret key.
+func SiteMailer(key string, r store.Site) (Mailer, string, error) {
+	if !r.GateMailReady() {
+		return nil, "", fmt.Errorf("site %d has no mail provider set up", r.ID)
+	}
+	var secret string
+	if r.GateSecret != nil {
+		b, err := secretbox.Open(key, r.GateSecret)
+		if err != nil {
+			return nil, "", fmt.Errorf("unseal the mail credential: %w", err)
+		}
+		secret = string(b)
+	}
+	if r.GateProvider == "postmark" {
+		return postmark.Client{Token: secret}, r.GateFrom, nil
+	}
+	return smtpx.Dialer{Host: r.GateSMTPHost, Port: r.GateSMTPPort, User: r.GateSMTPUser, Pass: secret}, r.GateFrom, nil
+}
 
 func init() { caddy.RegisterModule(Handler{}) }
 
@@ -51,6 +73,20 @@ type Handler struct {
 	SiteID int64  `json:"site_id"`
 	Host   string `json:"host"`
 	Mode   string `json:"mode"` // acl | open, never empty when rendered
+	// Primary is the site's main hostname. Set, the route runs in one of three roles by Host: the primary (serves the
+	// site, holds the session), "ml."+Primary (request form and link only, hands the session to the primary) or an
+	// alias (redirects to the primary). Empty = a single host that does everything.
+	Primary string `json:"primary,omitempty"`
+}
+
+func (h Handler) mlHost() string { return "ml." + h.Primary }
+
+// linkHost is where the emailed link opens.
+func (h Handler) linkHost() string {
+	if h.Primary == "" {
+		return h.Host
+	}
+	return h.mlHost()
 }
 
 func (Handler) CaddyModule() caddy.ModuleInfo {
@@ -108,8 +144,25 @@ func (s *Service) ctx(r *http.Request) (context.Context, string) { // ctx and th
 	return r.Context(), s.now().UTC().Format(time.RFC3339)
 }
 
+// origin is the scheme, host and non-default port a visitor's browser must use for host.
+func (s *Service) origin(host string) string {
+	if s.port != 443 {
+		return fmt.Sprintf("https://%s:%d", host, s.port)
+	}
+	return "https://" + host
+}
+
 func (s *Service) handle(w http.ResponseWriter, r *http.Request, next nextFunc, h Handler) error {
 	switch {
+	case h.Primary != "" && h.Host != h.Primary && h.Host != h.mlHost(): // alias: one place holds the session
+		http.Redirect(w, r, s.origin(h.Primary)+r.URL.RequestURI(), http.StatusFound)
+		return nil
+	case h.Primary != "" && h.Host == h.mlHost() && strings.HasPrefix(r.URL.Path, Prefix+"/verify/"):
+		s.verifyML(w, r, h)
+		return nil
+	case h.Primary != "" && h.Host == h.mlHost() && r.URL.Path != Prefix+"/request":
+		http.NotFound(w, r) // the ml host never serves the site
+		return nil
 	case r.URL.Path == Prefix+"/request":
 		if r.Method == http.MethodPost {
 			s.request(w, r, h)
@@ -184,28 +237,24 @@ func (s *Service) request(w http.ResponseWriter, r *http.Request, h Handler) {
 			return
 		}
 	}
-	mailer, from, ok := s.src()
+	mailer, from, ok := s.src(h.SiteID)
 	if !ok || s.secret == "" {
 		slog.Error("gate issuance refused: mail or secret key not configured", "host", h.Host)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
 	raw := newToken()
-	if err := s.st.IssueToken(ctx, sha256hex(raw), h.Host, email, at, tokenTTL); err != nil {
+	if err := s.st.IssueToken(ctx, sha256hex(raw), h.linkHost(), email, at, tokenTTL); err != nil {
 		slog.Error("gate token issue failed", "host", h.Host, "error", err)
 		w.WriteHeader(http.StatusServiceUnavailable)
 		return
 	}
-	go s.deliver(email, h.Host, raw, mailer, from)
+	go s.deliver(email, h.Host, s.origin(h.linkHost()), raw, mailer, from)
 	s.page(w, pageData{Title: "Check your email", Heading: "Check your email"})
 }
 
 // deliver is detached: a slow SMTP server must not strand the token or stall the response.
-func (s *Service) deliver(email, host, token string, mailer Mailer, from string) {
-	origin := "https://" + host
-	if s.port != 443 {
-		origin = fmt.Sprintf("%s:%d", origin, s.port)
-	}
+func (s *Service) deliver(email, host, origin, token string, mailer Mailer, from string) {
 	body := "A link to open " + host + " is below.\n\n" +
 		origin + Prefix + "/verify/" + token + "\n\n" +
 		"It expires in 15 minutes and works once. If you did not ask for this, ignore it:\n" +
@@ -215,6 +264,32 @@ func (s *Service) deliver(email, host, token string, mailer Mailer, from string)
 		return
 	}
 	slog.Info("gate link sent", "event", "gate.link", "host", host)
+}
+
+// verifyML consumes the emailed link on the ml host and hands the visitor to the primary with a fresh
+// one-time code (a minute, bound to the primary host), which the primary's verify turns into the cookie.
+func (s *Service) verifyML(w http.ResponseWriter, r *http.Request, h Handler) {
+	ip := clientIP(r)
+	if !s.lim.allow("tok:"+ip, 30, time.Hour, s.now()) {
+		s.page(w, pageData{Title: "Site access", Heading: "Too many requests", Note: "Try again later."})
+		return
+	}
+	ctx, at := s.ctx(r)
+	email, ok, err := s.st.ConsumeToken(ctx, sha256hex(strings.TrimPrefix(r.URL.Path, Prefix+"/verify/")), h.Host, at)
+	if err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable) // fail closed
+		return
+	}
+	if !ok || s.secret == "" {
+		s.page(w, pageData{Title: "Link expired", Heading: "This link has expired or was already used.", Note: "Request a new one from the site."})
+		return
+	}
+	code := newToken()
+	if err := s.st.IssueToken(ctx, sha256hex(code), h.Primary, email, at, time.Minute); err != nil {
+		w.WriteHeader(http.StatusServiceUnavailable)
+		return
+	}
+	http.Redirect(w, r, s.origin(h.Primary)+Prefix+"/verify/"+code, http.StatusSeeOther)
 }
 
 // verify consumes the link and mints the session cookie for this host.

@@ -74,6 +74,9 @@ func Render(st State, o Options) ([]byte, error) {
 		for _, h := range r.Hostnames {
 			hr = append(hr, hostSite{h, r})
 		}
+		if ml := r.MLHost(); ml != "" { // the gate's own host: request form and emailed link, never the site
+			hr = append(hr, hostSite{ml, r})
+		}
 	}
 	sort.Slice(hr, func(i, j int) bool { return hr[i].host < hr[j].host })
 
@@ -197,6 +200,9 @@ func issuer(o Options) m {
 // expansion) wrapped in the shared gate, allowlist and basic-auth chain when any of them is set. snip holds the
 // adapted routes of the site's snippets: they run after that chain and before the handler, except under /.well-known/.
 func siteHandler(host string, r store.Site, snip []any) (any, error) {
+	if host == r.MLHost() {
+		return m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}, nil
+	}
 	var extras []any
 	if r.ExtraRoutes != "" {
 		var err error
@@ -266,7 +272,7 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 
 	var sub []any
 	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
-		sub = append(sub, m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID}}})
+		sub = append(sub, m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}}})
 	}
 	if cidrs := strings.Fields(r.Allowlist); len(cidrs) > 0 {
 		sub = append(sub, m{

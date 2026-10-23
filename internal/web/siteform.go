@@ -405,6 +405,9 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	if base.Kind == "static" || base.Kind == "php" || base.Kind == "fastcgi" || base.Kind == "cgi" {
 		base.Stream, base.MaxBody = false, 0
 	}
+	if err := s.applyGateMail(&base, r.PostForm); err != nil {
+		return base, nil, err
+	}
 	grants, err := s.parseGate(r.Context(), base, r.PostForm)
 	return base, grants, err
 }
@@ -462,6 +465,13 @@ func (s *Server) checkHostnames(r *http.Request, tx *store.Store, rt store.Site)
 		for _, x := range all {
 			if x.ID != rt.ID && x.SiteUser == rt.SiteUser {
 				return userError{http.StatusConflict, fmt.Sprintf("The user %s already runs the site %s. Type another user name.", rt.SiteUser, x.Hostnames[0])}
+			}
+		}
+	}
+	if ml := rt.MLHost(); ml != "" { // the gate's own host must be free too
+		for _, x := range all {
+			if x.ID != rt.ID && slices.Contains(x.Hostnames, ml) {
+				return userError{http.StatusConflict, fmt.Sprintf("%s is already a hostname of %s; the magic-link host of %s needs that name.", ml, x.Hostnames[0], rt.Hostnames[0])}
 			}
 		}
 	}
@@ -549,6 +559,9 @@ func (s *Server) createSite(w http.ResponseWriter, r *http.Request) {
 		if created, err = tx.CreateSite(r.Context(), rt); err != nil {
 			return err
 		}
+		if grants == nil {
+			return nil
+		}
 		return tx.ReplaceGrants(r.Context(), created.ID, grants)
 	})
 	if err != nil {
@@ -605,6 +618,9 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 		if err := tx.UpdateSite(r.Context(), in); err != nil {
 			return err
 		}
+		if grants == nil {
+			return nil
+		}
 		return tx.ReplaceGrants(r.Context(), id, grants)
 	})
 	if err != nil {
@@ -624,11 +640,12 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 type siteEditForm struct {
 	Site        store.Site
 	Edit        bool
-	HostLines   string // the Hostnames box: one per line, primary first
-	DNSOn       bool   // Cloudflare is configured; otherwise the DNS record fields are hidden
-	GateACL     string // textarea content for an existing ACL
-	MailOK      bool   // email delivery and the session key work; otherwise the gate section is shown disabled
-	ServerIP    string // where new A records point; shown in the live preview
+	HostLines   string        // the Hostnames box: one per line, primary first
+	DNSOn       bool          // Cloudflare is configured; otherwise the DNS record fields are hidden
+	GateACL     string        // textarea content of the allowlist on the add form
+	Grants      []store.Grant // the access rows of an existing site
+	MailOK      bool          // email delivery and the session key work; otherwise the gate section is shown disabled
+	ServerIP    string        // where new A records point; shown in the live preview
 	Row         *siteRow
 	RootNote    string         // any foldered site: why the folder cannot be read, or ""
 	PHPVersions []runtimes.Opt // detected php-fpm versions for the pick list
@@ -693,7 +710,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 	title := "Add site"
 	rep := s.detect(r.Context())
 	form := siteEditForm{Site: rt, Edit: edit, HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
-		MailOK: s.gateUsable(r.Context()), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOpts(rt.PHPExtensions), Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
+		MailOK: s.gateUsable(), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOpts(rt.PHPExtensions), Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
 	}
@@ -706,7 +723,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 	if edit {
 		title = "Edit " + rt.Hostnames[0]
 		if gs, err := s.deps.Store.Grants(r.Context(), rt.ID); err == nil {
-			form.GateACL = gateACLText(gs)
+			form.Grants = gs
 		}
 		if rows, err := s.buildRows(r, []store.Site{rt}); err == nil && len(rows) == 1 {
 			form.Row = &rows[0]

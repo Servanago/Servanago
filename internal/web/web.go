@@ -218,6 +218,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /host/dns/resync", s.protected(s.hostDNS(false)))
 	mux.Handle("POST /host/dns/takeover", s.protected(s.hostDNS(true)))
 	mux.Handle("POST /sites/{id}/toggle", s.protected(s.toggleSite))
+	mux.Handle("POST /sites/{id}/gate/grants", s.protected(s.addGateGrant))
+	mux.Handle("POST /sites/{id}/gate/grants/delete", s.protected(s.removeGateGrant))
+	mux.Handle("POST /sites/{id}/gate/test", s.protected(s.testGateMail))
 	mux.Handle("POST /sites/{id}/dns/resync", s.protected(s.resyncDNS))
 	mux.Handle("POST /sites/{id}/dns/takeover", s.protected(s.takeOverDNS))
 	// /mcp authenticates with its own bearer token and carries no cookie, so the cookie-era CSRF check does not apply.

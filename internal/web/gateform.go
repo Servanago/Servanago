@@ -2,42 +2,82 @@ package web
 
 import (
 	"context"
-	"log/slog"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"time"
 
+	"github.com/servanago/servanago/internal/caddygate"
 	"github.com/servanago/servanago/internal/gatelogic"
+	"github.com/servanago/servanago/internal/secretbox"
 	"github.com/servanago/servanago/internal/store"
 )
 
-// mailReady reports whether magic links can be sent right now.
-func (s *Server) mailReady(ctx context.Context) (bool, error) {
-	set, err := s.deps.Store.GetSettings(ctx)
-	if err != nil {
-		return false, err
-	}
-	return set.MailReady(), nil
-}
+// gateUsable is true when the instance can run gated sites at all: the session key is set and Cloudflare
+// is connected (every gated site gets an ml. host whose DNS records ServanaGo creates). The forms use it to
+// decide whether the gate controls are live.
+func (s *Server) gateUsable() bool { return s.deps.Cfg.SecretKey != "" && s.dnsOn() }
 
-// gateUsable is mailReady plus the session key, logged rather than failed: the forms only
-// need it to decide whether the gate controls are live.
-func (s *Server) gateUsable(ctx context.Context) bool {
-	ok, err := s.mailReady(ctx)
-	if err != nil {
-		slog.Error("gate mail settings", "error", err)
+// applyGateMail overlays the form's mail block onto rt. A form without gate_provider leaves the stored block
+// alone (MCP updates); a blank secret keeps the stored one.
+func (s *Server) applyGateMail(rt *store.Site, v url.Values) error {
+	if _, ok := v["gate_provider"]; !ok {
+		return nil
 	}
-	return ok && s.deps.Cfg.SecretKey != ""
+	rt.GateProvider = v.Get("gate_provider")
+	switch rt.GateProvider {
+	case "", "smtp", "postmark":
+	default:
+		return userError{http.StatusUnprocessableEntity, "Mail provider must be SMTP or Postmark."}
+	}
+	rt.GateFrom = strings.TrimSpace(v.Get("gate_from"))
+	if rt.GateFrom != "" {
+		var err error
+		if rt.GateFrom, err = gatelogic.NormalizeEmail(rt.GateFrom); err != nil {
+			return userError{http.StatusUnprocessableEntity, "Sender must be a bare email address such as access@example.com."}
+		}
+	}
+	rt.GateSMTPHost, rt.GateSMTPUser = strings.TrimSpace(v.Get("gate_smtp_host")), strings.TrimSpace(v.Get("gate_smtp_user"))
+	rt.GateSMTPPort = 587
+	if p := strings.TrimSpace(v.Get("gate_smtp_port")); p != "" {
+		port, err := strconv.Atoi(p)
+		if err != nil || port < 1 || port > 65535 {
+			return userError{http.StatusUnprocessableEntity, "SMTP port " + p + " must be 1-65535."}
+		}
+		rt.GateSMTPPort = port
+	}
+	switch secret := v.Get("gate_secret"); {
+	case rt.GateProvider == "":
+		rt.GateSecret = nil
+	case secret == "":
+	case s.deps.Cfg.SecretKey == "":
+		return userError{http.StatusUnprocessableEntity, "Storing a mail credential needs SERVANAGO_SECRET_KEY (at least 32 characters) in the environment file."}
+	case len(secret) > 1024:
+		return userError{http.StatusUnprocessableEntity, "The mail credential is too long."}
+	default:
+		sealed, err := secretbox.Seal(s.deps.Cfg.SecretKey, []byte(secret))
+		if err != nil {
+			return err
+		}
+		rt.GateSecret = sealed
+	}
+	return nil
 }
 
 // parseGate reads the site form's protection block. Gate-off clears the grants; other modes
-// need email delivery and the session key configured, and acl needs at least one rule.
+// need the session key, Cloudflare and this site's mail provider, and acl needs at least one rule.
+// nil grants mean "leave the stored rows alone": an edit page manages them as rows, so its form has no gate_acl.
 func (s *Server) parseGate(ctx context.Context, rt store.Site, v url.Values) ([]store.Grant, error) {
-	if err := s.gateNeedsHelp(ctx, rt); err != nil {
+	if err := s.gateNeedsHelp(rt); err != nil {
 		return nil, err
 	}
 	if rt.GateMode == "" || rt.GateMode == "open" {
 		return []store.Grant{}, nil
+	}
+	if _, ok := v["gate_acl"]; !ok {
+		return nil, nil
 	}
 	rules, err := gatelogic.ParseACL(v.Get("gate_acl"))
 	if err != nil {
@@ -67,19 +107,99 @@ func gateACLText(gs []store.Grant) string {
 }
 
 // gateNeedsHelp refuses a gate when the app cannot honor it (checked once, both save paths).
-func (s *Server) gateNeedsHelp(ctx context.Context, rt store.Site) error {
+func (s *Server) gateNeedsHelp(rt store.Site) error {
 	if rt.GateMode == "" {
 		return nil
-	}
-	ok, err := s.mailReady(ctx)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs email delivery: set the SMTP host and MAIL FROM under Settings."}
 	}
 	if s.deps.Cfg.SecretKey == "" {
 		return userError{http.StatusUnprocessableEntity, "Magic-link sessions need SERVANAGO_SECRET_KEY (at least 32 characters) in .env to mint session keys."}
 	}
+	if !s.dnsOn() {
+		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs Cloudflare: ServanaGo creates the ml. host for the site there."}
+	}
+	if !rt.GateMailReady() {
+		return userError{http.StatusUnprocessableEntity, "Magic-link protection needs this site's mail provider: pick SMTP or Postmark and set the sender and credential."}
+	}
 	return nil
+}
+
+// addGateGrant adds one email or @domain row to the site's access list.
+func (s *Server) addGateGrant(w http.ResponseWriter, r *http.Request) {
+	rt, ok := s.gateSite(w, r)
+	if !ok {
+		return
+	}
+	rules, err := gatelogic.ParseACL(r.PostFormValue("rule"))
+	if err != nil || len(rules) != 1 {
+		fail(w, http.StatusUnprocessableEntity, "Enter one address such as alice@example.com, or @example.com for a whole domain.")
+		return
+	}
+	g := store.Grant{Mode: rules[0].Mode, Value: rules[0].Value, AddedAt: time.Now().UTC().Format(time.RFC3339)}
+	if u, ok := currentUser(r); ok {
+		g.AddedBy = u.Username
+	}
+	if err := s.deps.Store.AddGrant(r.Context(), rt.ID, g); err != nil {
+		failErr(w, err)
+		return
+	}
+	s.audit(r, "gate.grant.added", rt.Hostnames[0]+" "+rules[0].Value)
+	hxRedirect(w, "/sites/"+strconv.FormatInt(rt.ID, 10))
+}
+
+// removeGateGrant drops one row; identities that no longer qualify anywhere lose their session.
+func (s *Server) removeGateGrant(w http.ResponseWriter, r *http.Request) {
+	rt, ok := s.gateSite(w, r)
+	if !ok {
+		return
+	}
+	mode, value := r.PostFormValue("mode"), r.PostFormValue("value")
+	if err := s.deps.Store.RemoveGrant(r.Context(), rt.ID, mode, value); err != nil {
+		failErr(w, err)
+		return
+	}
+	s.audit(r, "gate.grant.removed", rt.Hostnames[0]+" "+value)
+	hxRedirect(w, "/sites/"+strconv.FormatInt(rt.ID, 10))
+}
+
+// testGateMail sends one message through the site's own provider to the address typed in the form.
+func (s *Server) testGateMail(w http.ResponseWriter, r *http.Request) {
+	rt, ok := s.gateSite(w, r)
+	if !ok {
+		return
+	}
+	to, err := gatelogic.NormalizeEmail(r.PostFormValue("to"))
+	if err != nil {
+		fail(w, http.StatusUnprocessableEntity, "Enter the address to send the test to.")
+		return
+	}
+	m, from, err := caddygate.SiteMailer(s.deps.Cfg.SecretKey, rt)
+	if err != nil {
+		fail(w, http.StatusUnprocessableEntity, "Save the site's mail provider first: "+err.Error())
+		return
+	}
+	if err := m.Send(from, to, "ServanaGo test mail for "+rt.Hostnames[0], "This is a test message from the mail provider of "+rt.Hostnames[0]+".\n"); err != nil {
+		fail(w, http.StatusBadGateway, "The provider refused the message: "+err.Error())
+		return
+	}
+	s.audit(r, "gate.mail.tested", rt.Hostnames[0])
+	_, _ = fmt.Fprint(w, "Test mail sent to "+to+".")
+}
+
+// gateSite loads the site named by {id} and parses the form; it has answered the request when ok is false.
+func (s *Server) gateSite(w http.ResponseWriter, r *http.Request) (store.Site, bool) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		fail(w, http.StatusBadRequest, "bad site id")
+		return store.Site{}, false
+	}
+	if err := r.ParseForm(); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return store.Site{}, false
+	}
+	rt, err := s.deps.Store.GetSite(r.Context(), id)
+	if err != nil {
+		fail(w, http.StatusNotFound, "site not found")
+		return store.Site{}, false
+	}
+	return rt, true
 }

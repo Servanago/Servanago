@@ -54,17 +54,21 @@ func (s *Syncer) run(ctx context.Context, siteID int64, takeOver bool) error {
 		return err
 	}
 	var errs []error
+	names := rt.Hostnames
+	if ml := rt.MLHost(); ml != "" { // a gated site also answers on its magic-link host
+		names = append(slices.Clone(names), ml)
+	}
 	stale, err := s.st.ListSiteDNS(ctx, siteID) // rows of hostnames the site no longer answers on, or that lost their domain
 	if err != nil {
 		return err
 	}
 	for _, row := range stale {
-		if _, ok := store.ResolveDomain(domains, row.Hostname); slices.Contains(rt.Hostnames, row.Hostname) && ok {
+		if _, ok := store.ResolveDomain(domains, row.Hostname); slices.Contains(names, row.Hostname) && ok {
 			continue
 		}
 		errs = append(errs, s.prune(ctx, domains, row))
 	}
-	for _, name := range rt.Hostnames {
+	for _, name := range names {
 		dom, ok := store.ResolveDomain(domains, name)
 		if !ok { // no domain, no zone: nothing to sync for this name
 			continue

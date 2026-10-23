@@ -14,13 +14,14 @@ import (
 )
 
 type Grant struct {
-	SiteID int64
-	Mode   string // email | domain
-	Value  string
+	SiteID           int64
+	Mode             string // email | domain
+	Value            string
+	AddedBy, AddedAt string // "" for rows that predate the list or came from the allowlist text
 }
 
 func (s *Store) Grants(ctx context.Context, siteID int64) ([]Grant, error) {
-	rows, err := s.q.QueryContext(ctx, "SELECT site_id, mode, value FROM gate_grants WHERE site_id=? ORDER BY mode, value", siteID)
+	rows, err := s.q.QueryContext(ctx, "SELECT site_id, mode, value, added_by, added_at FROM gate_grants WHERE site_id=? ORDER BY mode, value", siteID)
 	if err != nil {
 		return nil, fmt.Errorf("list grants for site %d: %w", siteID, err)
 	}
@@ -28,12 +29,42 @@ func (s *Store) Grants(ctx context.Context, siteID int64) ([]Grant, error) {
 	var out []Grant
 	for rows.Next() {
 		var g Grant
-		if err := rows.Scan(&g.SiteID, &g.Mode, &g.Value); err != nil {
+		if err := rows.Scan(&g.SiteID, &g.Mode, &g.Value, &g.AddedBy, &g.AddedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, g)
 	}
 	return out, rows.Err()
+}
+
+// AddGrant adds one access row (a no-op when it exists); RemoveGrant drops one and revokes identities that lose
+// their last qualifying grant, like ReplaceGrants.
+func (s *Store) AddGrant(ctx context.Context, siteID int64, g Grant) error {
+	old, err := s.Grants(ctx, siteID)
+	if err != nil {
+		return err
+	}
+	g.SiteID = siteID
+	for _, o := range old {
+		if grantsEqual(o, g) {
+			return nil
+		}
+	}
+	return s.ReplaceGrants(ctx, siteID, append(old, g))
+}
+
+func (s *Store) RemoveGrant(ctx context.Context, siteID int64, mode, value string) error {
+	old, err := s.Grants(ctx, siteID)
+	if err != nil {
+		return err
+	}
+	keep := make([]Grant, 0, len(old))
+	for _, o := range old {
+		if o.Mode != mode || o.Value != value {
+			keep = append(keep, o)
+		}
+	}
+	return s.ReplaceGrants(ctx, siteID, keep)
 }
 
 func (s *Store) setGrants(ctx context.Context, siteID int64, gs []Grant) error {
@@ -45,8 +76,8 @@ func (s *Store) setGrants(ctx context.Context, siteID int64, gs []Grant) error {
 		if g.Mode != "email" && g.Mode != "domain" {
 			return fmt.Errorf("grant mode %q is not email or domain", g.Mode)
 		}
-		if _, err := s.q.ExecContext(ctx, "INSERT OR IGNORE INTO gate_grants (site_id, mode, value) VALUES (?,?,?)",
-			siteID, g.Mode, g.Value); err != nil {
+		if _, err := s.q.ExecContext(ctx, "INSERT OR IGNORE INTO gate_grants (site_id, mode, value, added_by, added_at) VALUES (?,?,?,?,?)",
+			siteID, g.Mode, g.Value, g.AddedBy, g.AddedAt); err != nil {
 			return fmt.Errorf("add grant for site %d: %w", siteID, err)
 		}
 	}
@@ -65,6 +96,14 @@ func (s *Store) ReplaceGrants(ctx context.Context, siteID int64, gs []Grant) err
 	old, err := s.Grants(ctx, siteID)
 	if err != nil {
 		return err
+	}
+	gs = append([]Grant(nil), gs...) // the allowlist text carries no metadata: keep who added a row that stays
+	for i := range gs {
+		for _, o := range old {
+			if gs[i].AddedAt == "" && o.Mode == gs[i].Mode && o.Value == gs[i].Value {
+				gs[i].AddedBy, gs[i].AddedAt = o.AddedBy, o.AddedAt
+			}
+		}
 	}
 	if err := s.setGrants(ctx, siteID, gs); err != nil {
 		return err

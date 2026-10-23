@@ -213,7 +213,7 @@ func TestEditingGatedSiteKeepsAndChangesItsAllowlist(t *testing.T) {
 	}
 	c := sessionCookie(t, login(s, "pw", nil, ""))
 	post := func(method, path string, kv ...string) int {
-		return s.do(req{method: method, path: path, body: form(kv...).Encode(), hdr: htmxPost, cookies: []*http.Cookie{c}}).Code
+		return s.do(req{method: method, path: path, body: form(append(kv, gateMail...)...).Encode(), hdr: htmxPost, cookies: []*http.Cookie{c}}).Code
 	}
 	if code := post("POST", "/sites", "enabled", "on", "gate_mode", "acl", "gate_acl", "alice@example.com"); code != 204 {
 		t.Fatalf("create: %d", code)

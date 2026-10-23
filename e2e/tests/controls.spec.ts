@@ -15,7 +15,7 @@ test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await page.getByLabel('Upstream host or IP').fill('192.168.1.22');
   await page.getByLabel('Allowed sources').fill('192.168.0.0/16');
   await page.getByLabel('User', { exact: true }).fill('alice');
-  await page.getByLabel('Password').fill('s3cret');
+  await page.getByLabel('Password', { exact: true }).fill('s3cret');
   await page.getByRole('button', { name: 'Add site' }).click();
   const row = page.getByRole('row', { name: /bazarr\.controls\.example\.net/ });
   await expect(row).toBeVisible();
@@ -29,7 +29,7 @@ test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await row.getByRole('link', { name: 'Edit' }).click();
   await expect(page.getByLabel('Allowed sources')).toHaveValue('192.168.0.0/16');
   await expect(page.getByLabel('User', { exact: true })).toHaveValue('alice');
-  await expect(page.getByLabel('Password')).toHaveValue('');
+  await expect(page.getByLabel('Password', { exact: true })).toHaveValue('');
   await page.getByLabel('Allowed sources').fill('not-a-cidr');
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByRole('alert').filter({ hasText: 'not-a-cidr' })).toBeVisible();

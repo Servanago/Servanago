@@ -11,6 +11,6 @@ cd "$(dirname "$0")/.."
 
 make build
 packaging/build-deb.sh bin/servanago
-apt-get install ./bin/servanago_0.6.1_*.deb
+apt-get install ./bin/servanago_0.7.0_*.deb
 
 echo "Edit /etc/servanago/servanago.env, then: systemctl start servanago"

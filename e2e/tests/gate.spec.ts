@@ -15,14 +15,6 @@ test('gated site: magic link in, revoke out', async ({ page }) => {
 
   await login(page);
 
-  // Email delivery is configured in the UI: point it at the SMTP sink before gating a site.
-  await page.goto('/settings');
-  await page.getByLabel('SMTP host', { exact: true }).fill('127.0.0.1');
-  await page.getByLabel('SMTP port').fill('28097');
-  await page.getByLabel('MAIL FROM', { exact: true }).fill('e2e@example.com');
-  await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('On. Magic-link sites send their links from here.')).toBeVisible();
-
   await page.goto('/domains');
   await page.getByLabel('Domain', { exact: true }).fill('gate.example.test');
   await page.getByLabel('Default IP').fill('192.168.1.19');
@@ -34,6 +26,11 @@ test('gated site: magic link in, revoke out', async ({ page }) => {
   await page.getByLabel('Upstream host or IP').fill('127.0.0.1');
   await page.getByLabel('Upstream port').fill('29111');
   await page.locator('select[name=gate_mode]').selectOption('open');
+  // The site mails its own links: point its provider at the SMTP sink.
+  await page.locator('select[name=gate_provider]').selectOption('smtp');
+  await page.getByLabel('Sender (From address)').fill('e2e@example.com');
+  await page.getByLabel('SMTP host').fill('127.0.0.1');
+  await page.getByLabel('SMTP port').fill('28097');
   await page.getByRole('button', { name: 'Add site' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('row', { name: /st\.gate\.example\.test/ }).getByText('gated (any email)')).toBeVisible();
@@ -50,8 +47,9 @@ test('gated site: magic link in, revoke out', async ({ page }) => {
   const mail = await (await fetch('http://127.0.0.1:28098/last')).text();
   const link = mail.match(/https:\/\/\S+\/_gate\/verify\/\S+/)?.[0];
   expect(link, 'the SMTP sink captured the magic link').toBeTruthy();
+  expect(link).toContain('https://ml.st.gate.example.test:28443/_gate/verify/');
 
-  // Clicking the link grants the session on this host and lands on the site.
+  // The link opens on the ml host, which hands the session to the site host and lands on the site.
   await page.goto(link);
   await expect(page).toHaveURL(`${GATE}/`);
   await expect(page.getByText('GATE-UPSTREAM')).toBeVisible();

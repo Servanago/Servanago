@@ -38,6 +38,25 @@
             {
               "handle": [
                 {
+                  "handler": "servanago_gate",
+                  "host": "ml.sonarr.example.com",
+                  "mode": "acl",
+                  "primary": "sonarr.example.com",
+                  "site_id": 1
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "ml.sonarr.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
                   "handler": "subroute",
                   "routes": [
                     {
@@ -46,6 +65,7 @@
                           "handler": "servanago_gate",
                           "host": "sonarr.example.com",
                           "mode": "acl",
+                          "primary": "sonarr.example.com",
                           "site_id": 1
                         }
                       ]
@@ -188,6 +208,29 @@
             ],
             "subjects": [
               "*.example.com"
+            ]
+          },
+          {
+            "issuers": [
+              {
+                "challenges": {
+                  "dns": {
+                    "provider": {
+                      "api_token": "{env.CLOUDFLARE_API_TOKEN}",
+                      "name": "cloudflare"
+                    },
+                    "resolvers": [
+                      "1.1.1.1",
+                      "8.8.8.8"
+                    ]
+                  }
+                },
+                "email": "me@example.com",
+                "module": "acme"
+              }
+            ],
+            "subjects": [
+              "ml.sonarr.example.com"
             ]
           }
         ]
