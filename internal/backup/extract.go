@@ -65,6 +65,8 @@ func OwnerFromHeader(h *tar.Header) (uid, gid int) {
 type Extractor struct {
 	Dest  string                                 // an existing directory, already symlink-resolved by the caller
 	Chown func(path string, h *tar.Header) error // nil = leave the process's ownership (tests)
+	// Volume skips FIFOs instead of failing: an app volume can hold one, and the app recreates it.
+	Volume bool
 }
 
 // Extract writes the entry whose archive name is name (h.Name with its prefix already removed) into Dest.
@@ -122,6 +124,11 @@ func (x Extractor) Extract(name string, h *tar.Header, r io.Reader) error {
 		if err := os.Symlink(h.Linkname, target); err != nil {
 			return err
 		}
+	case tar.TypeFifo:
+		if x.Volume {
+			return nil
+		}
+		fallthrough
 	default:
 		return fmt.Errorf("entry %q: type %q is not restored", h.Name, string(h.Typeflag))
 	}

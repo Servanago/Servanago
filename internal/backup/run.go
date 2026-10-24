@@ -11,6 +11,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 )
@@ -40,6 +41,12 @@ type Env struct {
 	Chgrp              func(path string) error
 	Chown              func(path string, h *tar.Header) error
 	Free               func(path string) (uint64, error)
+
+	// Volume restore: the containers that mount a volume, and the calls that stop and start them.
+	Users       func(volume string) ([]Container, error)
+	Stop, Start func(id string) error
+	IsRunning   func(id string) (bool, error)
+	VolumeChown func(path string, h *tar.Header) error // numeric ids from the header, never host names
 }
 
 // Result is one scope's run, written as a result file for the service to ingest.
@@ -263,9 +270,20 @@ func dumpProfile(ctx context.Context, e Env, b *Builder, pr Profile, root string
 	return last
 }
 
-// RestoreSite restores a site's files and/or dumps from one archive. It first takes a pre-restore backup of the
-// current state and aborts if that fails. Volumes are never restored here.
-func RestoreSite(ctx context.Context, e Env, p Plan, archive string, files, dumps bool) error {
+// RestoreOpts is what to restore from an archive.
+type RestoreOpts struct {
+	Files, Dumps bool
+	Volumes      []string
+}
+
+// RestoreSite restores a site's files, dumps and/or volumes from one archive. It first takes a pre-restore backup of
+// the current state and aborts if that fails. Volumes go first, in a pass of their own, so a database container is
+// running again when the dump pass needs it.
+func RestoreSite(ctx context.Context, e Env, p Plan, archive string, o RestoreOpts) error {
+	files, dumps := o.Files, o.Dumps
+	if !files && !dumps && len(o.Volumes) == 0 {
+		return errors.New("nothing to restore: choose files, dumps or volumes")
+	}
 	if !ValidName(archive) || !strings.HasPrefix(archive, p.Scope+"-") {
 		return fmt.Errorf("archive name %q is not valid for %s", archive, p.Scope)
 	}
@@ -277,12 +295,25 @@ func RestoreSite(ctx context.Context, e Env, p Plan, archive string, files, dump
 	if m.Scope != p.Scope {
 		return fmt.Errorf("archive belongs to %s, not %s", m.Scope, p.Scope)
 	}
+	for _, v := range o.Volumes {
+		if !slices.Contains(p.Volumes, v) || !slices.Contains(m.Volumes, v) {
+			return fmt.Errorf("volume %q is not switched on for this site and in this archive", v)
+		}
+	}
 	root, err := resolveRoot(e, p.Root)
 	if err != nil {
 		return err
 	}
 	if res := RunScope(ctx, e, p, "pre-restore"); res.Status != "ok" {
 		return fmt.Errorf("pre-restore backup %s: %s", res.Status, res.Error)
+	}
+	if len(o.Volumes) > 0 {
+		if err := restoreVolumes(e, path, o.Volumes); err != nil {
+			return fmt.Errorf("%w (the pre-restore archive holds the state from before)", err)
+		}
+	}
+	if !files && !dumps {
+		return nil
 	}
 	tr, closeFn, err := Open(path, e.Pass)
 	if err != nil {

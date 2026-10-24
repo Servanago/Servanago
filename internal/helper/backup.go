@@ -32,13 +32,14 @@ var actorRE = regexp.MustCompile(backupActorRE)
 
 // BackupRequestData is the job's one-shot instruction. Every field is set by an action after validation.
 type BackupRequestData struct {
-	Op      string `json:"op"`    // run | restore
-	Scope   string `json:"scope"` // all | panel | site
-	Slug    string `json:"slug,omitempty"`
-	Archive string `json:"archive,omitempty"`
-	Files   bool   `json:"files,omitempty"`
-	Dumps   bool   `json:"dumps,omitempty"`
-	Actor   string `json:"actor,omitempty"`
+	Op      string   `json:"op"`    // run | restore
+	Scope   string   `json:"scope"` // all | panel | site
+	Slug    string   `json:"slug,omitempty"`
+	Archive string   `json:"archive,omitempty"`
+	Files   bool     `json:"files,omitempty"`
+	Dumps   bool     `json:"dumps,omitempty"`
+	Actor   string   `json:"actor,omitempty"`
+	Volumes []string `json:"volumes,omitempty"`
 }
 
 // backupUnits renders the service and its timer. Type=exec so `systemctl start` returns once the job runs: a oneshot
@@ -175,10 +176,20 @@ func (a Actions) BackupRestore(r Request) Response {
 	if !backup.ValidName(v.Archive) || !strings.HasPrefix(v.Archive, slug+"-") {
 		return Response{Error: fmt.Sprintf("archive %q is not an archive of site %s", v.Archive, slug)}
 	}
-	if !v.RestoreFiles && !v.RestoreDumps {
-		return Response{Error: "choose what to restore: files, dumps or both"}
+	if !v.RestoreFiles && !v.RestoreDumps && len(v.RestoreVolumes) == 0 {
+		return Response{Error: "choose what to restore: files, dumps, volumes or any of them"}
 	}
-	return a.backupStart(BackupRequestData{Op: "restore", Scope: backupScopeSite, Slug: slug, Archive: v.Archive, Files: v.RestoreFiles, Dumps: v.RestoreDumps, Actor: v.Actor})
+	if len(v.RestoreVolumes) > 20 {
+		return Response{Error: "at most 20 volumes in one restore"}
+	}
+	seen := map[string]bool{}
+	for _, vol := range v.RestoreVolumes {
+		if !backup.ValidVolume(vol) || seen[vol] {
+			return Response{Error: fmt.Sprintf("volume %q is not a valid, distinct volume name", vol)}
+		}
+		seen[vol] = true
+	}
+	return a.backupStart(BackupRequestData{Op: "restore", Scope: backupScopeSite, Slug: slug, Archive: v.Archive, Files: v.RestoreFiles, Dumps: v.RestoreDumps, Volumes: v.RestoreVolumes, Actor: v.Actor})
 }
 
 // BackupStatus reports the job unit's state and the tail of its journal.

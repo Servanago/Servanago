@@ -51,7 +51,7 @@ func (h *backupHost) log() string {
 	var out []string
 	for i, n := range h.names {
 		c := h.calls[i]
-		out = append(out, fmt.Sprintf("%s scope=%s slug=%s archive=%s files=%v dumps=%v actor=%s enabled=%v", n, c.Scope, c.Slug, c.Archive, c.RestoreFiles, c.RestoreDumps, c.Actor, c.Enabled))
+		out = append(out, fmt.Sprintf("%s scope=%s slug=%s archive=%s files=%v dumps=%v actor=%s enabled=%v volumes=%v", n, c.Scope, c.Slug, c.Archive, c.RestoreFiles, c.RestoreDumps, c.Actor, c.Enabled, c.RestoreVolumes))
 	}
 	return strings.Join(out, "|")
 }
@@ -452,6 +452,72 @@ func TestStaleScopes(t *testing.T) {
 		got := strings.Join(staleScopes(now, set, tc.scopes, tc.last, tc.ok), ";")
 		if (tc.want == "") != (got == "") || !strings.Contains(got, tc.want) {
 			t.Errorf("%s: %q, want %q", tc.name, got, tc.want)
+		}
+	}
+}
+
+// archiveWithVolumes is an archive whose manifest lists volumes (the restore check reads the manifest, not the tree).
+func (b *bt) archiveWithVolumes(t *testing.T, scope string, vols ...string) string {
+	t.Helper()
+	name, _, err := backup.Create(backup.CreateOpts{Dir: b.dir, Scratch: t.TempDir(), Pass: goodPass},
+		backup.Manifest{Scope: scope, RunID: "r2", Started: time.Now().UTC().Truncate(time.Second), Volumes: vols},
+		func(bl *backup.Builder) error {
+			return bl.AddReader("dumps/a.sql", "dump", strings.NewReader("select 1"))
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return name
+}
+
+func TestRestoreVolumesRules(t *testing.T) {
+	b := backupServer(t)
+	if w := b.settings(); w.Code != 204 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	site := b.site(t, "shop.example.com")
+	ctx := context.Background()
+	_ = b.s.deps.Store.AddVolume(ctx, site.ID, "data")
+	_ = b.s.deps.Store.AddVolume(ctx, site.ID, "cache") // opted in, but not in the archive
+	arch := b.archiveWithVolumes(t, site.Slug, "data", "gone")
+	id := fmt.Sprint(site.ID)
+	base := []string{"site", id, "name", arch, "sure", site.Slug, "password", "pw"}
+	for _, tc := range []struct{ name, vol string }{
+		{"not in the archive", "cache"},
+		{"no longer switched on", "gone"},
+		{"never heard of", "other"},
+	} {
+		if w := b.post("/backups/restore", append(base, "volumes", tc.vol)...); w.Code != 422 || !strings.Contains(w.Body.String(), "Volume "+tc.vol) {
+			t.Errorf("%s: %d %s", tc.name, w.Code, w.Body)
+		}
+	}
+	if strings.Contains(b.host.log(), "backup-restore") {
+		t.Fatalf("a refused volume restore reached the helper: %s", b.host.log())
+	}
+	if w := b.post("/backups/restore", append(base, "volumes", "data")...); w.Code != 204 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if got := b.host.log(); !strings.Contains(got, "archive="+arch+" files=false dumps=false") || !strings.Contains(got, "volumes=[data]") {
+		t.Errorf("helper calls: %s", got)
+	}
+	if rows, _ := b.s.deps.Store.ListAudit(ctx, 10); !hasAudit(rows, "backup.restore") {
+		t.Error("no audit row")
+	}
+}
+
+func TestBackupsPageOffersVolumeRestoreAndNamesThePanelCommand(t *testing.T) {
+	b := backupServer(t)
+	if w := b.settings(); w.Code != 204 {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	site := b.site(t, "shop.example.com")
+	_ = b.s.deps.Store.AddVolume(context.Background(), site.ID, "data")
+	b.archiveWithVolumes(t, site.Slug, "data")
+	b.archiveWithVolumes(t, "panel")
+	body := b.get("/backups").Body.String()
+	for _, want := range []string{`name="volumes" value="data"`, "servanago backup restore --panel", "</form>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %q", want)
 		}
 	}
 }

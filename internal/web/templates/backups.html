@@ -99,8 +99,11 @@
 {{if not .Panel}}<input type="hidden" name="site" value="{{.SiteID}}">
 <label><input type="checkbox" name="files" {{if .CanFiles}}checked{{else}}disabled{{end}}> Restore the files</label>
 <label><input type="checkbox" name="dumps" {{if .Profiles}}checked{{else}}disabled{{end}}> Restore the database dumps</label>
+{{if .Volumes}}<fieldset><legend>Container volumes</legend>
+{{range .Volumes}}<label><input type="checkbox" name="volumes" value="{{.}}"> Restore volume {{.}} <small>{{index $sc.VolUsers .}}</small></label>
+{{end}}<p>A volume restore replaces everything in the volume. Only volumes that are in the chosen archive can be restored.</p></fieldset>{{end}}
 <label>To restore, type the site's short name: {{.Scope}} <input name="sure" autocomplete="off"></label>
-{{hint "backup_restore"}}{{end}}
+{{hint "backup_restore"}}{{else}}<p>Restore a panel archive from the command line: <code>servanago backup restore --panel ARCHIVE</code>. {{hint "backup_panel_restore"}}</p>{{end}}
 {{template "reauth" $d.NeedCode}}
 <button type="submit" hx-post="/backups/download" hx-target="#backups-msg" class="outline">Download</button>
 {{if not .Panel}}<button type="submit" hx-post="/backups/restore" hx-target="#backups-msg" class="secondary">Restore</button>{{end}}

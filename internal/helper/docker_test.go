@@ -13,6 +13,7 @@ const dockerJSON = `[
   "Ports":[{"IP":"127.0.0.1","PrivatePort":80,"PublicPort":6910,"Type":"tcp"},{"PrivatePort":443,"Type":"tcp"}],
   "Labels":{"com.docker.compose.project":"ntfy","com.docker.compose.service":"ntfy","com.docker.compose.project.working_dir":"/opt/ntfy","com.docker.compose.project.config_files":"/opt/ntfy/compose.yml","secret":"nope"},
   "NetworkSettings":{"Networks":{"ntfy_default":{"IPAddress":"172.18.0.2"}}},
+  "Mounts":[{"Type":"volume","Name":"ntfy_cache","Source":"/var/lib/docker/volumes/ntfy_cache/_data"},{"Type":"bind","Source":"/etc/ntfy"}],
   "Env":["PASSWORD=hunter2"]},
  {"Id":"1234","Names":["/old"],"Image":"x","State":"exited","Status":"Exited (1) 3 hours ago","Ports":[],"Labels":null,"NetworkSettings":{"Networks":{}}},
  {"Id":"5678","Names":["/sick"],"Image":"y","State":"running","Status":"Up 2 hours (unhealthy)"}
@@ -32,6 +33,9 @@ func TestParseDockerList(t *testing.T) {
 	}
 	if n.Project != "ntfy" || n.Service != "ntfy" || n.WorkingDir != "/opt/ntfy" || n.ConfigFiles != "/opt/ntfy/compose.yml" || len(n.Networks) != 1 || n.Networks[0] != "ntfy_default" {
 		t.Errorf("compose/networks: %+v", n)
+	}
+	if len(n.Volumes) != 1 || n.Volumes[0] != "ntfy_cache" { // named volumes only: no bind paths
+		t.Errorf("volumes: %+v", n.Volumes)
 	}
 	if cs[1].State != "exited" || cs[1].Health != "" || cs[2].Health != "unhealthy" {
 		t.Errorf("states: %+v %+v", cs[1], cs[2])

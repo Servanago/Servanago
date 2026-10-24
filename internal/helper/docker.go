@@ -35,6 +35,7 @@ type Container struct {
 	Health      string       `json:"health,omitempty"`
 	Ports       []DockerPort `json:"ports,omitempty"`
 	Networks    []string     `json:"networks,omitempty"`
+	Volumes     []string     `json:"volumes,omitempty"` // names of the named volumes it mounts (backup restore lists the users of a volume)
 	Project     string       `json:"project,omitempty"` // compose labels
 	Service     string       `json:"service,omitempty"`
 	WorkingDir  string       `json:"working_dir,omitempty"`
@@ -116,6 +117,7 @@ func parseDockerList(body []byte) ([]Container, error) {
 		}
 		Labels          map[string]string
 		NetworkSettings struct{ Networks map[string]json.RawMessage }
+		Mounts          []struct{ Type, Name string }
 	}
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, fmt.Errorf("docker: %w", err)
@@ -130,6 +132,11 @@ func parseDockerList(body []byte) ([]Container, error) {
 			WorkingDir: clip(r.Labels["com.docker.compose.project.working_dir"], maxDockerString), ConfigFiles: clip(r.Labels["com.docker.compose.project.config_files"], maxDockerString)}
 		if len(r.Names) > 0 {
 			c.Name = clip(strings.TrimPrefix(r.Names[0], "/"), maxDockerString)
+		}
+		for _, m := range r.Mounts {
+			if m.Type == "volume" && m.Name != "" {
+				c.Volumes = append(c.Volumes, clip(m.Name, maxDockerString))
+			}
 		}
 		switch s := r.Status; {
 		case strings.Contains(s, "(unhealthy)"):

@@ -137,7 +137,7 @@ func TestSiteRoundTripFilesSqliteAndDocker(t *testing.T) {
 	}
 	write(t, filepath.Join(root, "index.html"), "vandalised")
 	sqliteFile(t, filepath.Join(root, "storage", "db.sqlite"), "three")
-	if err := RestoreSite(context.Background(), e, p, res.Archive, true, true); err != nil {
+	if err := RestoreSite(context.Background(), e, p, res.Archive, RestoreOpts{Files: true, Dumps: true}); err != nil {
 		t.Fatalf("restore: %v", err)
 	}
 	if b, _ := os.ReadFile(filepath.Join(root, "index.html")); string(b) != "hello" {

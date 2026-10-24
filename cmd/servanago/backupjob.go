@@ -106,9 +106,11 @@ func openJob(dir, envFile string) (*job, func(), error) {
 		Dir: set.Dir, Scratch: scratch, Host: host, Version: "dev", Schema: store.LatestVersion(),
 		Now: time.Now, Exec: backup.OsExec, Volume: backup.DockerVolume, Running: backup.DockerRunning,
 		CheckRoot: helper.ValidateSiteRoot, Free: freeBytes,
+		Users: backup.ContainersUsing, Stop: backup.StopContainer, Start: backup.StartContainer, IsRunning: backup.ContainerRunning,
 	}
 	if os.Geteuid() == 0 {
 		j.env.Chown = lchownFromHeader
+		j.env.VolumeChown = func(p string, h *tar.Header) error { return os.Lchown(p, h.Uid, h.Gid) } // ids inside the container, not host names
 		if g, err := user.LookupGroup("servanago"); err == nil {
 			if gid, err := strconv.Atoi(g.Gid); err == nil {
 				j.env.Chgrp = func(p string) error { return os.Chown(p, -1, gid) }
@@ -422,7 +424,7 @@ func (j *job) execute(ctx context.Context, req *helper.BackupRequestData) (faile
 		}
 		now := time.Now().Unix()
 		r := backup.Result{RunID: "restore-" + strconv.FormatInt(now, 10), Scope: req.Slug, Trigger: "restore", Actor: req.Actor, Archive: req.Archive, Started: now, Status: "ok"}
-		if err := backup.RestoreSite(ctx, j.env, p.Plan, req.Archive, req.Files, req.Dumps); err != nil {
+		if err := backup.RestoreSite(ctx, j.env, p.Plan, req.Archive, backup.RestoreOpts{Files: req.Files, Dumps: req.Dumps, Volumes: req.Volumes}); err != nil {
 			r.Status, r.Error = "failed", err.Error()
 			failed = true
 		}

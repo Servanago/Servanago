@@ -90,6 +90,8 @@ type Spec struct {
 	RestoreFiles bool   `json:"restore_files,omitempty"` // backup-restore
 	RestoreDumps bool   `json:"restore_dumps,omitempty"` // backup-restore
 	Actor        string `json:"actor,omitempty"`         // backup-start|restore: the signed-in user, for the audit row
+
+	RestoreVolumes []string `json:"restore_volumes,omitempty"` // backup-restore: docker volume names (at most 20); the job stops their containers
 }
 
 // UserData is what user-check and user-add report about a named site user.

@@ -456,5 +456,6 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 		}) (*mcp.CallToolResult, snippetDone, error) {
 			return nil, snippetDone{in.Name}, snippet(ctx, s.deleteSnippet, "DELETE", in.Name, "")
 		})
+	s.addBackupTools(srv, ip, ro)
 	return srv
 }

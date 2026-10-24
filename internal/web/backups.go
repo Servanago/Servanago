@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,30 @@ type scopeView struct {
 	Archives   []archiveView
 	Profiles   []profileView
 	Volumes    []string
+	VolUsers   map[string]string // volume -> the containers that mount it, as text
+}
+
+// volumeUsers says, per volume, which containers mount it (the helper's cached docker-list).
+func (s *Server) volumeUsers(ctx context.Context, vols []string) map[string]string {
+	out := map[string]string{}
+	d, err := s.dockerData(ctx)
+	for _, v := range vols {
+		if err != nil || !d.Present {
+			out[v] = "container list unavailable"
+			continue
+		}
+		var names []string
+		for _, c := range d.Containers {
+			if slices.Contains(c.Volumes, v) {
+				names = append(names, c.Name+" ("+c.State+")")
+			}
+		}
+		out[v] = "no containers use it"
+		if len(names) > 0 {
+			out[v] = "stops and restarts: " + strings.Join(names, ", ")
+		}
+	}
+	return out
 }
 
 type backupsData struct {
@@ -162,6 +187,9 @@ func (s *Server) backupsPage(w http.ResponseWriter, r *http.Request) {
 			v.Profiles = append(v.Profiles, profileView{Name: p.Name, Engine: p.Engine, Target: t, HasSecret: p.Secret != nil})
 		}
 		v.Volumes, _ = st.ListVolumes(ctx, site.ID)
+		if len(v.Volumes) > 0 {
+			v.VolUsers = s.volumeUsers(ctx, v.Volumes)
+		}
 		d.Scopes = append(d.Scopes, v)
 	}
 	if rs, err := st.ListRuns(ctx, "", 30); err == nil {
@@ -269,10 +297,7 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	spec := helper.Spec{Scope: r.PostFormValue("scope")}
-	if u, ok := currentUser(r); ok {
-		spec.Actor = u.Username
-	}
+	spec := helper.Spec{Scope: r.PostFormValue("scope"), Actor: helperActor(r)}
 	switch spec.Scope {
 	case "all", "panel":
 	case "site":
@@ -458,23 +483,32 @@ func (s *Server) deleteBackupVolume(w http.ResponseWriter, r *http.Request) {
 
 // scopeArchive validates an archive name against its scope and the files on disk and returns its path.
 func (s *Server) scopeArchive(ctx context.Context, scope, name string) (string, error) {
-	set, err := s.deps.Store.GetBackupSettings(ctx)
-	if err != nil {
+	if _, err := s.scopeInfo(ctx, scope, name); err != nil {
 		return "", err
 	}
+	set, _ := s.deps.Store.GetBackupSettings(ctx)
+	return filepath.Join(set.Dir, scope, name), nil
+}
+
+// scopeInfo finds an undamaged archive of the scope in the backup folder.
+func (s *Server) scopeInfo(ctx context.Context, scope, name string) (backup.Info, error) {
+	set, err := s.deps.Store.GetBackupSettings(ctx)
+	if err != nil {
+		return backup.Info{}, err
+	}
 	if !backup.ValidName(name) || !strings.HasPrefix(name, scope+"-") {
-		return "", fmt.Errorf("that is not an archive of %s", scope)
+		return backup.Info{}, fmt.Errorf("that is not an archive of %s", scope)
 	}
 	ins, err := backup.List(set.Dir, scope)
 	if err != nil {
-		return "", err
+		return backup.Info{}, err
 	}
 	for _, in := range ins {
 		if in.Name == name && in.Damaged == "" {
-			return filepath.Join(set.Dir, scope, name), nil
+			return in, nil
 		}
 	}
-	return "", fmt.Errorf("%s is not in the archive list (or is damaged)", name)
+	return backup.Info{}, fmt.Errorf("%s is not in the archive list (or is damaged)", name)
 }
 
 type downloadGrant struct {
@@ -554,33 +588,65 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	name := r.PostFormValue("name")
-	if _, err := s.scopeArchive(r.Context(), site.Slug, name); err != nil {
-		fail(w, http.StatusNotFound, err.Error())
-		return
-	}
-	spec := helper.Spec{Slug: site.Slug, Archive: name, RestoreFiles: r.PostFormValue("files") != "", RestoreDumps: r.PostFormValue("dumps") != ""}
-	if !spec.RestoreFiles && !spec.RestoreDumps {
-		fail(w, http.StatusUnprocessableEntity, "Tick files, database dumps or both.")
+	spec, serr := s.checkRestore(r.Context(), site, r.PostFormValue("name"), r.PostFormValue("files") != "", r.PostFormValue("dumps") != "", r.PostForm["volumes"])
+	if serr != nil {
+		fail(w, serr.code, serr.msg)
 		return
 	}
 	if r.PostFormValue("sure") != site.Slug {
-		fail(w, http.StatusUnprocessableEntity, "Type the site's short name ("+site.Slug+") to confirm: a restore overwrites files and databases.")
+		fail(w, http.StatusUnprocessableEntity, "Type the site's short name ("+site.Slug+") to confirm: a restore overwrites files, databases and volumes.")
 		return
 	}
 	if !s.confirm(w, r) {
 		return
 	}
-	if u, ok := currentUser(r); ok {
-		spec.Actor = u.Username
-	}
-	if _, err := s.helperClient().Call(r.Context(), helper.ActionBackupRestore, spec); err != nil {
-		fail(w, http.StatusBadGateway, err.Error())
+	if serr := s.sendRestore(r, site, spec); serr != nil {
+		fail(w, serr.code, serr.msg)
 		return
 	}
-	s.audit(r, "backup.restore", site.Slug+" "+name)
-	s.flash("Restore started for " + site.Slug + ". The current state is backed up first; the result appears under Recent runs.")
 	hxRedirect(w, "/backups")
+}
+
+// helperActor is the signed-in user's name as the helper accepts it (no spaces: the MCP actor is "mcp token").
+func helperActor(r *http.Request) string {
+	u, _ := currentUser(r)
+	return strings.ReplaceAll(u.Username, " ", "-")
+}
+
+type statusErr struct {
+	code int
+	msg  string
+}
+
+// checkRestore validates a restore request without side effects and returns the helper spec for it. Shared by the page
+// and the MCP tool, which differ only in how they confirm.
+func (s *Server) checkRestore(ctx context.Context, site store.Site, name string, files, dumps bool, volumes []string) (helper.Spec, *statusErr) {
+	in, err := s.scopeInfo(ctx, site.Slug, name)
+	if err != nil {
+		return helper.Spec{}, &statusErr{http.StatusNotFound, err.Error()}
+	}
+	spec := helper.Spec{Slug: site.Slug, Archive: name, RestoreFiles: files, RestoreDumps: dumps, RestoreVolumes: volumes}
+	if !files && !dumps && len(volumes) == 0 {
+		return spec, &statusErr{http.StatusUnprocessableEntity, "Tick files, database dumps, volumes or any of them."}
+	}
+	on, _ := s.deps.Store.ListVolumes(ctx, site.ID)
+	for _, v := range volumes {
+		if !slices.Contains(on, v) || !slices.Contains(in.Manifest.Volumes, v) {
+			return spec, &statusErr{http.StatusUnprocessableEntity, "Volume " + v + " is not switched on for this site and in that archive."}
+		}
+	}
+	return spec, nil
+}
+
+// sendRestore asks the helper to start the restore, then audits and flashes. The job takes a pre-restore backup first.
+func (s *Server) sendRestore(r *http.Request, site store.Site, spec helper.Spec) *statusErr {
+	spec.Actor = helperActor(r)
+	if _, err := s.helperClient().Call(r.Context(), helper.ActionBackupRestore, spec); err != nil {
+		return &statusErr{http.StatusBadGateway, err.Error()}
+	}
+	s.audit(r, "backup.restore", strings.TrimSpace(site.Slug+" "+spec.Archive+" "+strings.Join(spec.RestoreVolumes, ",")))
+	s.flash("Restore started for " + site.Slug + ". The current state is backed up first; the result appears under Recent runs.")
+	return nil
 }
 
 // ---- ingest ----

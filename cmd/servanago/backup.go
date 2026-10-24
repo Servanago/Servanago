@@ -171,7 +171,7 @@ func runBackupRestore(ctx context.Context, args []string, stdin io.Reader, out i
 	if !*files && !*dumps {
 		return errors.New("choose --files, --dumps or both")
 	}
-	if err := backup.RestoreSite(ctx, j.env, p.Plan, filepath.Base(fs.Arg(0)), *files, *dumps); err != nil {
+	if err := backup.RestoreSite(ctx, j.env, p.Plan, filepath.Base(fs.Arg(0)), backup.RestoreOpts{Files: *files, Dumps: *dumps}); err != nil {
 		return err
 	}
 	fmt.Fprintln(out, "site restored")

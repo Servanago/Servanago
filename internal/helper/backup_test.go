@@ -81,6 +81,8 @@ func TestBackupRejections(t *testing.T) {
 		{"restore other site's archive", ActionBackupRestore, `{"slug":"shop","archive":"blog-20260101T000000Z.tar.zst.age","restore_files":true}`, "not an archive of site shop", nil},
 		{"restore traversal", ActionBackupRestore, `{"slug":"shop","archive":"../shop-20260101T000000Z.tar.zst.age","restore_files":true}`, "not an archive of site", nil},
 		{"restore nothing", ActionBackupRestore, `{"slug":"shop","archive":"shop-20260101T000000Z.tar.zst.age"}`, "choose what to restore", nil},
+		{"restore bad volume", ActionBackupRestore, `{"slug":"shop","archive":"shop-20260101T000000Z.tar.zst.age","restore_volumes":["../x"]}`, "not a valid, distinct volume", nil},
+		{"restore duplicate volume", ActionBackupRestore, `{"slug":"shop","archive":"shop-20260101T000000Z.tar.zst.age","restore_volumes":["a","a"]}`, "not a valid, distinct volume", nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			seam := installed(newFakeSeam())
@@ -105,13 +107,13 @@ func TestBackupRejections(t *testing.T) {
 
 func TestBackupRestoreAccepted(t *testing.T) {
 	seam := installed(newFakeSeam())
-	resp := NewActions(seam).BackupRestore(req(t, ActionBackupRestore, `{"slug":"shop","archive":"shop-20260101T000000Z.tar.zst.age","restore_files":true,"actor":"brian"}`))
+	resp := NewActions(seam).BackupRestore(req(t, ActionBackupRestore, `{"slug":"shop","archive":"shop-20260101T000000Z.tar.zst.age","restore_files":true,"restore_volumes":["data"],"actor":"brian"}`))
 	if !resp.OK {
 		t.Fatalf("%+v", resp)
 	}
 	var got BackupRequestData
 	_ = json.Unmarshal(seam.written[BackupJobDir+"/"+BackupRequestFile], &got)
-	if got.Op != "restore" || got.Archive != "shop-20260101T000000Z.tar.zst.age" || !got.Files || got.Dumps {
+	if got.Op != "restore" || got.Archive != "shop-20260101T000000Z.tar.zst.age" || !got.Files || got.Dumps || len(got.Volumes) != 1 || got.Volumes[0] != "data" {
 		t.Errorf("%+v", got)
 	}
 }
