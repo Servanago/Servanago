@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServanaGo backup flow</title>
+<style>
+:root {
+  --bg: #f7f8f7; --panel: #ffffff; --ink: #1b2420; --muted: #5b6761; --line: #b9c4be;
+  --step: #eef3f0; --dec: #fff6df; --dec-line: #c99a1c;
+  --ok: #e3f4ea; --ok-line: #08764b; --bad: #fbe6e4; --bad-line: #b3261e; --skip: #eceff3; --skip-line: #5d6b7a;
+  --ext: #e8eefb; --ext-line: #3b5fb0; --root: #f3e8fb; --root-line: #7a3fa6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121714; --panel: #1a211d; --ink: #e8efeb; --muted: #9fada6; --line: #3b4741;
+    --step: #222b26; --dec: #34290d; --dec-line: #d9ac3a;
+    --ok: #123324; --ok-line: #3fbf86; --bad: #3a1a18; --bad-line: #ef7b72; --skip: #242b33; --skip-line: #93a3b5;
+    --ext: #1b2640; --ext-line: #7f9de0; --root: #2b1b3a; --root-line: #c08be6;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1100px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.8rem; margin: 0 0 4px; }
+h2 { font-size: 1.3rem; margin: 48px 0 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+p, li { color: var(--muted); }
+p.lead { max-width: 70ch; }
+code { background: var(--step); padding: 1px 5px; border-radius: 4px; font-size: .88em; }
+nav ol { columns: 2 280px; padding-left: 0; list-style: none; }
+nav a { color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 12px 0 0; font-size: .9rem; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 18px; height: 14px; border: 2px solid; border-radius: 4px; display: inline-block; }
+
+/* the flow */
+.flow { display: flex; flex-direction: column; align-items: center; gap: 26px; margin: 20px 0; }
+.n { position: relative; width: min(100%, 440px); padding: 10px 14px; border: 2px solid var(--line); border-radius: 8px; background: var(--step); text-align: center; color: var(--ink); }
+.n small { display: block; color: var(--muted); font-size: .82rem; margin-top: 2px; }
+.flow > .n:not(:first-child)::before, .col > .flow > .n:first-child::before {
+  content: "↓"; position: absolute; top: -24px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 1.1rem; line-height: 1;
+}
+.col > .flow { margin-top: 30px; }
+.n.start { border-radius: 999px; background: var(--ext); border-color: var(--ext-line); }
+.n.dec { background: var(--dec); border-color: var(--dec-line); border-style: solid; border-radius: 4px 22px 4px 22px; font-weight: 600; }
+.n.root { background: var(--root); border-color: var(--root-line); }
+.n.ok { background: var(--ok); border-color: var(--ok-line); border-radius: 999px; }
+.n.bad { background: var(--bad); border-color: var(--bad-line); border-radius: 999px; }
+.n.skip { background: var(--skip); border-color: var(--skip-line); border-radius: 999px; }
+.tag { display: inline-block; font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; padding: 0 6px; border-radius: 4px; margin-right: 6px; background: var(--panel); border: 1px solid var(--line); color: var(--muted); }
+
+/* branches */
+.br { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; align-items: flex-start; width: 100%; }
+.col { position: relative; flex: 1 1 250px; max-width: 520px; border: 1px dashed var(--line); border-radius: 10px; padding: 14px 10px 6px; background: var(--panel); }
+.lbl { position: absolute; top: -12px; left: 12px; background: var(--bg); padding: 0 8px; font-weight: 700; font-size: .85rem; border-radius: 4px; border: 1px solid var(--line); }
+.lbl.y { color: var(--ok-line); border-color: var(--ok-line); }
+.lbl.no { color: var(--bad-line); border-color: var(--bad-line); }
+.note { max-width: 70ch; font-size: .92rem; }
+.lanes { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 10px; margin: 16px 0; }
+.lane { border: 2px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--panel); }
+.lane h3 { margin: 0 0 4px; font-size: 1rem; }
+.lane p { margin: 0; font-size: .88rem; }
+.lane.web { border-color: var(--ext-line); } .lane.help { border-color: var(--root-line); } .lane.job { border-color: var(--dec-line); } .lane.disk { border-color: var(--ok-line); }
+</style>
+</head>
+<body>
+<main>
+<h1>ServanaGo backup flow</h1>
+<p class="lead">Every step and branch of the site-backup feature (M11e), taken from the code: web page, privileged helper, the timer-started job, archive creation, result ingest, restore and download. Names in <code>code</code> point at the source.</p>
+
+<div class="legend" aria-label="Legend">
+  <span><i style="background:var(--ext);border-color:var(--ext-line)"></i>Trigger / entry</span>
+  <span><i style="background:var(--step);border-color:var(--line)"></i>Step</span>
+  <span><i style="background:var(--root);border-color:var(--root-line)"></i>Runs as root (helper or job)</span>
+  <span><i style="background:var(--dec);border-color:var(--dec-line)"></i>Decision</span>
+  <span><i style="background:var(--ok);border-color:var(--ok-line)"></i>Success</span>
+  <span><i style="background:var(--bad);border-color:var(--bad-line)"></i>Failure</span>
+  <span><i style="background:var(--skip);border-color:var(--skip-line)"></i>Skipped / no-op</span>
+</div>
+
+<nav aria-label="Contents">
+<ol>
+  <li><a href="#overview">Overview: who does what</a></li>
+  <li><a href="#enable">1. Enable backups</a></li>
+  <li><a href="#trigger">2. Start a job (timer, Run now, restore)</a></li>
+  <li><a href="#job">3. The job: choose what to run</a></li>
+  <li><a href="#scope">4. One scope: build the archive</a></li>
+  <li><a href="#dump">5. A dump profile</a></li>
+  <li><a href="#result">6. Result, alerts, run history</a></li>
+  <li><a href="#restore">7. Site restore</a></li>
+  <li><a href="#download">8. Archive download</a></li>
+  <li><a href="#panel">9. Panel restore (CLI)</a></li>
+</ol>
+</nav>
+
+<h2 id="overview">Overview: who does what</h2>
+<p class="lead">The web service never runs as root and never touches site files. It only writes settings and asks the helper to start a job. A root systemd unit does the work and drops result files that the service reads back.</p>
+<div class="lanes">
+  <div class="lane web"><h3>Web service (servanago)</h3><p>Backups page, settings, passphrase and ntfy URL sealed in SQLite, run history, audit log, banner, one-use download links.</p></div>
+  <div class="lane help"><h3>Helper (root socket)</h3><p>Typed actions <code>backup-enable</code>, <code>backup-start</code>, <code>backup-restore</code>, <code>backup-status</code>. Installs units, writes <code>request.json</code>, starts the unit.</p></div>
+  <div class="lane job"><h3>Job (servanago-backup.service)</h3><p><code>servanago backup-job run</code> as root. Reads a snapshot of the panel DB, builds archives, prunes, writes result files, sends ntfy.</p></div>
+  <div class="lane disk"><h3>Backup folder</h3><p><code>&lt;dir&gt;/&lt;scope&gt;/&lt;scope&gt;-&lt;time&gt;.tar.zst.age</code> plus a <code>.json</code> sidecar, and <code>&lt;dir&gt;/.runs/</code> result files.</p></div>
+</div>
+
+<h2 id="enable">1. Enable backups</h2>
+<p class="lead">Settings are saved on the Backups page. Nothing runs until backups are enabled and a passphrase exists.</p>
+<div class="flow">
+  <div class="n start">Admin saves backup settings<small><code>saveBackupSettings</code></small></div>
+  <div class="n dec">Password (and 2FA code) confirmed?</div>
+  <div class="br">
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Rejected, nothing saved</div></div></div>
+    <div class="col"><span class="lbl y">yes</span><div class="flow">
+      <div class="n">Seal passphrase and ntfy URL with <code>SERVANAGO_SECRET_KEY</code><small>left unchanged when the field is blank</small></div>
+      <div class="n">Save folder, schedule preset, keep-N, weekly copies, panel on/off to SQLite</div>
+      <div class="n dec">Enabled and a passphrase exists?</div>
+      <div class="br">
+        <div class="col"><span class="lbl y">yes</span><div class="flow">
+          <div class="n root">Helper <code>backup-enable</code><small>install <code>servanago-backup.service</code> and <code>.timer</code> (every 15 min, Persistent), daemon-reload, enable, start timer</small></div>
+          <div class="n ok">Timer active</div>
+        </div></div>
+        <div class="col"><span class="lbl no">no</span><div class="flow">
+          <div class="n root">Helper <code>backup-enable</code> with enabled=false<small>stop and disable the timer; no-op if it was never installed</small></div>
+          <div class="n skip">Backups off</div>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+<p class="note">Per-site opt-in, schedule override, keep counts, dump profiles and volumes are saved the same way (<code>saveSiteBackup</code>, <code>addBackupProfile</code>, <code>addBackupVolume</code>). Profile secrets are sealed; the web service never reads them back.</p>
+
+<h2 id="trigger">2. Start a job</h2>
+<p class="lead">Three entry points lead to the same unit. The helper refuses overlapping jobs.</p>
+<div class="br" style="margin:20px 0">
+  <div class="n start">Timer fires every 15 min<small>request.json absent: "run what is due"</small></div>
+  <div class="n start">"Back up now" (all, panel or one site)<small><code>runBackup</code> → helper <code>backup-start</code></small></div>
+  <div class="n start">Restore a site<small><code>restoreBackup</code> → helper <code>backup-restore</code></small></div>
+</div>
+<div class="flow">
+  <div class="n root">Helper validates the request<small>scope is all / panel / site; slug regex; actor name regex; restore: archive name belongs to the site and files or dumps chosen</small></div>
+  <div class="n dec">Request valid?</div>
+  <div class="br">
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Error returned to the page</div></div></div>
+    <div class="col"><span class="lbl y">yes</span><div class="flow">
+      <div class="n dec">Job unit already active or activating?</div>
+      <div class="br">
+        <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n bad">"A backup job is already running"</div></div></div>
+        <div class="col"><span class="lbl no">no</span><div class="flow">
+          <div class="n dec">Service unit file installed?</div>
+          <div class="br">
+            <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">"Backups are not enabled yet"</div></div></div>
+            <div class="col"><span class="lbl y">yes</span><div class="flow">
+              <div class="n root">Write <code>/var/lib/servanago-backup/request.json</code> (0600)</div>
+              <div class="n root"><code>systemctl start servanago-backup.service</code><small>Type=exec: returns once the job runs</small></div>
+              <div class="n ok">Page redirects; result appears later under Recent runs</div>
+            </div></div>
+          </div>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+<p class="note">The unit runs at Nice 10, idle I/O class, MemoryMax 2G, ProtectSystem=full, with only CHOWN, DAC_OVERRIDE, DAC_READ_SEARCH and FOWNER capabilities. A timer tick while a job runs does nothing.</p>
+
+<h2 id="job">3. The job: choose what to run</h2>
+<p class="lead"><code>runBackupJob</code> and <code>job.execute</code>.</p>
+<div class="flow">
+  <div class="n start"><code>servanago backup-job run</code></div>
+  <div class="n root">Snapshot the live panel DB to a scratch dir (<code>VACUUM INTO</code>) and read settings from the copy<small>never creates a file beside the live DB</small></div>
+  <div class="n dec">Snapshot or settings read failed?</div>
+  <div class="br">
+    <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n bad">Job exits with error<small>journal only: no result file is possible yet</small></div></div></div>
+    <div class="col"><span class="lbl no">no</span><div class="flow">
+      <div class="n root">If <code>request.json</code> exists: read it, delete it at once<small>a crashed job must not repeat a restore on the next tick</small></div>
+      <div class="n dec">Backups enabled?</div>
+      <div class="br">
+        <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n skip">Log "disabled", exit 0</div></div></div>
+        <div class="col"><span class="lbl y">yes</span><div class="flow">
+          <div class="n dec">Passphrase set and openable?</div>
+          <div class="br">
+            <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Write a failed result for scope "all", send ntfy, exit non-zero</div></div></div>
+            <div class="col"><span class="lbl y">yes</span><div class="flow">
+              <div class="n root">Create the backup folder (0750); delete result files older than 14 days</div>
+              <div class="n dec">What was asked?</div>
+              <div class="br">
+                <div class="col"><span class="lbl">no request (timer)</span><div class="flow">
+                  <div class="n">Build plans: panel (if on) + each site that opted in<small>a site whose plan fails to build becomes a failed result</small></div>
+                  <div class="n dec">For each plan: is the schedule due?</div>
+                  <div class="br">
+                    <div class="col"><span class="lbl no">not due</span><div class="flow"><div class="n skip">Skip silently</div></div></div>
+                    <div class="col"><span class="lbl y">due</span><div class="flow">
+                      <div class="n dec">Bad schedule string?</div>
+                      <div class="br">
+                        <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n bad">Failed result with the parse error</div></div></div>
+                        <div class="col"><span class="lbl no">no</span><div class="flow">
+                          <div class="n dec">Last run failed less than 1 h ago?</div>
+                          <div class="br">
+                            <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n skip">Back off, retry later</div></div></div>
+                            <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n ok">Run the scope (section 4)</div></div></div>
+                          </div>
+                        </div></div>
+                      </div>
+                    </div></div>
+                  </div>
+                  <div class="n skip">Missed slots collapse into one run</div>
+                </div></div>
+                <div class="col"><span class="lbl">Run now</span><div class="flow">
+                  <div class="n dec">Scope</div>
+                  <div class="br">
+                    <div class="col"><span class="lbl">panel</span><div class="flow"><div class="n">Panel plan</div></div></div>
+                    <div class="col"><span class="lbl">site</span><div class="flow"><div class="n">Find the site by slug and build its plan<small>unknown slug: job error</small></div></div></div>
+                    <div class="col"><span class="lbl">all</span><div class="flow"><div class="n">Every enabled plan</div></div></div>
+                  </div>
+                  <div class="n ok">Run each, ignoring the schedule (section 4)</div>
+                </div></div>
+                <div class="col"><span class="lbl">restore</span><div class="flow">
+                  <div class="n">Find the site, build its plan</div>
+                  <div class="n ok">Site restore (section 7)</div>
+                </div></div>
+              </div>
+            </div></div>
+          </div>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+<p class="note">A plan with no files, no dump profile and no volume (for example a proxy site with nothing configured) is recorded as <em>skipped</em>: "nothing to back up". The panel scope is never empty. After all scopes, the job exits non-zero if any failed so systemd and the journal show it.</p>
+
+<h2 id="scope">4. One scope: build the archive</h2>
+<p class="lead"><code>backup.RunScope</code>. Every failure becomes a result row; nothing panics.</p>
+<div class="flow">
+  <div class="n start">RunScope(plan, trigger)</div>
+  <div class="n dec">Site has a root: passes the root check and its symlink target passes again?</div>
+  <div class="br">
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">failed: root refused or unreadable</div></div></div>
+    <div class="col"><span class="lbl y">yes (or no files)</span><div class="flow">
+      <div class="n">Estimate size of the files and data dir</div>
+      <div class="n dec">Free space &lt; size + 10% + 64 MB?</div>
+      <div class="br">
+        <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n skip">skipped: "N MB free, needs about M MB"</div></div></div>
+        <div class="col"><span class="lbl no">no</span><div class="flow">
+          <div class="n">Name = scope + start second<small>if the file exists, add one second until free</small></div>
+          <div class="n root">Open <code>name.part</code> exclusively; stream tar → zstd → age (passphrase)<small>manifest.json is the first entry; sha256 is computed on the way out</small></div>
+          <div class="n dec">Which scope?</div>
+          <div class="br">
+            <div class="col"><span class="lbl">panel</span><div class="flow">
+              <div class="n">Snapshot panel DB<small>live WAL DB opened read-only; fallback copies the files to scratch</small></div>
+              <div class="n">Add <code>caddy/</code> data, <code>caddy-last-good.json</code>, <code>servanago.env</code><small>a missing optional file is fine</small></div>
+            </div></div>
+            <div class="col"><span class="lbl">site</span><div class="flow">
+              <div class="n dec">Has files?</div>
+              <div class="br">
+                <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n">Add the site root tree under <code>files/</code></div></div></div>
+                <div class="col"><span class="lbl no">no (proxy)</span><div class="flow"><div class="n skip">No files part</div></div></div>
+              </div>
+              <div class="n">Each dump profile (section 5)</div>
+              <div class="n">Each opted-in volume → <code>volumes/&lt;name&gt;</code><small>Docker lookup; unknown volume = error</small></div>
+            </div></div>
+          </div>
+          <div class="n dec">Any part failed?</div>
+          <div class="br">
+            <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n bad">Delete <code>.part</code> files, nothing left behind; failed result</div></div></div>
+            <div class="col"><span class="lbl no">no</span><div class="flow">
+              <div class="n root">Close writers, fsync, write sidecar <code>.json.part</code> (parts, sizes, sha256)</div>
+              <div class="n root">Rename sidecar, then archive into place<small>a listed archive is always complete</small></div>
+              <div class="n">Prune the scope: keep newest N + newest of each of the last W ISO weeks (never everything)</div>
+              <div class="n dec">Prune failed?</div>
+              <div class="br">
+                <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n bad">failed: "archive written, pruning failed"</div></div></div>
+                <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n ok">ok: archive name and byte count</div></div></div>
+              </div>
+            </div></div>
+          </div>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<h2 id="dump">5. A dump profile</h2>
+<p class="lead"><code>dumpProfile</code>. Profiles are typed (sqlite, mariadb, postgres); there is no free-form command.</p>
+<div class="flow">
+  <div class="n start">Profile of a site</div>
+  <div class="n dec">Fields valid? (name, engine, container, db, user, path)</div>
+  <div class="br">
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Scope fails: "dump NAME: …"</div></div></div>
+    <div class="col"><span class="lbl y">yes</span><div class="flow">
+      <div class="n dec">Engine</div>
+      <div class="br">
+        <div class="col"><span class="lbl">sqlite</span><div class="flow">
+          <div class="n dec">Site has a root, path stays inside it (symlinks resolved)?</div>
+          <div class="br">
+            <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Error: needs files / resolves outside the root</div></div></div>
+            <div class="col"><span class="lbl y">yes</span><div class="flow">
+              <div class="n">Consistent copy with <code>VACUUM INTO</code>, integrity check</div>
+              <div class="n ok">Add <code>dumps/NAME.sqlite</code></div>
+            </div></div>
+          </div>
+        </div></div>
+        <div class="col"><span class="lbl">mariadb / postgres</span><div class="flow">
+          <div class="n dec">Container running (Docker API socket)?</div>
+          <div class="br">
+            <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">"container X is not running"</div></div></div>
+            <div class="col"><span class="lbl y">yes</span><div class="flow">
+              <div class="n root"><code>docker exec -i -e VAR</code> dump tool, 30 min limit<small>mariadb-dump then mysqldump; pg_dump for postgres. Password lives in the command environment only, never on argv or in logs</small></div>
+              <div class="n dec">Exit status</div>
+              <div class="br">
+                <div class="col"><span class="lbl y">0</span><div class="flow"><div class="n ok">Add <code>dumps/NAME.sql</code> or <code>.pgdump</code></div></div></div>
+                <div class="col"><span class="lbl">"not found"</span><div class="flow"><div class="n">Try the next tool name (mysqldump)</div></div></div>
+                <div class="col"><span class="lbl no">other error</span><div class="flow"><div class="n bad">Stop; error and tool stderr in the result</div></div></div>
+              </div>
+            </div></div>
+          </div>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+
+<h2 id="result">6. Result, alerts, run history</h2>
+<p class="lead">The job reports through files. The service ingests them every minute, so a crashed web service loses nothing.</p>
+<div class="flow">
+  <div class="n root">Job: write <code>.runs/&lt;finished&gt;-&lt;runid&gt;.json</code> (0640, group servanago) and log a line</div>
+  <div class="n dec">Status failed, and (manual/restore trigger, or no previous result, or previous was ok)?</div>
+  <div class="br">
+    <div class="col"><span class="lbl y">yes</span><div class="flow">
+      <div class="n dec">ntfy URL set, openable, https?</div>
+      <div class="br">
+        <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n">POST scope + clipped error<small>10 s timeout; redirects to http refused; no secrets in the text</small></div></div></div>
+        <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n skip">Log "ntfy url unusable", carry on</div></div></div>
+      </div>
+    </div></div>
+    <div class="col"><span class="lbl no">no (ok, skipped, or a repeat failure)</span><div class="flow"><div class="n skip">No push: a failing site does not page every hour</div></div></div>
+  </div>
+  <div class="n start">Service: <code>RunBackupIngest</code> every minute</div>
+  <div class="n">Read each <code>.runs</code> file; insert into <code>backup_runs</code> by run id</div>
+  <div class="n dec">New run id?</div>
+  <div class="br">
+    <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n">Audit row <code>backup.ok|failed|skipped</code> or <code>restore.done|failed</code>, actor = the admin or "system"</div></div></div>
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n skip">Already known, ignore</div></div></div>
+  </div>
+  <div class="n">Recompute the stale banner<small>per enabled scope: latest run failed, or no success within 2 × schedule interval. A scope that never ran is not stale.</small></div>
+  <div class="n dec">Any scope stale or failed?</div>
+  <div class="br">
+    <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n bad">Banner on every page: "SCOPE failed: …" / "has no recent successful backup"</div></div></div>
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n ok">Banner cleared</div></div></div>
+  </div>
+</div>
+
+<h2 id="restore">7. Site restore</h2>
+<p class="lead">From the Backups page, one site at a time. <code>backup.RestoreSite</code>. Volumes are never restored here.</p>
+<div class="flow">
+  <div class="n start">Admin picks an archive, ticks files and/or dumps, types the site's short name</div>
+  <div class="n dec">Archive exists for this site? Something ticked? Short name typed correctly?</div>
+  <div class="br">
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">404 / 422 message, nothing started</div></div></div>
+    <div class="col"><span class="lbl y">yes</span><div class="flow">
+      <div class="n dec">Password (and 2FA code) confirmed?</div>
+      <div class="br">
+        <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Rejected</div></div></div>
+        <div class="col"><span class="lbl y">yes</span><div class="flow">
+          <div class="n root">Helper <code>backup-restore</code> → request.json (section 2) → job (section 3)</div>
+          <div class="n root">Verify archive sha256 against its sidecar; sidecar scope must match<small>mismatch: failed, nothing touched</small></div>
+          <div class="n root">Resolve and check the site root</div>
+          <div class="n root">Take a <b>pre-restore</b> backup of the current state (section 4)</div>
+          <div class="n dec">Pre-restore backup ok?</div>
+          <div class="br">
+            <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Abort: "pre-restore backup failed: …"; live site untouched</div></div></div>
+            <div class="col"><span class="lbl y">yes</span><div class="flow">
+              <div class="n root">Decrypt and stream the archive; first entry must be <code>manifest.json</code></div>
+              <div class="n dec">Next entry</div>
+              <div class="br">
+                <div class="col"><span class="lbl">files/…  (files ticked)</span><div class="flow">
+                  <div class="n">Safe extract into the site root<small>refuses absolute paths, <code>..</code>, writing through a symlink, special files; drops setuid; keeps owner</small></div>
+                </div></div>
+                <div class="col"><span class="lbl">dumps/…  (dumps ticked)</span><div class="flow">
+                  <div class="n dec">Profile still exists?</div>
+                  <div class="br">
+                    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n skip">Skipped</div></div></div>
+                    <div class="col"><span class="lbl y">yes</span><div class="flow">
+                      <div class="n dec">Engine</div>
+                      <div class="br">
+                        <div class="col"><span class="lbl">sqlite</span><div class="flow"><div class="n">Write temp file beside target, copy mode and owner, remove <code>-wal</code>/<code>-shm</code>, atomic rename</div></div></div>
+                        <div class="col"><span class="lbl">mariadb / postgres</span><div class="flow"><div class="n">Container must be running; pipe the dump into <code>docker exec -i</code> restore command</div></div></div>
+                      </div>
+                    </div></div>
+                  </div>
+                </div></div>
+                <div class="col"><span class="lbl">volumes/…</span><div class="flow"><div class="n skip">Ignored: volume restore is manual</div></div></div>
+              </div>
+              <div class="n dec">Any entry failed?</div>
+              <div class="br">
+                <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n bad">failed result with the error; the pre-restore archive is the way back</div></div></div>
+                <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n ok">restore ok → audit <code>restore.done</code></div></div></div>
+              </div>
+            </div></div>
+          </div>
+        </div></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+<p class="note">A restore is not atomic across files: a failure partway leaves a mix. That is why the pre-restore backup is mandatory.</p>
+
+<h2 id="download">8. Archive download</h2>
+<div class="flow">
+  <div class="n start">Admin clicks Download on an archive</div>
+  <div class="n dec">Archive exists in the listing, password (and 2FA code) confirmed?</div>
+  <div class="br">
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Rejected</div></div></div>
+    <div class="col"><span class="lbl y">yes</span><div class="flow">
+      <div class="n">Mint a short-lived one-use token bound to the file and the admin; audit <code>backup.download</code>; <code>HX-Redirect</code> to <code>/backups/file/TOKEN</code></div>
+      <div class="n dec">Token unused, not expired, and same admin?</div>
+      <div class="br">
+        <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">410 "used or has expired"</div></div></div>
+        <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n ok">Stream the encrypted archive; token is spent</div></div></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+<p class="note">The file is still encrypted. Open it anywhere with <code>age -d -o out.tar.zst &lt;file&gt;</code> and the backup passphrase, then <code>zstd -d</code> and <code>tar -x</code>. ServanaGo is not needed.</p>
+
+<h2 id="panel">9. Panel restore (CLI only)</h2>
+<p class="lead"><code>servanago backup restore --panel</code>, run by root with the service stopped. Works on a fresh host.</p>
+<div class="flow">
+  <div class="n start">Operator runs the command with the passphrase file</div>
+  <div class="n root">Verify archive sha256 against its sidecar</div>
+  <div class="n dec">Checksum ok and passphrase opens it?</div>
+  <div class="br">
+    <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">Abort, nothing written</div></div></div>
+    <div class="col"><span class="lbl y">yes</span><div class="flow">
+      <div class="n dec">Entry</div>
+      <div class="br">
+        <div class="col"><span class="lbl">panel/servanago.db</span><div class="flow">
+          <div class="n">Write to a temp file in the data dir</div>
+          <div class="n dec">Archive schema newer than this binary?</div>
+          <div class="br">
+            <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n bad">Refuse: install a newer servanago first</div></div></div>
+            <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n ok">Remove old <code>-wal</code>/<code>-shm</code>, rename into place</div></div></div>
+          </div>
+        </div></div>
+        <div class="col"><span class="lbl">panel/caddy/…, caddy-last-good.json</span><div class="flow"><div class="n">Safe extract into the data dir</div></div></div>
+        <div class="col"><span class="lbl">panel/servanago.env</span><div class="flow"><div class="n">Restore to the env file path (so <code>SERVANAGO_SECRET_KEY</code> comes back)</div></div></div>
+      </div>
+      <div class="n dec">Archive had a database?</div>
+      <div class="br">
+        <div class="col"><span class="lbl no">no</span><div class="flow"><div class="n bad">"the archive has no panel database"</div></div></div>
+        <div class="col"><span class="lbl y">yes</span><div class="flow"><div class="n ok">Done: start servanago</div></div></div>
+      </div>
+    </div></div>
+  </div>
+</div>
+</main>
+</body>
+</html>
