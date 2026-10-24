@@ -140,11 +140,17 @@ func (a Actions) socketUnit(service string) (name, path string, ok bool) {
 }
 
 // poolTemplate is the per-site php-fpm pool; the socket is what Caddy dials.
-func poolTemplate(slug string, id siteIdentity) []byte {
+//
+// logFile is set for source builds only: with no error_log their php-fpm opens <prefix>/var/log/php-fpm.log, which the
+// unit's ProtectSystem=strict makes read-only, so the master exits 78. Distro builds leave it empty (stderr, journald).
+func poolTemplate(slug string, id siteIdentity, logFile string) []byte {
+	global := "daemonize=no\n"
+	if logFile != "" {
+		global += "error_log=" + logFile + "\n"
+	}
 	return []byte(fmt.Sprintf(`; per-site pool for ServanaGo site %s; written by the helper
 [global]
-daemonize=no
-
+%s
 [servanago-%s]
 user=%s
 group=%s
@@ -158,7 +164,7 @@ pm.start_servers=2
 pm.min_spare_servers=1
 pm.max_spare_servers=3
 catch_workers_output=yes
-`, slug, slug, id.User, id.Group, slug))
+`, slug, global, slug, id.User, id.Group, slug))
 }
 
 // phpUnitTemplate runs exactly one pool — its own php-fpm master per site.
@@ -441,7 +447,11 @@ func (a Actions) UnitInstall(r Request) Response {
 				return resp
 			}
 		}
-		if resp := a.put(conf, poolTemplate(slug, id), func(path string) error {
+		logFile := ""
+		if ini != "" {
+			logFile = "/run/servanago/" + slug + "-fpm.log"
+		}
+		if resp := a.put(conf, poolTemplate(slug, id, logFile), func(path string) error {
 			return a.s.FPMTest(s.FPMBin, path, ini)
 		}); !resp.OK {
 			return resp

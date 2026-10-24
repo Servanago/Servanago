@@ -367,3 +367,15 @@ func TestUnitInstallRefusesSystemRoots(t *testing.T) {
 		}
 	}
 }
+
+// A source build's php-fpm defaults error_log to <prefix>/var/log, read-only under ProtectSystem=strict: the master
+// exits 78 and the site is a 502. Source builds log into the writable runtime dir; distro builds keep stderr.
+func TestPoolTemplateErrorLog(t *testing.T) {
+	id := siteIdentity{User: "u", Group: "g"}
+	if got := string(poolTemplate("s", id, "/run/servanago/s-fpm.log")); !strings.Contains(got, "[global]\ndaemonize=no\nerror_log=/run/servanago/s-fpm.log\n\n[servanago-s]") {
+		t.Errorf("source build pool lacks error_log:\n%s", got)
+	}
+	if got := string(poolTemplate("s", id, "")); strings.Contains(got, "error_log") {
+		t.Errorf("distro pool must leave error_log unset:\n%s", got)
+	}
+}
