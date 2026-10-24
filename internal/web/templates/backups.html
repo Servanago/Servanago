@@ -1,0 +1,120 @@
+{{define "reauth"}}<input type="password" name="password" placeholder="Your password" aria-label="Your password to confirm" autocomplete="current-password">
+{{if .}}<input type="text" name="code" placeholder="Your code" aria-label="Your code to confirm" autocomplete="one-time-code">{{end}}{{end}}
+
+{{define "content"}}
+{{$d := .Data}}
+<h1>Backups</h1>
+<p>Encrypted archives of the panel and of each site you opt in, written to a folder on this server by a scheduled job. {{hint "backup_overview"}}</p>
+<p id="backups-msg" role="alert"></p>
+{{if not $d.HasKey}}<div class="banner warn" role="alert">SERVANAGO_SECRET_KEY is not set in the environment file, so the passphrase and database passwords cannot be stored. Set it (at least 32 characters) and restart.</div>{{end}}
+{{if $d.Running}}<p><strong>A backup job is running.</strong> Reload this page in a minute.</p>{{end}}
+
+<article>
+<h2>Settings</h2>
+<form hx-post="/backups/settings" hx-target="#backups-msg">
+<label><input type="checkbox" name="enabled" {{if $d.Set.Enabled}}checked{{end}}> Back up on a schedule</label>
+<label><input type="checkbox" name="panel" {{if $d.Set.Panel}}checked{{end}}> Include the panel (database, certificates, secret key)</label>
+<label>Backup folder <input name="dir" value="{{$d.Set.Dir}}" autocomplete="off" required></label>
+{{hint "backup_dir"}}
+<label>Default schedule <input name="sched" value="{{$d.Set.Sched}}" autocomplete="off" required></label>
+{{hint "backup_sched"}}
+<label>Keep the newest <input name="keep" type="number" min="1" max="365" value="{{$d.Set.Keep}}" required></label>
+<label>and the newest of each of the last N weeks <input name="keep_weekly" type="number" min="0" max="52" value="{{$d.Set.KeepWeekly}}" required></label>
+{{hint "backup_keep"}}
+<label>Archive passphrase {{if $d.PassSet}}(set; leave blank to keep){{end}} <input type="password" name="passphrase" autocomplete="new-password" placeholder="{{if $d.PassSet}}leave blank to keep{{else}}at least 20 characters{{end}}"></label>
+{{hint "backup_pass"}}
+<label>ntfy topic address (optional) {{if $d.NtfySet}}(set; leave blank to keep){{end}} <input name="ntfy" autocomplete="off" placeholder="https://ntfy.example.com/backups"></label>
+<label><input type="checkbox" name="clear_ntfy"> Remove the ntfy address</label>
+{{hint "backup_ntfy"}}
+<p>Changing the passphrase or switching backups on or off asks for your password{{if $d.NeedCode}} and a code{{end}}:</p>
+{{template "reauth" $d.NeedCode}}
+<button type="submit">Save</button>
+</form>
+</article>
+
+<article>
+<h2>Back up now</h2>
+<form hx-post="/backups/run" hx-target="#backups-msg"><input type="hidden" name="scope" value="all"><button type="submit">Back up everything that is switched on</button></form>
+</article>
+
+{{range $d.Scopes}}
+{{$sc := .}}
+<article>
+<h2>{{.Title}} {{if .On}}<small>on</small>{{else}}<small>off</small>{{end}}</h2>
+<p>Last run: {{.LastText}}{{if .LastErr}} <span class="explain">{{.LastErr}}</span>{{end}}. Last success: {{.LastOKText}}. Schedule: {{.EffSched}}{{if and .On .Due}} (due){{end}}.</p>
+{{if or .Panel .On}}
+<form hx-post="/backups/run" hx-target="#backups-msg">
+{{if .Panel}}<input type="hidden" name="scope" value="panel">{{else}}<input type="hidden" name="scope" value="site"><input type="hidden" name="site" value="{{.SiteID}}">{{end}}
+<button type="submit" class="outline">Back up now</button>
+</form>
+{{end}}
+
+{{if not .Panel}}
+<details>
+<summary>Settings for this site</summary>
+<form hx-post="/backups/sites/{{.SiteID}}" hx-target="#backups-msg">
+<label><input type="checkbox" name="on" {{if .On}}checked{{end}}> Back this site up</label>
+<label>Schedule (blank = default) <input name="sched" value="{{.Sched}}" placeholder="{{$d.Set.Sched}}" autocomplete="off"></label>
+<label>Keep the newest (0 = default) <input name="keep" type="number" min="0" max="365" value="{{.Keep}}"></label>
+<label>Weekly copies (0 = default) <input name="keep_weekly" type="number" min="0" max="365" value="{{.KeepWeekly}}"></label>
+<button type="submit">Save</button>
+</form>
+
+<h3>Database dumps</h3>
+{{hint "backup_profile"}}
+{{if .Profiles}}<ul>{{range .Profiles}}
+<li><strong>{{.Name}}</strong> {{.Engine}} {{.Target}}
+<form class="inline" hx-post="/backups/sites/{{$sc.SiteID}}/profiles/delete" hx-target="#backups-msg"><input type="hidden" name="name" value="{{.Name}}"><button type="submit" class="outline secondary">Remove</button></form></li>
+{{end}}</ul>{{else}}<p>None.</p>{{end}}
+<form hx-post="/backups/sites/{{.SiteID}}/profiles" hx-target="#backups-msg">
+<label>Name <input name="name" placeholder="app" autocomplete="off" required></label>
+<label>Kind <select name="engine"><option value="sqlite">SQLite file</option><option value="mariadb">MariaDB or MySQL</option><option value="postgres">PostgreSQL</option></select></label>
+<label>SQLite file, relative to the site folder <input name="path" placeholder="storage/database.sqlite" autocomplete="off"></label>
+<label>Container name (MariaDB, PostgreSQL) <input name="container" placeholder="mydb-1" autocomplete="off"></label>
+<label>Database <input name="db" autocomplete="off"></label>
+<label>Database user <input name="user" autocomplete="off"></label>
+<label>Database password <input type="password" name="secret" autocomplete="new-password"></label>
+<button type="submit">Add dump</button>
+</form>
+
+<h3>Container volumes</h3>
+{{hint "backup_volume"}}
+{{if .Volumes}}<ul>{{range .Volumes}}
+<li>{{.}}
+<form class="inline" hx-post="/backups/sites/{{$sc.SiteID}}/volumes/delete" hx-target="#backups-msg"><input type="hidden" name="volume" value="{{.}}"><button type="submit" class="outline secondary">Remove</button></form></li>
+{{end}}</ul>{{else}}<p>None.</p>{{end}}
+<form hx-post="/backups/sites/{{.SiteID}}/volumes" hx-target="#backups-msg">
+<label>Volume name <input name="volume" placeholder="myapp_data" autocomplete="off" required></label>
+<button type="submit">Add volume</button>
+</form>
+</details>
+{{end}}
+
+{{if .Archives}}
+<details>
+<summary>{{len .Archives}} archive{{if gt (len .Archives) 1}}s{{end}}</summary>
+<form>
+<label>Archive <select name="name">{{range .Archives}}<option value="{{.Name}}"{{if .Damaged}} disabled{{end}}>{{.When}} · {{.Size}} · {{.Trigger}}{{if .Damaged}} · damaged: {{.Damaged}}{{end}}</option>{{end}}</select></label>
+<input type="hidden" name="scope" value="{{.Scope}}">
+{{if not .Panel}}<input type="hidden" name="site" value="{{.SiteID}}">
+<label><input type="checkbox" name="files" {{if .CanFiles}}checked{{else}}disabled{{end}}> Restore the files</label>
+<label><input type="checkbox" name="dumps" {{if .Profiles}}checked{{else}}disabled{{end}}> Restore the database dumps</label>
+<label>To restore, type the site's short name: {{.Scope}} <input name="sure" autocomplete="off"></label>
+{{hint "backup_restore"}}{{end}}
+{{template "reauth" $d.NeedCode}}
+<button type="submit" hx-post="/backups/download" hx-target="#backups-msg" class="outline">Download</button>
+{{if not .Panel}}<button type="submit" hx-post="/backups/restore" hx-target="#backups-msg" class="secondary">Restore</button>{{end}}
+</form>
+</details>
+{{end}}
+</article>
+{{end}}
+
+<article>
+<h2>Recent runs</h2>
+{{if $d.Runs}}<table>
+<thead><tr><th>When</th><th>Scope</th><th>Trigger</th><th>Result</th><th>Size</th><th>Detail</th></tr></thead>
+<tbody>{{range $d.Runs}}<tr><td>{{.When}}</td><td>{{.Scope}}</td><td>{{.Trigger}}{{if .Actor}} ({{.Actor}}){{end}}</td><td>{{.Status}}</td><td>{{.Size}}</td><td>{{if .Error}}{{.Error}}{{else}}{{.Archive}}{{end}}</td></tr>{{end}}</tbody>
+</table>{{else}}<p>No runs yet.</p>{{end}}
+</article>
+{{end}}

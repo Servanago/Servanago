@@ -17,13 +17,14 @@
 <header class="topbar">
 <nav>
 <ul><li><a class="brand" href="/" aria-label="ServanaGo dashboard"><img src="/static/mark-64.png" alt="" width="32" height="32"><span class="wordmark">Servana<b>Go</b></span></a></li></ul>
-{{if not .Bare}}<ul><li><a href="/">Dashboard</a></li><li><a href="/reference">Reference</a></li><li><a href="/sites/new">Add site</a></li><li><a href="/domains">Domains</a></li><li><a href="/snippets">Snippets</a></li><li><a href="/php">PHP</a></li><li><a href="/settings">Settings</a></li><li><a href="/logs">Logs</a></li><li><a href="/help">Help</a></li>{{if .LoggedIn}}<li><a href="/users">Users</a></li><li><a href="/audit">Audit</a></li><li><a href="/security">Security</a></li><li><button class="outline secondary" hx-post="/logout">Sign out</button></li>{{end}}</ul>{{end}}
+{{if not .Bare}}<ul><li><a href="/">Dashboard</a></li><li><a href="/reference">Reference</a></li><li><a href="/sites/new">Add site</a></li><li><a href="/domains">Domains</a></li><li><a href="/snippets">Snippets</a></li><li><a href="/php">PHP</a></li><li><a href="/backups">Backups</a></li><li><a href="/settings">Settings</a></li><li><a href="/logs">Logs</a></li><li><a href="/help">Help</a></li>{{if .LoggedIn}}<li><a href="/users">Users</a></li><li><a href="/audit">Audit</a></li><li><a href="/security">Security</a></li><li><button class="outline secondary" hx-post="/logout">Sign out</button></li>{{end}}</ul>{{end}}
 </nav>
 </header>
 <main class="container">
 {{if .Open}}<div class="banner danger" role="alert"><strong>UI is open.</strong> Anyone who can reach this page can change your sites. Set <code>ADMIN_PASSWORD</code> in the environment file and restart ServanaGo to require a login.</div>{{end}}
 {{if .StartupErr}}<div class="banner danger" role="alert"><strong>Your saved settings were rejected, so only this page is being served.</strong> Fix or delete the item named below, then restart. {{helplink "troubleshooting"}}<br>{{errhtml .StartupErr}}</div>{{end}}
 {{range .Flash}}<div class="banner warn" role="alert">{{.}}</div>{{end}}
+{{if .BackupWarn}}<div class="banner warn" role="alert"><strong>Backup problem.</strong> {{.BackupWarn}} <a href="/backups">Backups</a></div>{{end}}
 {{if .CFErr}}<div class="banner danger" role="alert"><strong>Cloudflare token problem.</strong> Certificates and DNS will fail until it is fixed. {{helplink "token"}}<br>{{errhtml .CFErr}}</div>{{end}}
 {{template "content" .}}
 </main>

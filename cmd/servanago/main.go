@@ -41,6 +41,10 @@ func main() {
 			cmd = runHelper
 		case "php-job":
 			cmd = func() error { return runPHPJob(os.Args[2:]) }
+		case "backup-job":
+			cmd = func() error { return runBackupJob(os.Args[2:]) }
+		case "backup":
+			cmd = func() error { return runBackup(os.Args[2:], os.Stdin, os.Stdout) }
 		case "serve-static":
 			cmd = func() error { return runServeStatic(os.Args[2:]) }
 		case "import":
@@ -145,6 +149,7 @@ func run() error {
 	go ui.RunPHPChecks(ctx)
 	go ui.ReconcilePHP(ctx)     // SQLite is the desired state: write each user's default PHP files again
 	go ui.ReconcileRuntime(ctx) // site units and users follow the stored sites
+	go ui.RunBackupIngest(ctx)  // the backup job's result files become run history, audit rows and the banner
 	go ui.ResumeBuild(ctx)      // a PHP build outlives the web process, so follow it (and install it) again
 	srv := newUIServer(cfg.UIListen, ui.Handler())
 	errc := make(chan error, 1)

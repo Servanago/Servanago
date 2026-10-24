@@ -17,5 +17,9 @@ This product includes software developed by third parties:
   Apache License 2.0 (earlier contributions MIT). The MCP endpoint and `servanago mcp`.
 - google/jsonschema-go (https://github.com/google/jsonschema-go)
   MIT License. Tool schemas (via the MCP SDK).
+- age (https://github.com/FiloSottile/age)
+  BSD 3-Clause License. Passphrase encryption of backup archives.
+- klauspost/compress (https://github.com/klauspost/compress)
+  BSD 3-Clause License. zstd compression of backup archives.
 - Lucide icons (https://lucide.dev)
   ISC License. Row action icons in internal/web/icons.go.

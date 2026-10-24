@@ -32,6 +32,11 @@ const (
 	ActionPHPPrune       = "php-prune"
 	ActionPHPUserDefault = "php-user-default"
 	ActionComposer       = "composer-install"
+
+	ActionBackupEnable  = "backup-enable"
+	ActionBackupStart   = "backup-start"
+	ActionBackupRestore = "backup-restore"
+	ActionBackupStatus  = "backup-status"
 )
 
 // MaxRequestSize bounds one request; larger input is refused before parsing.
@@ -78,6 +83,13 @@ type Spec struct {
 	Home       string   `json:"home,omitempty"`        // user-add: home of a user to create (under /home or /srv)
 	Shell      bool     `json:"shell,omitempty"`       // user-add: the created user gets a login shell (else nologin)
 	Public     string   `json:"public,omitempty"`      // unit-install, user-add: the served folder inside Root (php, frankenphp, static); "" = Root
+
+	Enabled      bool   `json:"enabled,omitempty"`       // backup-enable: install the timer (false removes it)
+	Scope        string `json:"scope,omitempty"`         // backup-start: all | panel | site (site takes Slug)
+	Archive      string `json:"archive,omitempty"`       // backup-restore: an archive file name of the site
+	RestoreFiles bool   `json:"restore_files,omitempty"` // backup-restore
+	RestoreDumps bool   `json:"restore_dumps,omitempty"` // backup-restore
+	Actor        string `json:"actor,omitempty"`         // backup-start|restore: the signed-in user, for the audit row
 }
 
 // UserData is what user-check and user-add report about a named site user.
@@ -110,7 +122,8 @@ func DecodeRequest(b []byte) (Request, error) {
 	switch r.Action {
 	case ActionPing, ActionUnitInstall, ActionUnitStatus, ActionUnitLogs,
 		ActionUserAdd, ActionUserCheck, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop, ActionDockerList,
-		ActionPHPBuild, ActionPHPStatus, ActionPHPInstall, ActionPHPPrune, ActionPHPUserDefault, ActionComposer:
+		ActionPHPBuild, ActionPHPStatus, ActionPHPInstall, ActionPHPPrune, ActionPHPUserDefault, ActionComposer,
+		ActionBackupEnable, ActionBackupStart, ActionBackupRestore, ActionBackupStatus:
 	default:
 		return Request{}, fmt.Errorf("unknown action %q", r.Action)
 	}

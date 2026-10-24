@@ -57,6 +57,9 @@ type Server struct {
 	startupErr func() error
 	cfErr      atomic.Value // string; set by VerifyToken
 
+	backupWarn atomic.Value // string; stale or failed backups for the banner (backups.go)
+	downloads  sync.Map     // one-use archive download links: token -> downloadGrant
+
 	flashMu sync.Mutex
 	flashes []string // one-time notices shown on the next page render
 
@@ -87,7 +90,7 @@ func (s *Server) takeFlashes() []string {
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "siteedit", "snippets", "logs", "help", "php", "reference"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "siteedit", "snippets", "logs", "help", "php", "reference", "backups"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -190,6 +193,17 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /help", s.protected(s.helpPage))
 	mux.Handle("GET /settings", s.protected(s.settingsPage))
 	mux.Handle("POST /settings/smtp", s.protected(s.saveSMTP))
+	mux.Handle("GET /backups", s.protected(s.backupsPage))
+	mux.Handle("POST /backups/settings", s.protected(s.saveBackupSettings))
+	mux.Handle("POST /backups/run", s.protected(s.runBackup))
+	mux.Handle("POST /backups/sites/{id}", s.protected(s.saveSiteBackup))
+	mux.Handle("POST /backups/sites/{id}/profiles", s.protected(s.addBackupProfile))
+	mux.Handle("POST /backups/sites/{id}/profiles/delete", s.protected(s.deleteBackupProfile))
+	mux.Handle("POST /backups/sites/{id}/volumes", s.protected(s.addBackupVolume))
+	mux.Handle("POST /backups/sites/{id}/volumes/delete", s.protected(s.deleteBackupVolume))
+	mux.Handle("POST /backups/download", s.protected(s.startDownload))
+	mux.Handle("GET /backups/file/{token}", s.protected(s.downloadFile))
+	mux.Handle("POST /backups/restore", s.protected(s.restoreBackup))
 	mux.Handle("GET /status", s.protected(s.status))
 	mux.Handle("GET /php", s.protected(s.phpPage))
 	mux.Handle("GET /php/job", s.protected(s.phpJobPanel))
@@ -239,6 +253,7 @@ type page struct {
 	Flash      []string
 	LoggedIn   bool
 	Bare       bool // sign-in pages: brand only, no app navigation
+	BackupWarn string
 	Data       any
 }
 
@@ -247,6 +262,9 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, p page) 
 	p.LoggedIn = s.auth.enabled()
 	p.Bare = name == "login" || name == "login_totp"
 	p.Flash = s.takeFlashes()
+	if !p.Bare {
+		p.BackupWarn = s.backupWarnText()
+	}
 	if s.startupErr != nil {
 		if err := s.startupErr(); err != nil {
 			p.StartupErr = err.Error()

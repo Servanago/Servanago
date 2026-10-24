@@ -39,6 +39,11 @@ func runHelper() error {
 		helper.ActionPHPPrune:       a.PHPPrune,
 		helper.ActionPHPUserDefault: a.PHPUserDefault,
 		helper.ActionComposer:       a.Composer,
+
+		helper.ActionBackupEnable:  a.BackupEnable,
+		helper.ActionBackupStart:   a.BackupStart,
+		helper.ActionBackupRestore: a.BackupRestore,
+		helper.ActionBackupStatus:  a.BackupStatus,
 	}
 	slog.Info("helper listening", "socket", helper.SocketPath, "servanago_user", hasUser)
 	helper.Serve(ln, helper.NewAuthorizer(uid), acts)
