@@ -246,6 +246,27 @@ pre.notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9rem; ov
 .view-list .site[data-open] .ref-detail { display: block; }
 .view-list .site:hover { background: var(--sg-surface-raised); }
 
+/* ---- App shell: sidebar + content --------------------------------------------------------------- */
+body.app { display: grid; grid-template-columns: 15rem minmax(0, 1fr); min-height: 100vh; }
+.sidebar { position: sticky; top: 0; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: 1.4rem; padding: 1.25rem 0.75rem; border-right: 1px solid var(--sg-border); background: var(--sg-bg); }
+.sidebar .brand { padding: 0 0.6rem; }
+.side-nav { display: flex; flex-direction: column; justify-content: flex-start; gap: 1.2rem; flex: 1; } /* Pico makes nav a space-between flex row */
+.nav-group { display: flex; flex-direction: column; gap: 0.1rem; }
+.nav-group h6 { margin: 0; padding: 0 0.6rem 0.35rem; font-size: 0.72rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--sg-text-muted); }
+.sidebar a:not(.brand), .sidebar .signout { display: flex; align-items: center; gap: 0.7rem; width: 100%; margin: 0; padding: 0.5rem 0.6rem; border: 0; border-radius: var(--sg-radius-sm); background: transparent; color: var(--sg-text-secondary); font-size: 0.95rem; font-weight: 400; text-align: left; text-decoration: none; cursor: pointer; }
+.sidebar a:not(.brand):hover, .sidebar .signout:hover { background: var(--sg-surface); color: var(--sg-text); }
+.sidebar a[aria-current="page"] { background: var(--sg-surface-raised); color: var(--sg-text); }
+.sidebar a[aria-current="page"] .icon { color: var(--sg-accent); }
+.sidebar .icon { width: 1.15rem; height: 1.15rem; }
+.side-foot { border-top: 1px solid var(--sg-border); padding-top: 0.75rem; }
+main.content { width: 100%; max-width: 70rem; padding: 2rem clamp(1.25rem, 4vw, 3.5rem) 4rem; margin: 0; }
+@media (max-width: 860px) {
+  body.app { grid-template-columns: 1fr; }
+  .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--sg-border); }
+  .side-nav { flex-direction: row; flex-wrap: wrap; flex: none; }
+  .side-foot { flex-direction: row; flex-wrap: wrap; border-top: 0; padding-top: 0; }
+  .sidebar a:not(.brand), .sidebar .signout { width: auto; }
+}
 
 @media (max-width: 640px) {
   body > header nav { flex-wrap: wrap; }

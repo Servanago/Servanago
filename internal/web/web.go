@@ -253,6 +253,7 @@ type page struct {
 	Flash      []string
 	LoggedIn   bool
 	Bare       bool // sign-in pages: brand only, no app navigation
+	Nav        string // sidebar entry to mark current: the page name, with the site editor under "dashboard"
 	BackupWarn string
 	Data       any
 }
@@ -261,6 +262,9 @@ func (s *Server) render(w http.ResponseWriter, name string, status int, p page) 
 	p.Open = !s.auth.enabled()
 	p.LoggedIn = s.auth.enabled()
 	p.Bare = name == "login" || name == "login_totp"
+	if p.Nav = name; name == "siteedit" {
+		p.Nav = "dashboard"
+	}
 	p.Flash = s.takeFlashes()
 	if !p.Bare {
 		p.BackupWarn = s.backupWarnText()

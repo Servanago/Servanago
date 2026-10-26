@@ -36,14 +36,15 @@ test('Add site will not submit without a valid port and creates nothing', async 
   await expect(page.getByRole('cell', { name: 'sitesflow2.example.net' })).toHaveCount(0);
 });
 
-test('top bar spans the full page width with inset content', async ({ page }) => {
+test('sidebar holds the navigation beside a bounded content column', async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 800 });
   await login(page);
-  const bar = await page.locator('header.topbar').boundingBox();
-  const brand = await page.locator('header.topbar .brand').boundingBox();
+  const side = await page.locator('aside.sidebar').boundingBox();
+  const brand = await page.locator('aside.sidebar .brand').boundingBox();
   const main = await page.locator('main').boundingBox();
-  expect(bar!.x).toBe(0);
-  expect(Math.round(bar!.width)).toBe(1500);
-  expect(brand!.x).toBeGreaterThanOrEqual(20); // padded, not flush with the edge
-  expect(main!.width).toBeLessThan(1300); // page content stays in its centered column
+  expect(side!.x).toBe(0);
+  expect(Math.round(side!.height)).toBe(800); // full-height rail
+  expect(brand!.x).toBeGreaterThanOrEqual(8); // padded, not flush with the edge
+  expect(main!.x).toBeGreaterThanOrEqual(side!.width); // content sits beside the rail, not under it
+  expect(main!.width).toBeLessThan(1300); // page content stays bounded
 });
