@@ -1,12 +1,12 @@
 # ServanaGo
 
-> Lightweight self-hosted web runtime manager: a Go app with a web UI, embedded Caddy, SQLite and systemd supervision. One native host, one Caddy ingress for every site. Site kinds: reverse proxy, static, Node.js, PHP-FPM (distro PHP or PHP that ServanaGo compiles itself), FrankenPHP, FastCGI and CGI. Optional Cloudflare (DNS-01 certificates, A/AAAA records), optional MCP endpoint for agents. Status: early (v0.8.1); not a hosting control panel and not a sandbox for mutually untrusted tenants. MIT licensed.
+> Lightweight self-hosted web runtime manager: a Go app with a web UI, embedded Caddy, SQLite and systemd supervision. One native host, one Caddy ingress for every site. Site kinds: reverse proxy, static, Node.js, PHP-FPM (distro PHP or PHP that ServanaGo compiles itself), FrankenPHP, FastCGI and CGI. Optional Cloudflare (DNS-01 certificates, A/AAAA records), optional MCP endpoint for agents. Status: early (v0.9.0); not a hosting control panel and not a sandbox for mutually untrusted tenants. MIT licensed.
 
 Target platform: native host, Debian 12+ / Ubuntu 22.04+ with systemd 252+. Packaged as a `.deb`. There is no container image.
 
 ## Install
 
-- Build and install the package: `make deb`, then `sudo apt-get install ./bin/servanago_0.8.1_amd64.deb`. Or `sudo packaging/install.sh` from a checkout. Releases carry the `.deb`.
+- Build and install the package: `make deb`, then `sudo apt-get install ./bin/servanago_0.9.0_amd64.deb`. Or `sudo packaging/install.sh` from a checkout. Releases carry the `.deb`.
 - The deb installs the binary, a `servanago` system user, `/etc/servanago/servanago.env` (a conffile; dpkg keeps your edits), `servanago.service`, and `servanago-helper.service`. `DATA_DIR` is `/var/lib/servanago`, logs go to journald (`journalctl -u servanago`).
 - The unit is enabled but not started. Fill in the env file (`SERVANAGO_HOST`, `ACME_EMAIL`, `ADMIN_PASSWORD`), then `systemctl start servanago`.
 - The helper is a root daemon the control plane asks over a Unix socket (SO_PEERCRED) for privileged work: per-site units, system users, php-fpm pools, PHP builds, backups. It accepts a closed set of typed actions only; the web UI never runs as root. Running from source without it works, but pages that need it say so.
@@ -23,6 +23,8 @@ Environment variables (secrets come from the environment only, never SQLite or l
 - `SERVANAGO_SECRET_KEY` (32+ chars): seals the authenticator seed, SMTP/Postmark credentials and site env values; needed for the authenticator app and the magic-link gate. Back it up with the data directory.
 - `REQUIRE_2FA` (default `true`), `TURNSTILE_SITE_KEY` + `TURNSTILE_SECRET` (both or neither).
 - `SERVANAGO_MCP_TOKEN` (32+ chars): turns on the MCP endpoint (see below). Unset: `/mcp` does not exist. Set it in `/etc/servanago/servanago.env` (packaged) or `.env` (source); read at start, so restart to apply. Generate with `openssl rand -hex 32`.
+- `SERVANAGO_MCP_PUBLIC` (default `false`): `true` lets `/mcp` answer through Caddy and remote clients. Off: only the local stdio relay (`servanago mcp`) works; the public URL answers 404.
+- `SERVANAGO_MCP_ALLOWLIST` (optional): comma-separated IPs or CIDRs. With `SERVANAGO_MCP_PUBLIC=true`, only these remote addresses reach `/mcp`; others get 404 before the token is checked. Unset: any address. The local relay is not affected.
 - `CLOUDFLARE_API_TOKEN` (optional; scopes `Zone:Zone:Read`, `Zone:DNS:Edit`) with `SERVANAGO_HOST_IP` (required with a token; any usable IPv4: public, private, CGNAT), `SERVANAGO_HOST_IP6` (optional AAAA), `SERVANAGO_HOST_ZONE` (if zone detection fails). Without a token: per-host HTTP-01/TLS-ALPN certificates (80 and 443 must be reachable), no DNS management, domains added by hand on the Domains page. Records are DNS-only, never proxied; only records marked `managed by servanago` are changed or deleted.
 - `SERVANAGO_STATIC_ROOTS`: optional colon-separated prefixes a static site's folder must sit under (default: anything outside `DATA_DIR`, `/etc`, `/proc`, `/sys`, `/dev`, `/root`, `/`).
 - `ACME_STAGING`, `ACME_ISSUER` (`internal` = self-signed), `ACME_PROPAGATION_DELAY` / `ACME_PROPAGATION_TIMEOUT` (`2m` / `10m` fixes "timed out waiting for record to fully propagate"), `ACME_RESOLVERS` (default `1.1.1.1,8.8.8.8`).
@@ -48,7 +50,7 @@ Server-rendered htmx UI. There is no REST API; agents use MCP.
 
 Optional MCP server for agents, off unless `SERVANAGO_MCP_TOKEN` is set.
 
-- Endpoint: Streamable HTTP, stateless, at `https://<SERVANAGO_HOST>/mcp`. Header `Authorization: Bearer <SERVANAGO_MCP_TOKEN>`. A wrong token spends the sign-in throttle for that client IP (5 attempts per 15 min).
+- Endpoint: Streamable HTTP, stateless, at `https://<SERVANAGO_HOST>/mcp`, only with `SERVANAGO_MCP_PUBLIC=true` (otherwise 404 there). Header `Authorization: Bearer <SERVANAGO_MCP_TOKEN>`. A wrong token spends the sign-in throttle for that client IP (5 attempts per 15 min).
 - stdio clients: `servanago mcp` relays stdio to that endpoint. It needs `SERVANAGO_MCP_TOKEN`; `SERVANAGO_MCP_URL` sets the endpoint (default `http://$UI_LISTEN/mcp`, local `127.0.0.1:8080`).
 - One server-wide token for read and write; there are no scopes and no per-person audit. A leaked token can create, change and delete sites: treat it like an administrator password. Audit actor is `mcp token`.
 - Writes run the UI's own handlers in process (same validation, apply path, DNS, runtime setup, audit). Results may carry `warnings` (runtime setup problems; the site is saved anyway).
@@ -87,7 +89,7 @@ Write tools:
 - Certificate never issues: check token scopes, set the propagation variables, try `ACME_STAGING=true`. A failed token can leave `_acme-challenge` TXT records that block the next issuance; delete them.
 - `expected 1 zone, got 0`: leave `ACME_RESOLVERS` at its default or set `SERVANAGO_HOST_ZONE`.
 - Do not restart `servanago` during a PHP build.
-- MCP returns 404: `SERVANAGO_MCP_TOKEN` is unset. 401: wrong token. 429: too many wrong tokens from that address.
+- MCP returns 404: `SERVANAGO_MCP_TOKEN` is unset, or the request came from outside and `SERVANAGO_MCP_PUBLIC` is not `true`. 401: wrong token. 429: too many wrong tokens from that address.
 
 ## Docs
 

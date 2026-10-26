@@ -31,6 +31,8 @@ One native Linux host publishes several kinds of web sites (reverse proxy, stati
 | `SERVANAGO_STATIC_ROOTS` | unset | optional colon-separated allowlist for static roots |
 | `SERVANAGO_SECRET_KEY` | unset | seals TOTP seeds, the Settings SMTP password and each gated site's mail credential; signs magic-link sessions |
 | `SERVANAGO_MCP_TOKEN` | unset | enables `/mcp`; at least 32 characters |
+| `SERVANAGO_MCP_PUBLIC` | false | `true` lets `/mcp` answer through Caddy / remote clients; off = only the local `servanago mcp` relay |
+| `SERVANAGO_MCP_ALLOWLIST` | unset | comma-separated IPs/CIDRs; with `SERVANAGO_MCP_PUBLIC=true` only these remote addresses reach `/mcp` (others 404); unset = any |
 | `TURNSTILE_SITE_KEY`, `TURNSTILE_SECRET` | unset | optional Turnstile on sign-in |
 | `ACME_ISSUER`, `ACME_STAGING`, `ACME_RESOLVERS`, `ACME_PROPAGATION_*` | see code | certificate tuning |
 
@@ -52,7 +54,7 @@ One native Linux host publishes several kinds of web sites (reverse proxy, stati
 - **FR-8 Authentication.** Username and password (bcrypt), session cookie tied to user and epoch (removal, password change and second-factor reset end that user's sessions), 5 attempts per client address per 15 minutes. Optional TOTP, backup codes, passkeys; Turnstile optional.
 - **FR-9 Open mode.** While no administrator exists the UI is open, but only to a client on this machine. A request whose client address is not loopback (`X-Forwarded-For` is honoured only from a loopback peer) gets 403 with instructions to create the first administrator locally.
 - **FR-10 Audit.** Every mutating action writes an audit row naming the actor (`user`, `mcp token`, or `system`).
-- **FR-11 MCP.** Off unless `SERVANAGO_MCP_TOKEN` is set. Writes run the UI's own handlers, so the same validation applies.
+- **FR-11 MCP.** Off unless `SERVANAGO_MCP_TOKEN` is set; reachable from outside only with `SERVANAGO_MCP_PUBLIC=true`. Writes run the UI's own handlers, so the same validation applies.
 
 ### PHP
 

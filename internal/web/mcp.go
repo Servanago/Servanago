@@ -36,7 +36,11 @@ func (s *Server) mcpHandler() http.Handler {
 		// The bearer token covers what it protects against: a rebinding page cannot send it.
 		&mcp.StreamableHTTPOptions{Stateless: true, DisableLocalhostProtection: true})
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if s.deps.Cfg.MCPToken == "" {
+		// Public = through Caddy (it always sets X-Forwarded-For) or from a non-loopback peer. The stdio relay
+		// calls the loopback listener directly, so it passes without the flag.
+		public := !loopbackPeer(r) || r.Header.Get("X-Forwarded-For") != ""
+		// The allowlist is checked before the token, so a caller outside it learns nothing and spends no throttle.
+		if s.deps.Cfg.MCPToken == "" || (public && (!s.deps.Cfg.MCPPublic || !s.deps.Cfg.MCPAllowed(clientIP(r)))) {
 			http.NotFound(w, r)
 			return
 		}

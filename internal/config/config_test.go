@@ -244,3 +244,40 @@ func TestLoadHostIP6(t *testing.T) {
 		t.Error("an IPv6 address in SERVANAGO_HOST_IP must be rejected")
 	}
 }
+
+func TestMCPPublicFlag(t *testing.T) {
+	c, err := Load(env(valid()))
+	if err != nil || c.MCPPublic {
+		t.Fatalf("default must be off: %+v %v", c, err)
+	}
+	m := valid()
+	m["SERVANAGO_MCP_PUBLIC"] = "true"
+	if c, err := Load(env(m)); err != nil || !c.MCPPublic {
+		t.Fatalf("true: %+v %v", c, err)
+	}
+	m["SERVANAGO_MCP_PUBLIC"] = "maybe"
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "SERVANAGO_MCP_PUBLIC") {
+		t.Fatalf("not a boolean: %v", err)
+	}
+}
+
+func TestMCPAllowlist(t *testing.T) {
+	m := valid()
+	m["SERVANAGO_MCP_ALLOWLIST"] = " 203.0.113.7, 10.0.0.0/8 ,2001:db8::/32 "
+	c, err := Load(env(m))
+	if err != nil || len(c.MCPAllowlist) != 3 {
+		t.Fatalf("%+v %v", c.MCPAllowlist, err)
+	}
+	for ip, want := range map[string]bool{"203.0.113.7": true, "203.0.113.8": false, "10.9.9.9": true, "2001:db8::5": true, "198.51.100.1": false} {
+		if got := c.MCPAllowed(ip); got != want {
+			t.Errorf("MCPAllowed(%s) = %v, want %v", ip, got, want)
+		}
+	}
+	if c, _ := Load(env(valid())); !c.MCPAllowed("198.51.100.1") { // empty list = any address
+		t.Error("empty list must allow any address")
+	}
+	m["SERVANAGO_MCP_ALLOWLIST"] = "10.0.0.0/8,nonsense"
+	if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "SERVANAGO_MCP_ALLOWLIST") || !strings.Contains(err.Error(), "nonsense") {
+		t.Fatalf("bad entry: %v", err)
+	}
+}

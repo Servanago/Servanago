@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/mail"
+	"net/netip"
 	"regexp"
 	"strconv"
 	"strings"
@@ -33,8 +34,10 @@ type Config struct {
 	CFBaseURL          string // test hook: point cloudflare-go at a mock (e2e); empty = real API
 	HTTPPort           int    // Caddy listen ports; default 80/443, overridable for unprivileged runs
 	HTTPSPort          int
-	SecretKey          string // seals TOTP seeds at rest; empty = TOTP enrollment off
-	MCPToken           string // bearer token for /mcp; empty = the MCP endpoint is off
+	SecretKey          string         // seals TOTP seeds at rest; empty = TOTP enrollment off
+	MCPToken           string         // bearer token for /mcp; empty = the MCP endpoint is off
+	MCPPublic          bool           // SERVANAGO_MCP_PUBLIC: /mcp also answers via Caddy / non-loopback peers; off = the local stdio relay only
+	MCPAllowlist       []netip.Prefix // SERVANAGO_MCP_ALLOWLIST: public /mcp callers must sit in one of these; empty = any address
 	Require2FA         bool
 	TurnstileSiteKey   string // both set = Turnstile on the password step
 	TurnstileSecret    string
@@ -134,6 +137,28 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	c.SecretKey = getenv("SERVANAGO_SECRET_KEY")
 	c.MCPToken = getenv("SERVANAGO_MCP_TOKEN")
+	if v := strings.TrimSpace(getenv("SERVANAGO_MCP_PUBLIC")); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("SERVANAGO_MCP_PUBLIC: %q is not a boolean", v))
+		}
+		c.MCPPublic = b
+	}
+	for _, e := range strings.Split(getenv("SERVANAGO_MCP_ALLOWLIST"), ",") {
+		if e = strings.TrimSpace(e); e == "" {
+			continue
+		}
+		p, err := netip.ParsePrefix(e)
+		if err != nil {
+			a, aerr := netip.ParseAddr(e)
+			if aerr != nil {
+				errs = append(errs, fmt.Errorf("SERVANAGO_MCP_ALLOWLIST: %q is not an IP or CIDR", e))
+				continue
+			}
+			p = netip.PrefixFrom(a, a.BitLen())
+		}
+		c.MCPAllowlist = append(c.MCPAllowlist, p.Masked())
+	}
 	c.TurnstileSiteKey = strings.TrimSpace(getenv("TURNSTILE_SITE_KEY"))
 	c.TurnstileSecret = strings.TrimSpace(getenv("TURNSTILE_SECRET"))
 	c.TurnstileBaseURL = strings.TrimSpace(getenv("TURNSTILE_BASE_URL"))
@@ -200,4 +225,22 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, fmt.Errorf("invalid configuration: %w", err)
 	}
 	return c, nil
+}
+
+// MCPAllowed reports whether a public /mcp caller at ip passes SERVANAGO_MCP_ALLOWLIST; an empty list allows any.
+func (c Config) MCPAllowed(ip string) bool {
+	if len(c.MCPAllowlist) == 0 {
+		return true
+	}
+	a, err := netip.ParseAddr(ip)
+	if err != nil {
+		return false
+	}
+	a = a.Unmap()
+	for _, p := range c.MCPAllowlist {
+		if p.Contains(a) {
+			return true
+		}
+	}
+	return false
 }

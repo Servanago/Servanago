@@ -6,7 +6,7 @@
 
 A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an embedded [Caddy](https://caddyserver.com), SQLite and systemd supervision of the apps it runs. Caddy's configuration is generated from SQLite and applied atomically.
 
-> **Status: early.** Reverse-proxy, static, Node.js, PHP-FPM (distro PHP or PHP that ServanaGo compiles itself), FrankenPHP, FastCGI and CGI sites work, and an MCP endpoint (`/mcp`, off until `SERVANAGO_MCP_TOKEN` is set) lets an agent read and manage them. Hardening is on the [roadmap](docs/ROADMAP.md), not shipped. Nothing below describes planned features as working.
+> **Status: early.** Reverse-proxy, static, Node.js, PHP-FPM (distro PHP or PHP that ServanaGo compiles itself), FrankenPHP, FastCGI and CGI sites work, and an MCP endpoint (`/mcp`, off until `SERVANAGO_MCP_TOKEN` is set; remote clients also need `SERVANAGO_MCP_PUBLIC=true`) lets an agent read and manage them. Hardening is on the [roadmap](docs/ROADMAP.md), not shipped. Nothing below describes planned features as working.
 
 ## What works today
 
@@ -31,8 +31,8 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 Debian 12+ or Ubuntu 22.04+ with systemd. One deb: the binary, a `servanago` system user, `/etc/servanago/servanago.env`, the `servanago.service` unit and `/var/lib/servanago` (`DATA_DIR`) plus `/var/log/servanago`.
 
 ```sh
-make deb                                    # bin/servanago_0.8.1_amd64.deb
-sudo apt-get install ./bin/servanago_0.8.1_amd64.deb
+make deb                                    # bin/servanago_0.9.0_amd64.deb
+sudo apt-get install ./bin/servanago_0.9.0_amd64.deb
 ```
 
 Or all of it with nothing but this checkout: `sudo packaging/install.sh`.

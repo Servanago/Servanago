@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"strings"
 	"testing"
 
@@ -70,6 +71,7 @@ func TestMCPEndpointAuth(t *testing.T) {
 	s, _ := runtimeServer(t)
 	post := func(auth string) int {
 		r := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{}`))
+		r.RemoteAddr = "127.0.0.1:5555" // the local relay; public callers are TestMCPPublicIsOptIn's
 		if auth != "" {
 			r.Header.Set("Authorization", auth)
 		}
@@ -225,5 +227,75 @@ func TestMCPAcceptsPublicHostBehindProxy(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
 		t.Fatalf("public Host header refused: %d", resp.StatusCode)
+	}
+}
+
+// Without SERVANAGO_MCP_PUBLIC, /mcp answers only a direct loopback caller (the stdio relay): a request that came
+// through Caddy (X-Forwarded-For) or from a non-loopback peer gets the same 404 as a disabled endpoint, even with
+// the right token.
+func TestMCPPublicIsOptIn(t *testing.T) {
+	s, _ := runtimeServer(t)
+	s.deps.Cfg.MCPToken = mcpToken
+	post := func(peer, xff string) int {
+		r := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{}`))
+		r.RemoteAddr = peer
+		r.Header.Set("Authorization", "Bearer "+mcpToken)
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		return w.Code
+	}
+	if c := post("127.0.0.1:5555", ""); c == 404 {
+		t.Errorf("relay on loopback refused: %d", c)
+	}
+	for name, got := range map[string]int{
+		"via caddy":        post("127.0.0.1:5555", "203.0.113.9"),
+		"non-loopback":     post("203.0.113.9:5555", ""),
+		"non-loopback+xff": post("203.0.113.9:5555", "198.51.100.1"),
+	} {
+		if got != 404 {
+			t.Errorf("%s: %d, want 404", name, got)
+		}
+	}
+	s.deps.Cfg.MCPPublic = true
+	if c := post("127.0.0.1:5555", "203.0.113.9"); c == 404 {
+		t.Errorf("via caddy with the flag on: %d", c)
+	}
+	if c := post("203.0.113.9:5555", ""); c == 404 {
+		t.Errorf("non-loopback with the flag on: %d", c)
+	}
+}
+
+// With the flag on, SERVANAGO_MCP_ALLOWLIST limits public callers by their real address (X-Forwarded-For via
+// Caddy); others get 404 before the token is looked at, so guessing from outside the list spends no throttle.
+func TestMCPAllowlistLimitsPublicCallers(t *testing.T) {
+	s, _ := runtimeServer(t)
+	s.deps.Cfg.MCPToken = mcpToken
+	s.deps.Cfg.MCPPublic = true
+	s.deps.Cfg.MCPAllowlist = []netip.Prefix{netip.MustParsePrefix("203.0.113.0/24")}
+	post := func(peer, xff string) int {
+		r := httptest.NewRequest("POST", "/mcp", strings.NewReader(`{}`))
+		r.RemoteAddr = peer
+		r.Header.Set("Authorization", "Bearer "+mcpToken)
+		if xff != "" {
+			r.Header.Set("X-Forwarded-For", xff)
+		}
+		w := httptest.NewRecorder()
+		s.Handler().ServeHTTP(w, r)
+		return w.Code
+	}
+	if c := post("127.0.0.1:5555", "203.0.113.9"); c == 404 {
+		t.Errorf("listed address via caddy: %d", c)
+	}
+	if c := post("127.0.0.1:5555", "198.51.100.1"); c != 404 {
+		t.Errorf("unlisted address via caddy: %d, want 404", c)
+	}
+	if c := post("198.51.100.1:5555", ""); c != 404 {
+		t.Errorf("unlisted direct peer: %d, want 404", c)
+	}
+	if c := post("127.0.0.1:5555", ""); c == 404 { // the local relay is not a public caller
+		t.Errorf("local relay refused: %d", c)
 	}
 }

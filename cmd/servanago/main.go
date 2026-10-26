@@ -140,6 +140,9 @@ func run() error {
 	} else {
 		slog.Info("CLOUDFLARE_API_TOKEN is not set: no DNS management, certificates use HTTP-01/TLS-ALPN (ports 80 and 443 must be reachable from the internet)")
 	}
+	if cfg.MCPToken != "" && !cfg.MCPPublic {
+		slog.Info("MCP is local only: https://" + cfg.Host + "/mcp answers 404; set SERVANAGO_MCP_PUBLIC=true to allow remote clients (the stdio relay `servanago mcp` works without it)")
+	}
 	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dns, Probe: mon, Logs: caddylog.Sink})
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
