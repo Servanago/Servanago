@@ -111,6 +111,17 @@ scoped to the zones you want to manage. The same token is used for certificate i
 | `ACME_RESOLVERS` | no | Resolvers for the DNS-01 check. Default `1.1.1.1,8.8.8.8`. |
 | `ACME_PROPAGATION_DELAY`, `ACME_PROPAGATION_TIMEOUT` | no | DNS-01 tuning, e.g. `2m` / `10m`. Unset uses Caddy's defaults. |
 
+## Agent skills
+
+Skills that teach an AI agent to set up a host and use the MCP tools live in [`skills/`](skills): `servanago-setup`, `servanago-mcp`, `servanago-sites`, `servanago-snippets`, `servanago-backups`. Install them with the [skills CLI](https://www.skills.sh/docs/cli):
+
+```sh
+npx skills add Servanago/Servanago                          # choose from all five
+npx skills add Servanago/Servanago --skill servanago-sites  # one skill
+```
+
+The repo is also a Claude Code plugin (`.claude-plugin/plugin.json`). A test keeps the skills in step with the registered MCP tools.
+
 ## Warnings
 
 **`UI_LISTEN` is a recovery hatch, not a default.** The UI listens on loopback and Caddy proxies `SERVANAGO_HOST` to it. If Caddy is broken you can set `UI_LISTEN=0.0.0.0:8080` to fix things, but then the UI is reachable without TLS. With no administrators that is a full authentication bypass. Remove it again afterwards.
@@ -162,7 +173,7 @@ SMOKE_ROOT=/tmp/phpsmoke SMOKE_VERSION=8.4.27 go test -tags smoke -run SmokeReal
 
 It needs the build tools listed on the PHP page, and builds into the empty directory you name. It does not use systemd or the helper.
 
-The roadmap and the decisions behind it are in [`docs/ROADMAP.md`](docs/ROADMAP.md). The inherited baseline's design notes are in `docs/DESIGN.md` and its requirements in `docs/REQUIREMENTS.md`; both predate the roadmap and are being reworked milestone by milestone. Brand asset provenance is in `docs/brand/README.md`.
+How to cut a release is in [`docs/RELEASING.md`](docs/RELEASING.md). The roadmap and the decisions behind it are in [`docs/ROADMAP.md`](docs/ROADMAP.md). The inherited baseline's design notes are in `docs/DESIGN.md` and its requirements in `docs/REQUIREMENTS.md`; both predate the roadmap and are being reworked milestone by milestone. Brand asset provenance is in `docs/brand/README.md`.
 
 ## License
 

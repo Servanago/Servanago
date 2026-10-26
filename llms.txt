@@ -91,12 +91,17 @@ Write tools:
 - Do not restart `servanago` during a PHP build.
 - MCP returns 404: `SERVANAGO_MCP_TOKEN` is unset, or the request came from outside and `SERVANAGO_MCP_PUBLIC` is not `true`. 401: wrong token. 429: too many wrong tokens from that address.
 
+## Agent skills
+
+Task skills for agents live in `skills/` (`servanago-setup`, `servanago-mcp`, `servanago-sites`, `servanago-snippets`, `servanago-backups`). Install: `npx skills add Servanago/Servanago` (add `--skill NAME` for one).
+
 ## Docs
 
 - [README](https://github.com/Servanago/Servanago/blob/main/README.md): what works, install, config table, warnings
 - [Roadmap](https://github.com/Servanago/Servanago/blob/main/docs/ROADMAP.md): decisions and milestones (M10 is MCP)
 - [Design](https://github.com/Servanago/Servanago/blob/main/docs/DESIGN.md): architecture, apply path, DNS sync
 - [PHP from source](https://github.com/Servanago/Servanago/blob/main/docs/php-from-source-design.md): build design, section 16 as built
+- [Releasing](https://github.com/Servanago/Servanago/blob/main/docs/RELEASING.md): version places, skills upkeep, release and deploy steps
 - [Requirements](https://github.com/Servanago/Servanago/blob/main/docs/REQUIREMENTS.md): inherited baseline spec
 - [.env.example](https://github.com/Servanago/Servanago/blob/main/.env.example): annotated environment template
 
