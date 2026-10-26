@@ -16,15 +16,20 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 - **Node.js and PHP sites** on a native Debian/Ubuntu host (installed from the `.deb`, with its helper service): a Node app gets its own system user and a sandboxed systemd unit running your start command, behind a loopback port Caddy forwards to; a PHP site gets its own php-fpm pool and socket, with the version picked from the php-fpm binaries found on the host. The edit page shows the unit's state and recent journal lines. ServanaGo detects Node.js and php-fpm and shows the install command; it never installs a runtime (PHP can also be compiled by ServanaGo itself, next item), never runs your install or build commands, and never changes the ownership of your files (give `sg-NAME` access yourself; the Help page has the commands). Users on the same host are separated by Unix permissions only: do not host mutually untrusted sites.
 - **PHP built from source** (PHP page): when a security release must not wait for your distribution's package mirrors, ServanaGo downloads the release from php.net (sha256 and GPG signature checked), compiles it with its own copies of the libraries it needs, and installs it root-owned under `/opt/servanago/php`. The build runs as an unprivileged user in a sandboxed unit (half the CPU, 4 GB of memory); the host needs only a C and C++ toolchain, pkg-config, cmake, perl, bison, flex, autoconf, automake, libtool, m4, gpg, xz and tar, and a missing one is listed with its `apt install` line. Each site picks a branch (`8.4`, follows the newest build) or an exact build, and its own set of extensions (19 shared ones, including the PECL extensions apcu and imagick); switching moves the sites one at a time and puts a site back on the previous build if it does not come up. Each login user can have a default command-line `php` and `composer`. A weekly check against php.net shows new releases (security ones marked) and emails the MAIL FROM address. What is verified and what is only trusted is under **PHP built from source** in Warnings below; the design, with what differs from the plan, is [docs/php-from-source-design.md](docs/php-from-source-design.md), section 16.
 - **Backups** (Backups page): a scheduled job running as root writes one passphrase-encrypted archive (tar, zstd, age) per opted-in site and one for the panel (database, certificates, secret key) into a folder on the server, with keep-newest-N plus weekly retention, typed database dumps (SQLite, and MariaDB or PostgreSQL inside a container, passwords never on a command line) and opt-in container volumes. Restore a site from the UI (password re-checked, the current state is backed up first): its files, its database dumps and its container volumes (a volume restore stops the running containers that mount the volume, empties and refills it, and starts them again), or download an archive; failures raise a banner, an audit row and an optional ntfy push. The MCP endpoint has `backup_status`, `list_backups`, `run_backup`, `plan_restore` and `restore_site` (the restore needs the site's short name as `confirm`). Copy archives off the server: they live on the same disk. Recovery without the UI: `servanago backup list|verify|run|restore`; the panel is restored only from the command line, never from the UI or MCP, with the service stopped (`servanago backup restore --panel ARCHIVE --passphrase-file FILE`), and any archive opens with `age -d` and the passphrase, then `zstd -d | tar x`.
-- Per-route enable/disable, CIDR allowlist, basic auth, streaming and upload limits, and an optional magic-link site gate.
+- **Sites with free hostnames**: one or more FQDNs per site (the first is the main one), each with its own A (and optional AAAA) record. Kinds: reverse proxy, static, Node.js, PHP-FPM, FrankenPHP, FastCGI (an admin-run socket or host:port) and CGI (socket-activated fcgiwrap).
+- Per-site enable/disable (a disabled site answers a 503 maintenance page), CIDR allowlist, basic auth, streaming and upload limits, admin notes, and an optional magic-link site gate.
+- **Snippets** (Snippets page): named Caddyfile snippets (headers, redirects, canned responses, compression) that sites attach by name; handlers that serve, proxy or authenticate are refused.
+- **Reference page**: every site with its kind, address, folder and notes in one place.
+- **MCP server** (optional): an agent reads and manages sites, snippets and backups over `/mcp`; see [MCP](#mcp). Skills for agents are in [Agent skills](#agent-skills).
+- Command line: `servanago user add|passwd`, `2fa-reset`, `import` (a Caddyfile), `backup`, and `mcp` (stdio relay); see [Command line](#command-line).
 - Admin login with optional authenticator app, backup codes, passkeys and Cloudflare Turnstile.
-- Upstream health, certificate expiry, DNS state and a live Caddy/ACME log in the UI.
+- Upstream health, certificate expiry, DNS state and a live Caddy/ACME log in the UI (Dashboard, Logs), plus Users, Audit (every sign-in and change, including MCP), Security, Settings (SMTP for ServanaGo's own notices) and PHP pages.
 - Built-in help for people new to DNS and TLS: a hint under every field, a live preview of what *Add site* will create, plain-language explanations of errors and status words, a getting-started checklist and a Help page.
 - A single static Go binary; all state in one data directory.
 
 **Addresses.** An A record target (`SERVANAGO_HOST_IP`, a domain's default IP, a route's DNS record IP) can be any usable IPv4 address: public, private (10/8, 172.16/12, 192.168/16) or CGNAT (100.64/10, Tailscale). Loopback, link-local, multicast and reserved addresses are refused. **IPv6 is dual-stack:** an optional IPv6 address next to each IPv4 one (`SERVANAGO_HOST_IP6`, a domain's IPv6, a route's AAAA record IPv6) makes ServanaGo manage an AAAA record beside the A record, with its own state, conflict and take-over handling. The IPv4 address stays required, and an IPv6-only site is not supported. Cloudflare-proxied (orange cloud) records are not supported either.
 
-**Without Cloudflare** (no `CLOUDFLARE_API_TOKEN`): add each domain on the *Domains* page before adding sites under it (ServanaGo cannot look up a zone), certificates are per host, and you point DNS at the server yourself. A site must be a single label under its domain (`app.example.com` under `example.com`) until the site model lands in M2.
+**Without Cloudflare** (no `CLOUDFLARE_API_TOKEN`): add each domain on the *Domains* page before adding sites under it (ServanaGo cannot look up a zone), certificates are per host, and you point DNS at the server yourself. A hostname that falls under a domain you added uses that domain's settings; any other hostname gets its own HTTP-01 certificate and no DNS management.
 
 ## Install
 
@@ -43,7 +48,7 @@ The deb also installs `servanago-helper.service`, a root daemon that the control
 
 ## Run it from source
 
-There is no package or image yet. ServanaGo reads its configuration from the process environment only; it does not load `.env` itself.
+For development or a try-out without the package (there is no container image). ServanaGo reads its configuration from the process environment only; it does not load `.env` itself.
 
 1. Optional: create a Cloudflare API token (see below) if you want DNS-01 certificates and automatic A records.
 2. Build the binary (Go and no other toolchain; no Node build step):
@@ -97,7 +102,10 @@ scoped to the zones you want to manage. The same token is used for certificate i
 | `ACME_ISSUER` | no | `internal` serves self-signed certificates from Caddy's local CA (offline setups and tests). Default is Let's Encrypt. |
 | `ACME_STAGING` | no | `true` uses the Let's Encrypt staging CA. |
 | `UI_LISTEN` | no | Default `127.0.0.1:8080`. |
-| `DATA_DIR` | no | Default `/data`, a container-era default that changes with native packaging (M3). Set it explicitly. |
+| `DATA_DIR` | no | Default `/var/lib/servanago`. The user running ServanaGo must be able to write it; from source set it to a folder of your own. |
+| `SERVANAGO_MCP_TOKEN` | no | At least 32 characters (`openssl rand -hex 32`). Turns on the MCP endpoint; unset means `/mcp` does not exist. Read at start. |
+| `SERVANAGO_MCP_PUBLIC` | no | Default `false`: `/mcp` then answers only the local `servanago mcp` relay and the public URL gives 404. `true` lets remote clients through Caddy. |
+| `SERVANAGO_MCP_ALLOWLIST` | no | Comma-separated IPs or CIDRs. With `SERVANAGO_MCP_PUBLIC=true`, only these remote addresses reach `/mcp` (others get 404, before the token is checked). Unset: any address. |
 | `HTTP_PORT`, `HTTPS_PORT` | no | Caddy listen ports, default 80 and 443. |
 
 **Cloudflare (optional).** Leave `CLOUDFLARE_API_TOKEN` unset to run without it. Set it to get DNS-01 certificates (wildcards available) and automatic A and AAAA records.
@@ -110,6 +118,28 @@ scoped to the zones you want to manage. The same token is used for certificate i
 | `SERVANAGO_HOST_ZONE` | no | Cloudflare zone name for that record. Unset walks up the host's labels. |
 | `ACME_RESOLVERS` | no | Resolvers for the DNS-01 check. Default `1.1.1.1,8.8.8.8`. |
 | `ACME_PROPAGATION_DELAY`, `ACME_PROPAGATION_TIMEOUT` | no | DNS-01 tuning, e.g. `2m` / `10m`. Unset uses Caddy's defaults. |
+
+## MCP
+
+Off unless `SERVANAGO_MCP_TOKEN` is set. Streamable HTTP (stateless) at `https://<SERVANAGO_HOST>/mcp` with `Authorization: Bearer <token>`, reachable from outside only with `SERVANAGO_MCP_PUBLIC=true` (optionally limited by `SERVANAGO_MCP_ALLOWLIST`). Clients that only speak stdio run `servanago mcp`, which relays to the local endpoint and needs `SERVANAGO_MCP_TOKEN` in its environment (`SERVANAGO_MCP_URL` overrides the endpoint).
+
+- Read tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `list_snippets`, `backup_status`, `list_backups`, `plan_restore`.
+- Write tools: `create_site`, `update_site`, `set_site_enabled`, `delete_site`, `create_snippet`, `update_snippet`, `delete_snippet`, `run_backup`, `restore_site`.
+- Writes run the UI's own handlers, so validation, the apply path, DNS and audit are the same. The audit actor is `mcp token`.
+- **One token, read and write, no scopes and no per-person audit.** A leaked token can create, change and delete sites: treat it like an administrator password. Gate credentials, basic-auth passwords and upload limits are UI-only. The panel is never restored over MCP.
+
+## Command line
+
+| Command | What it does |
+|---|---|
+| `servanago` | Runs the control plane. |
+| `servanago user add NAME`, `user passwd NAME` | Create an administrator or set a password (reads the password from the terminal or stdin). Needs only `DATA_DIR`. |
+| `servanago 2fa-reset NAME` | Removes that administrator's second factor. Needs only `DATA_DIR`. |
+| `servanago import [-dry-run] Caddyfile` | Turns a Caddyfile's site blocks and `(name) {}` snippets into sites. Needs Cloudflare; stop the service first. |
+| `servanago backup list\|verify\|run\|restore` | Works on backup archives; the panel is restored with `restore --panel ARCHIVE --passphrase-file FILE`. |
+| `servanago mcp` | Stdio relay to the MCP endpoint (see above). |
+
+`helper`, `php-job`, `backup-job` and `serve-static` are internal subcommands that the packaged systemd units run.
 
 ## Agent skills
 
@@ -151,9 +181,9 @@ Every change writes SQLite, renders the full Caddy JSON, and loads it with `cadd
 
 Cloudflare records ServanaGo creates are marked `managed by servanago` and are the only ones it will change or delete. An identical existing record is adopted and never touched; a different one is reported as a conflict, with an explicit *Take over* action. The same rules apply to the UI host's record, which is synced at startup and from the dashboard, and never deleted automatically.
 
-A route's A record points at its domain's default IP unless the route sets its own *DNS record IP*. A DNS failure never reverts a route: the dashboard shows the error with a *Retry* button.
+A site's A record points at its domain's default IP unless the site sets its own *DNS record IP*. A DNS failure never reverts a site: the dashboard shows the error with a *Retry* button.
 
-A route can't use the hostname of `SERVANAGO_HOST`, since the UI route always wins in Caddy.
+A site can't use the hostname of `SERVANAGO_HOST`, since the UI route always wins in Caddy.
 
 ## Development
 
