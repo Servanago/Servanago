@@ -81,7 +81,7 @@ test('passkey: add, sign in without the password, delete', async ({ page }) => {
   await page.goto('/login');
   await page.getByRole('button', { name: 'Sign in with passkey' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
+  await expect(page.getByRole('heading', { name: 'Sites' })).toBeVisible();
 
   await page.goto('/security');
   await page.getByRole('button', { name: 'Delete' }).click();

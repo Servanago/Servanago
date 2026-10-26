@@ -13,11 +13,11 @@ import (
 
 func rowHTML(t *testing.T, body, host string) string {
 	t.Helper()
-	i := strings.Index(body, host)
+	i := strings.Index(body, `<details class="srow" data-host="`+host+`"`)
 	if i < 0 {
 		t.Fatalf("no row for %s in %s", host, body)
 	}
-	end := strings.Index(body[i:], "</tr>")
+	end := strings.Index(body[i:], "</details>")
 	return html.UnescapeString(body[i : i+end]) // compare against what the user reads, not &#39;
 }
 

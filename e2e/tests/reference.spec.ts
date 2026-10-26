@@ -2,7 +2,7 @@ import { mkdtempSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { test, expect, Page } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 const A = 'refa.static.example.test';
 const B = 'refb.static.example.test';
@@ -14,16 +14,17 @@ async function addStatic(page: Page, host: string, notes: string) {
   await page.getByLabel('Folder', { exact: true }).fill(mkdtempSync(join(tmpdir(), 'servanago-ref-')));
   await page.getByLabel('Notes').fill(notes);
   await page.getByRole('button', { name: 'Add site' }).click();
-  await expect(page.getByRole('row', { name: new RegExp(host.replace(/\./g, '\\.')) })).toBeVisible();
+  await expect(siteRow(page, new RegExp(host.replace(/\./g, '\\.')))).toBeVisible();
 }
 
 async function removeSite(page: Page, host: string) {
   await page.waitForLoadState('networkidle'); // a navigation still in flight aborts the next goto
   await page.goto('/');
-  await page.getByRole('row', { name: new RegExp(host.replace(/\./g, '\\.')) }).getByRole('link', { name: 'Edit' }).click();
+  const row = siteRow(page, new RegExp(host.replace(/\./g, '\\.')));
+  await (await openRow(row)).getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByRole('cell', { name: new RegExp(host.replace(/\./g, '\\.')) })).toHaveCount(0);
+  await expect(row).toHaveCount(0);
 }
 
 test('reference page: notes, search, filter, sort, list view, edit link', async ({ page }) => {

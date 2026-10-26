@@ -122,8 +122,8 @@ func TestToggleRoute(t *testing.T) {
 	if got, _ := s.deps.Store.GetSite(context.Background(), r.ID); got.Enabled {
 		t.Error("still enabled")
 	}
-	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, `aria-label="Enable"`) {
-		t.Errorf("enable button missing")
+	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, "Enable</button>") || !strings.Contains(body, ">Disabled</span>") {
+		t.Errorf("enable button or Disabled status missing")
 	}
 	toggle()
 	if got, _ := s.deps.Store.GetSite(context.Background(), r.ID); !got.Enabled {

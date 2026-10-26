@@ -1,6 +1,6 @@
 import { createServer } from 'http';
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 // The gate is enforced by Caddy on the site's own host: HTTPS via the internal issuer
 // (playwright.config.ts sets ACME_ISSUER=internal) and Chromium's host-resolver-rules maps the
@@ -33,7 +33,7 @@ test('gated site: magic link in, revoke out', async ({ page }) => {
   await page.getByLabel('SMTP port').fill('28097');
   await page.getByRole('button', { name: 'Add site' }).click();
   await expect(page).toHaveURL(/\/$/);
-  await expect(page.getByRole('row', { name: /st\.gate\.example\.test/ }).getByText('gated (any email)')).toBeVisible();
+  await expect((await openRow(siteRow(page, /st\.gate\.example\.test/))).getByText('gated (any email)')).toBeVisible();
 
   // Unauthenticated: the portal answers on the site host, the app never sees the request.
   await page.goto(GATE);
@@ -68,10 +68,11 @@ test('gated site: magic link in, revoke out', async ({ page }) => {
 
   // Shared server: remove the site so later specs see the same checklist state they expect.
   await page.goto('http://127.0.0.1:28081/');
-  await expect(page.getByRole('row', { name: /st\.gate\.example\.test/ }).getByRole('link', { name: 'Edit' })).toBeVisible();
-  await page.getByRole('row', { name: /st\.gate\.example\.test/ }).getByRole('button', { name: 'Delete' }).click();
+  const gated = await openRow(siteRow(page, /st\.gate\.example\.test/));
+  await expect(gated.getByRole('link', { name: 'Edit' })).toBeVisible();
+  await gated.getByRole('button', { name: 'Delete' }).click();
   await page.locator('#delete-dialog').getByRole('button', { name: 'Delete' }).click();
-  await expect(page.getByRole('cell', { name: 'st.gate.example.test' })).toBeHidden();
+  await expect(siteRow(page, /st\.gate\.example\.test/)).toHaveCount(0);
 
   await new Promise<void>((ok) => upstream.close(() => ok()));
 });

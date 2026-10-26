@@ -203,22 +203,19 @@ func TestListRowDeletePanel(t *testing.T) {
 	}
 }
 
-// Row actions are icon-only: each needs an accessible name and a tooltip, or it is an unlabeled mystery button.
-func TestRowActionsAreLabelledIcons(t *testing.T) {
+// Row actions carry a visible text label next to the icon, so none is an unlabeled mystery button.
+func TestRowActionsAreLabelledButtons(t *testing.T) {
 	s, cf, d := newDNSServer(t)
 	addRoute(t, s, d)
 	cf.dns.FailWith("down")
 	s.do(req{method: "POST", path: "/sites/1/dns/resync", hdr: htmxPost}) // row ends in DNS error: Retry button
 	body := s.do(req{path: "/status"}).Body.String()
-	for _, label := range []string{"Edit", "Disable", "Delete", "Retry"} {
-		if !strings.Contains(body, `aria-label="`+label+`"`) {
-			t.Errorf("no icon button labelled %q:\n%s", label, body)
+	for _, label := range []string{"Edit</a>", "Disable</button>", "Delete</button>", "Retry DNS</button>"} {
+		if !strings.Contains(body, label) {
+			t.Errorf("no button labelled %q:\n%s", label, body)
 		}
 	}
-	if strings.Count(body, "<svg") < 4 || strings.Count(body, "data-tooltip=") < 4 {
-		t.Errorf("icons or tooltips missing:\n%s", body)
-	}
-	if strings.Contains(body, ">Edit</a>") || strings.Contains(body, ">Disable</button>") {
-		t.Errorf("text labels still shown:\n%s", body)
+	if strings.Count(body, "<svg") < 4 {
+		t.Errorf("icons missing:\n%s", body)
 	}
 }

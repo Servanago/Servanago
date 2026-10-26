@@ -1,41 +1,64 @@
+{{/* One row per site: the summary carries the rolled-up status, the opened row carries certificate, DNS, access and actions.
+     Data: []siteRow. The 10s poll replaces #sites, so the script below reopens the rows the admin had open. */}}
 {{define "sites"}}
 {{if .}}
-<table>
-<thead><tr><th>Host</th><th>Backend</th><th>State</th><th>Certificate {{helplink "statuses"}}</th>{{if (index . 0).DNSOn}}<th>DNS {{helplink "statuses"}}</th>{{end}}<th></th></tr></thead>
-<tbody>
+{{$att := needsAttention .}}
+<p class="sub">{{len .}} site{{if ne (len .) 1}}s{{end}}{{if $att}} · {{len $att}} need{{if eq (len $att) 1}}s{{end}} attention{{end}}</p>
+{{if $att}}<ul class="attn" aria-label="Sites needing attention">
+{{range $att}}<li><strong>{{.Host}}</strong> <span>{{.Health.Label}}</span> <a href="/sites/{{.ID}}">Fix</a></li>
+{{end}}</ul>{{end}}
+<div class="sites">
 {{range .}}
-<tr>
-<td>{{.Host}}{{range .Aliases}}<br><small class="alias">{{.}}</small>{{end}}</td>
-<td>{{if eq .Kind "static"}}<span title="Static files served from this folder">{{.StaticRoot}}</span>{{else}}{{.UpstreamHost}}:{{.UpstreamPort}}{{end}}{{if or .Stream .MaxBody}}<br>{{if .Stream}}<span class="tune" title="Responses are sent as they arrive">stream</span>{{end}}{{if .MaxBody}} <span class="tune" title="Largest accepted upload">max {{size .MaxBody}}</span>{{end}}{{end}}{{if and .Probed .Upstream}}{{$u := status "up" .Upstream}}<br><small class="up-{{.Upstream}}" title="{{$u.Meaning}}">{{.Upstream}}</small>{{if $u.Next}}<small class="next">{{$u.Next}}</small>{{end}}{{end}}</td>
-<td>{{if .Enabled}}enabled{{else}}disabled{{end}}{{if .DockerBad}}<br><small class="docker-bad" title="The Docker container this site proxies to">container {{.Docker.State}}{{if eq .Docker.Health "unhealthy"}} (unhealthy){{end}}</small>{{end}}{{if .GateMode}}<br><small class="tune" title="A magic link is required before the site is served">{{if eq .GateMode "open"}}gated (any email){{else}}gated (allowlist){{end}}</small>{{end}}</td>
-<td>{{if .Probed}}{{$c := status "cert" .Cert.State}}{{if .CertSoon}}{{$c = status "cert" "expiring"}}<span class="cert-expiring" title="{{$c.Meaning}}">expiring soon</span>{{else}}<span class="cert-{{.Cert.State}}" title="{{$c.Meaning}}">{{.Cert.State}}</span>{{end}}
-{{if not .Cert.NotAfter.IsZero}}<br><small>expires {{.Cert.NotAfter.Format "2006-01-02"}}</small>{{end}}
+{{$row := .}}{{$h := .Health}}
+<details class="srow" data-host="{{.Host}}">
+<summary>
+<span class="dot dot-{{$h.Level}}" aria-hidden="true"></span>
+<span class="host">{{.Host}}{{range .Aliases}}<small class="alias">{{.}}</small>{{end}}</span>
+<span class="target">{{.Target}}</span>
+<span class="chip">{{.KindLabel}}</span>
+<span class="state state-{{$h.Level}}">{{$h.Label}}</span>
+</summary>
+<div class="srow-body">
+<dl class="detail">
+{{if .Probed}}<div><dt>Certificate {{helplink "statuses"}}</dt><dd>
+{{$c := status "cert" .Cert.State}}{{if .CertSoon}}{{$c = status "cert" "expiring"}}<span class="cert-expiring" title="{{$c.Meaning}}">expiring soon</span>{{else}}<span class="cert-{{.Cert.State}}" title="{{$c.Meaning}}">{{.Cert.State}}</span>{{end}}
+{{if not .Cert.NotAfter.IsZero}}<small>expires {{.Cert.NotAfter.Format "2006-01-02"}}</small>{{end}}
 {{if eq .Cert.State "pending"}}<small class="next">{{.CertWait}}</small>{{else if and $c.Next (or (ne .Cert.State "error") (not .Cert.Err))}}<small class="next">{{$c.Next}}</small>{{end}}
-{{if .Cert.Err}}<div class="explain">{{errhtml .Cert.Err}}</div>{{end}}{{end}}</td>
-{{if .DNSOn}}<td>
-{{$row := .}}{{if .HasDNS}}{{range .DNS}}{{$d := status "dns" .State}}{{if gt (len $row.Hostnames) 1}}<small class="alias">{{.Hostname}}</small> {{end}}<span class="dns-{{.State}}" title="{{$d.Meaning}}">{{if gt (len $row.DNS) 1}}{{.Family}} {{end}}{{.State}}</span>
+{{if .Cert.Err}}<div class="explain">{{errhtml .Cert.Err}}</div>{{end}}
+</dd></div>{{end}}
+{{if .DNSOn}}<div><dt>DNS {{helplink "statuses"}}</dt><dd>
+{{if .HasDNS}}{{range .DNS}}{{$d := status "dns" .State}}<div class="dns-line">{{if gt (len $row.Hostnames) 1}}<small class="alias">{{.Hostname}}</small> {{end}}<span class="dns-{{.State}}" title="{{$d.Meaning}}">{{if gt (len $row.DNS) 1}}{{.Family}} {{end}}{{.State}}</span>
 {{if and $d.Next (or (ne .State "error") (not .Error))}}<small class="next">{{$d.Next}}</small>{{end}}
-{{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}
+{{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}</div>
+{{end}}{{else}}{{$d := status "dns" "pending"}}<span class="dns-pending" title="{{$d.Meaning}}">pending</span><small class="next">{{$d.Next}}</small>{{end}}
+</dd></div>{{end}}
+<div><dt>Access</dt><dd>
+{{if eq .GateMode "open"}}<span class="tune" title="A magic link is required before the site is served">gated (any email)</span>{{else if .GateMode}}<span class="tune" title="A magic link is required before the site is served">gated (allowlist)</span>{{else}}Public{{end}}
+{{if .Stream}} <span class="tune" title="Responses are sent as they arrive">stream</span>{{end}}{{if .MaxBody}} <span class="tune" title="Largest accepted upload">max {{size .MaxBody}}</span>{{end}}
+</dd></div>
+{{if and .Probed .HasUpstream}}{{$u := status "up" .Upstream}}<div><dt>Upstream</dt><dd><span class="up-{{.Upstream}}" title="{{$u.Meaning}}">{{.Upstream}}</span>{{if $u.Next}} <small class="next">{{$u.Next}}</small>{{end}}
+{{if .DockerBad}}<small class="docker-bad" title="The Docker container this site proxies to">container {{.Docker.State}}{{if eq .Docker.Health "unhealthy"}} (unhealthy){{end}}</small>{{end}}</dd></div>{{end}}
+</dl>
+<div class="acts">
+<a class="mini" href="/sites/{{.ID}}">{{icon "edit"}}Edit</a>
+<button class="mini" hx-post="/sites/{{.ID}}/toggle" hx-target="#msg" title="{{if .Enabled}}Stop serving this site{{if .DNSOn}}, keep its DNS record{{end}}{{else}}Start serving this site again{{end}}">{{if .Enabled}}{{icon "pause"}}Disable{{else}}{{icon "play"}}Enable{{end}}</button>
+{{if .DNSOn}}{{if eq .DNSState "conflict"}}<button class="mini warn" hx-post="/sites/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Host}}? The current record(s) will be replaced.">{{icon "takeover"}}Take over DNS</button>
+{{else if eq .DNSState "error"}}<button class="mini" hx-post="/sites/{{.ID}}/dns/resync" hx-target="#msg">{{icon "refresh"}}Retry DNS</button>
+{{else}}<button class="mini" hx-post="/sites/{{.ID}}/dns/resync" hx-target="#msg" title="Check the record in Cloudflare again">{{icon "refresh"}}Resync</button>{{end}}{{end}}
+<button class="mini danger delete-site" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{.OwnedSummary}}" title="Delete this site">{{icon "trash"}}Delete</button>
+</div>
+</div>
+</details>
 {{end}}
-{{if eq .DNSState "conflict"}}<button class="outline warn icon-btn" hx-post="/sites/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Host}}? The current record(s) will be replaced." aria-label="Take over" data-tooltip="Replace the existing DNS record">{{icon "takeover"}}</button>
-{{else if eq .DNSState "error"}}<button class="outline icon-btn" hx-post="/sites/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Retry" data-tooltip="Try the DNS update again">{{icon "refresh"}}</button>
-{{else}}<button class="outline secondary icon-btn" hx-post="/sites/{{.ID}}/dns/resync" hx-target="#msg" aria-label="Resync" data-tooltip="Check the record in Cloudflare again">{{icon "refresh"}}</button>{{end}}
-{{else}}{{$d := status "dns" "pending"}}<span class="dns-pending" title="{{$d.Meaning}}">pending</span><small class="next">{{$d.Next}}</small>{{end}}
-</td>{{end}}
-<td class="actions">
-<a class="icon-btn" href="/sites/{{.ID}}" aria-label="Edit" data-tooltip="Edit this site">{{icon "edit"}}</a>
-<button class="outline secondary icon-btn" hx-post="/sites/{{.ID}}/toggle" hx-target="#msg" aria-label="{{if .Enabled}}Disable{{else}}Enable{{end}}" data-tooltip="{{if .Enabled}}Disable: stop serving this site{{if .DNSOn}}, keep its DNS record{{end}}{{else}}Enable: start serving this site again{{end}}">{{if .Enabled}}{{icon "pause"}}{{else}}{{icon "play"}}{{end}}</button>
-<button class="outline danger icon-btn delete-site" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{.OwnedSummary}}" aria-label="Delete" data-tooltip="Delete this site">{{icon "trash"}}</button>
-</td>
-</tr>
-{{end}}
-</tbody>
-</table>
-{{else}}<p>No sites yet. Click <strong>Add site</strong> below, then enter the hostname (for example <code>oc.example.com</code>) and where the app runs: its IP address and its own port.</p>{{end}}
+</div>
+{{else}}<p class="empty">No sites yet. Use <strong>Add site</strong> above, then enter the hostname (for example <code>oc.example.com</code>) and where the app runs: its IP address and its own port.</p>{{end}}
 {{end}}
 
 {{define "content"}}
-<h1>Dashboard</h1>
+<div class="page-head">
+<h1>Sites</h1>
+<a class="add-site" href="/sites/new">{{icon "plus"}}Add site</a>
+</div>
 {{with .Data}}
 {{if not .SetupDone}}
 <article class="checklist">
@@ -45,33 +68,46 @@
 </ul>
 </article>
 {{end}}
-{{with .Host}}
-<article id="ui-host">
-<header>UI host</header>
-<p><strong>{{.Spec.Name}}</strong>{{$card := .}}
-{{range .DNS}}{{$d := status "dns" .State}}<br>{{if gt (len $card.DNS) 1}}<small>{{.Family}}</small> {{end}}→ {{.Content}}
-<span class="dns-{{.State}}" title="{{$d.Meaning}}">{{.State}}</span>{{if and $d.Next (or (ne .State "error") (not .Error))}}<br><small class="next">{{$d.Next}}</small>{{end}}{{end}}</p>
-{{range .DNS}}{{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}{{end}}
-{{if eq .State "conflict"}}<button class="outline warn" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Spec.Name}}? The current record(s) will be replaced.">Take over</button>
-{{else if eq .State "error"}}<button class="outline" hx-post="/host/dns/resync" hx-target="#host-msg">Retry</button>
-{{else}}<button class="outline secondary" hx-post="/host/dns/resync" hx-target="#host-msg" title="Check the record in Cloudflare again">Resync</button>{{end}}
-<p id="host-msg" role="alert"></p>
-</article>
-{{end}}
-<article id="runtimes">
-<header>Runtimes {{helplink "runtimes"}}</header>
-<p><strong>Node.js</strong>
-{{if .Runtimes.Node.Installed}}{{.Runtimes.Node.Version}}{{else}}not installed — <code>{{.Runtimes.Node.Install}}</code>{{end}}<br>
-<strong>PHP-FPM</strong>
-{{if .Runtimes.PHP}}ServanaGo builds: {{with .Runtimes.PHPFrom true}}{{range $i, $v := .}}{{if $i}}, {{end}}{{$v.Version}}{{end}}{{else}}none{{end}}; distro: {{with .Runtimes.PHPFrom false}}{{range $i, $v := .}}{{if $i}}, {{end}}{{$v.Version}}{{end}}{{else}}none{{end}}{{else}}none — build one on the <a href="/php">PHP page</a>{{end}}</p>
-<small>ServanaGo builds PHP itself (<a href="/php">PHP page</a>). It only detects Node.js, FrankenPHP and fcgiwrap and never installs them.</small>
-</article>
-<h2>Sites</h2>
-<article>
 <div id="sites" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "sites" .Sites}}</div>
 <p id="msg" role="alert"></p>
-</article>
-<a role="button" href="/sites/new">Add site</a>
+
+<div class="strip">
+{{with .Host}}<section id="ui-host"><span class="strip-label">UI host</span> <strong>{{.Spec.Name}}</strong>{{$card := .}}
+{{range .DNS}}{{$d := status "dns" .State}} <span class="strip-dns">{{if gt (len $card.DNS) 1}}<small>{{.Family}}</small> {{end}}→ {{.Content}}</span> <span class="dns-{{.State}}" title="{{$d.Meaning}}">{{.State}}</span>{{if and $d.Next (or (ne .State "error") (not .Error))}} <small class="next">{{$d.Next}}</small>{{end}}{{end}}
+{{range .DNS}}{{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}{{end}}
+{{if eq .State "conflict"}}<button class="mini warn" hx-post="/host/dns/takeover" hx-target="#host-msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Spec.Name}}? The current record(s) will be replaced.">Take over</button>
+{{else if eq .State "error"}}<button class="mini" hx-post="/host/dns/resync" hx-target="#host-msg">Retry</button>
+{{else}}<button class="mini" hx-post="/host/dns/resync" hx-target="#host-msg" title="Check the record in Cloudflare again">Resync</button>{{end}}
+<span id="host-msg" role="alert"></span>
+</section>{{end}}
+<section id="runtimes">
+<span class="strip-label">Runtimes {{helplink "runtimes"}}</span>
+<span><strong>Node.js</strong> {{if .Runtimes.Node.Installed}}{{.Runtimes.Node.Version}}{{else}}not installed — <code>{{.Runtimes.Node.Install}}</code>{{end}}</span>
+<span><strong>PHP-FPM</strong>
+{{if .Runtimes.PHP}}ServanaGo builds: {{with .Runtimes.PHPFrom true}}{{range $i, $v := .}}{{if $i}}, {{end}}{{$v.Version}}{{end}}{{else}}none{{end}}; distro: {{with .Runtimes.PHPFrom false}}{{range $i, $v := .}}{{if $i}}, {{end}}{{$v.Version}}{{end}}{{else}}none{{end}}{{else}}none — build one on the <a href="/php">PHP page</a>{{end}}</span>
+</section>
+</div>
+<p class="strip-note">ServanaGo builds PHP itself (<a href="/php">PHP page</a>). It only detects Node.js, FrankenPHP and fcgiwrap and never installs them.</p>
 {{template "deletedlg" .DNSOn}}
+<script>
+(function () {
+  // Open rows survive the 10s poll and the reload after Disable or Resync; sessionStorage may be blocked, then they do not.
+  var open = {}, KEY = 'sg-open-rows';
+  try { open = JSON.parse(sessionStorage.getItem(KEY) || '{}') || {}; } catch (_) { open = {}; }
+  function restore(root) {
+    root.querySelectorAll('.srow').forEach(function (d) { if (open[d.dataset.host]) d.open = true; });
+  }
+  restore(document);
+  document.addEventListener('toggle', function (e) {
+    var d = e.target;
+    if (!d.classList || !d.classList.contains('srow')) return;
+    if (d.open) open[d.dataset.host] = true; else delete open[d.dataset.host];
+    try { sessionStorage.setItem(KEY, JSON.stringify(open)); } catch (_) { /* in-memory only */ }
+  }, true);
+  document.body.addEventListener('htmx:afterSwap', function (e) {
+    if (e.target.id === 'sites') restore(e.target);
+  });
+})();
+</script>
 {{end}}
 {{end}}

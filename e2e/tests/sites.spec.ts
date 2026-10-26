@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 test('Add site asks for hostname and a separate backend port, and creates domain, site and record', async ({ page }) => {
   await login(page);
@@ -11,9 +11,9 @@ test('Add site asks for hostname and a separate backend port, and creates domain
   await page.getByLabel('Upstream port').fill('9200');
   await page.getByRole('button', { name: 'Add site' }).click();
 
-  const row = page.getByRole('row', { name: /oc\.sitesflow\.example\.net/ });
-  await expect(row.getByRole('cell', { name: '192.168.25.165:9200' })).toBeVisible();
-  await expect(row.getByText('synced')).toBeVisible();
+  const row = siteRow(page, /oc\.sitesflow\.example\.net/);
+  await expect(row.locator('.target')).toHaveText('192.168.25.165:9200');
+  await expect((await openRow(row)).getByText('synced')).toBeVisible();
 
   await page.goto('/domains');
   await expect(page.getByRole('cell', { name: 'sitesflow.example.net', exact: true })).toBeVisible(); // auto-created

@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 // Same setup as static.spec.ts: Caddy serves *.static.example.test over HTTPS on 28443.
 const SITE = 'https://snip.static.example.test:28443';
@@ -38,7 +38,7 @@ test('snippets: add, refuse a bad one, attach to a site, block paths, detach, de
   await page.getByLabel('Folder', { exact: true }).fill(root);
   await page.getByLabel('e2e_block').check();
   await page.getByRole('button', { name: 'Add site' }).click();
-  await expect(page.getByRole('row', { name: /snip\.static\.example\.test/ })).toBeVisible();
+  await expect(siteRow(page, /snip\.static\.example\.test/)).toBeVisible();
 
   expect((await page.goto(`${SITE}/`))!.status()).toBe(200);
   expect((await page.goto(`${SITE}/composer.lock`))!.status()).toBe(404);
@@ -51,7 +51,7 @@ test('snippets: add, refuse a bad one, attach to a site, block paths, detach, de
 
   // Shared server: detach, delete the snippet, delete the site.
   await page.goto('http://127.0.0.1:28081/');
-  await page.getByRole('row', { name: /snip\.static\.example\.test/ }).getByRole('link', { name: 'Edit' }).click();
+  await (await openRow(siteRow(page, /snip\.static\.example\.test/))).getByRole('link', { name: 'Edit' }).click();
   await page.getByLabel('e2e_block').uncheck();
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('Saved and applied.')).toBeVisible();
@@ -63,9 +63,9 @@ test('snippets: add, refuse a bad one, attach to a site, block paths, detach, de
   await expect(page.getByRole('row', { name: /^e2e_block / })).toHaveCount(0);
 
   await page.goto('http://127.0.0.1:28081/');
-  await page.getByRole('row', { name: /snip\.static\.example\.test/ }).getByRole('link', { name: 'Edit' }).click();
+  await (await openRow(siteRow(page, /snip\.static\.example\.test/))).getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByRole('cell', { name: /snip\.static\.example\.test/ })).toHaveCount(0);
+  await expect(siteRow(page, /snip\.static\.example\.test/)).toHaveCount(0);
 });

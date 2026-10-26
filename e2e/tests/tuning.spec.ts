@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 test('streaming and upload limit: set, badge, edit, reject bad size', async ({ page }) => {
   await login(page);
@@ -18,7 +18,7 @@ test('streaming and upload limit: set, badge, edit, reject bad size', async ({ p
   await page.getByLabel('Upload limit').fill('2GB');
   await page.getByRole('button', { name: 'Add site' }).click();
 
-  const row = page.getByRole('row', { name: /term\.tuning\.example\.net/ });
+  const row = await openRow(siteRow(page, /term\.tuning\.example\.net/));
   await expect(row.getByText('stream', { exact: true })).toBeVisible();
   await expect(row.getByText('max 2GB')).toBeVisible();
 

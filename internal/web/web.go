@@ -252,7 +252,7 @@ type page struct {
 	CFErr      string
 	Flash      []string
 	LoggedIn   bool
-	Bare       bool // sign-in pages: brand only, no app navigation
+	Bare       bool   // sign-in pages: brand only, no app navigation
 	Nav        string // sidebar entry to mark current: the page name, with the site editor under "dashboard"
 	BackupWarn string
 	Data       any

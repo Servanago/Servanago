@@ -2,7 +2,7 @@ import { mkdtempSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 // Caddy serves the site over HTTPS from the internal issuer on 28443 (ACME_ISSUER=internal), and Chromium's
 // host-resolver-rules (playwright.config.ts) maps *.static.example.test to 127.0.0.1.
@@ -24,8 +24,8 @@ test('static site: serve a folder, no dotfiles, no listing', async ({ page }) =>
   await expect(page.locator('#preview')).toContainText('serves the files');
   await page.getByRole('button', { name: 'Add site' }).click();
 
-  const row = page.getByRole('row', { name: /files\.static\.example\.test/ });
-  await expect(row.getByText(root, { exact: false })).toBeVisible();
+  const row = siteRow(page, /files\.static\.example\.test/);
+  await expect(row.locator('.target')).toContainText(root);
 
   // Navigate (not page.request): only the browser applies the host-resolver rule for *.static.example.test.
   expect((await page.goto(`${SITE}/`))!.status()).toBe(200);
@@ -35,7 +35,7 @@ test('static site: serve a folder, no dotfiles, no listing', async ({ page }) =>
 
   // A folder ServanaGo refuses is refused in the form.
   await page.goto('http://127.0.0.1:28081/');
-  await row.getByRole('link', { name: 'Edit' }).click();
+  await (await openRow(row)).getByRole('link', { name: 'Edit' }).click();
   await expect(page.getByLabel('Kind')).toHaveValue('static');
   await page.getByLabel('Folder', { exact: true }).fill('/etc');
   await page.getByRole('button', { name: 'Save' }).click();
@@ -45,5 +45,5 @@ test('static site: serve a folder, no dotfiles, no listing', async ({ page }) =>
   await page.getByRole('button', { name: 'Delete site' }).click();
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByRole('cell', { name: /files\.static\.example\.test/ })).toHaveCount(0);
+  await expect(siteRow(page, /files\.static\.example\.test/)).toHaveCount(0);
 });

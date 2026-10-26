@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from '../helpers';
+import { login, openRow, siteRow } from '../helpers';
 
 // Runs against a server started with no CLOUDFLARE_API_TOKEN (the "nocf" project in playwright.config.ts).
 test('without Cloudflare: add a domain and a site, and no DNS appears anywhere', async ({ page }) => {
@@ -21,9 +21,9 @@ test('without Cloudflare: add a domain and a site, and no DNS appears anywhere',
   await expect(page.locator('#preview')).toContainText('in your DNS yourself');
   await page.getByRole('button', { name: 'Add site' }).click();
 
-  const row = page.getByRole('row', { name: /app\.nocf\.example\.net/ });
-  await expect(row.getByRole('cell', { name: '192.168.1.40:9300' })).toBeVisible();
-  await expect(page.getByRole('columnheader', { name: /DNS/ })).toHaveCount(0);
+  const row = await openRow(siteRow(page, /app\.nocf\.example\.net/));
+  await expect(row.locator('.target')).toHaveText('192.168.1.40:9300');
+  await expect(row.getByText('DNS', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Resync' })).toHaveCount(0);
 });
 
@@ -35,7 +35,7 @@ test('without Cloudflare: a hostname under no domain is served without one', asy
   await page.getByLabel('Upstream port').fill('9301');
   await page.getByRole('button', { name: 'Add site' }).click();
   await expect(page).toHaveURL(/\/$/);
-  const row = page.getByRole('row', { name: /app\.unknown\.example\.org/ });
+  const row = await openRow(siteRow(page, /app\.unknown\.example\.org/));
   await expect(row).toBeVisible();
-  await expect(page.getByRole('cell', { name: 'DNS' })).toHaveCount(0);
+  await expect(row.getByText('DNS', { exact: true })).toHaveCount(0);
 });

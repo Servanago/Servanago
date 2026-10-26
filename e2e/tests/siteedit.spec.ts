@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 test('add a site, edit it, delete it', async ({ page }) => {
   await login(page);
@@ -16,18 +16,18 @@ test('add a site, edit it, delete it', async ({ page }) => {
   await page.getByLabel('Upstream host or IP').fill('192.168.1.20');
   await page.getByRole('button', { name: 'Add site' }).click();
   await expect(page).toHaveURL(/\/$/);
-  const row = page.getByRole('row', { name: /sonarr\.routes\.example\.net/ });
-  await expect(row.getByRole('cell', { name: '192.168.1.20:8989' })).toBeVisible();
+  const row = siteRow(page, /sonarr\.routes\.example\.net/);
+  await expect(row.locator('.target')).toHaveText('192.168.1.20:8989');
 
-  await row.getByRole('link', { name: 'Edit' }).click();
+  await (await openRow(row)).getByRole('link', { name: 'Edit' }).click();
   await page.getByLabel('Enabled').uncheck();
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('Saved and applied.')).toBeVisible();
   await page.goto('/');
-  await expect(row.getByRole('cell', { name: 'disabled' })).toBeVisible();
+  await expect(row.locator('.state')).toHaveText('Disabled');
 
-  await row.getByRole('link', { name: 'Edit' }).click();
+  await (await openRow(row)).getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByRole('cell', { name: 'sonarr.routes.example.net' })).toHaveCount(0);
+  await expect(siteRow(page, 'sonarr.routes.example.net')).toHaveCount(0);
 });

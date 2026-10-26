@@ -72,14 +72,7 @@ func TestStatusFragment(t *testing.T) {
 	if w.Code != 200 || strings.Contains(body, "<html") {
 		t.Fatalf("want a bare fragment, got %d %.80q", w.Code, body)
 	}
-	row := func(host string) string {
-		i := strings.Index(body, host)
-		if i < 0 {
-			t.Fatalf("no row for %s in %s", host, body)
-		}
-		end := strings.Index(body[i:], "</tr>")
-		return body[i : i+end]
-	}
+	row := func(host string) string { return rowHTML(t, body, host) }
 	if r := row("alive.example.com"); !strings.Contains(r, "up") || !strings.Contains(r, "issued") || !strings.Contains(r, "expires") {
 		t.Errorf("alive row: %s", r)
 	}

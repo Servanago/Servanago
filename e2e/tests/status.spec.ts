@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 test('status badges render for upstream, certificate and DNS', async ({ page }) => {
   await login(page);
@@ -16,7 +16,7 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
   await page.getByLabel('Upstream port').fill('28081');
   await page.getByRole('button', { name: 'Add site' }).click();
 
-  const row = page.getByRole('row', { name: /self\.status\.example\.net/ });
+  const row = await openRow(siteRow(page, /self\.status\.example\.net/));
   await expect(row.getByText('up', { exact: true })).toBeVisible();
   // Issuer-dependent: ACME_ISSUER=internal (e2e) issues quickly and 12h certs also read as
   // "expiring soon"; staging never finishes offline and stays "pending".
@@ -28,5 +28,5 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
   await row.getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByRole('cell', { name: 'self.status.example.net' })).toHaveCount(0);
+  await expect(siteRow(page, 'self.status.example.net')).toHaveCount(0);
 });

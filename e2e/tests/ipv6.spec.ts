@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA records, one badge each', async ({ page }) => {
   await login(page);
@@ -16,7 +16,7 @@ test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA record
   await page.getByLabel('Upstream port').fill('8080');
   await page.getByRole('button', { name: 'Add site' }).click();
 
-  const row = page.getByRole('row', { name: /web\.dual\.example\.net/ });
+  const row = await openRow(siteRow(page, /web\.dual\.example\.net/));
   await expect(row.getByText('A synced', { exact: true })).toBeVisible();
   await expect(row.getByText('AAAA synced', { exact: true })).toBeVisible();
 
@@ -27,6 +27,7 @@ test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA record
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('Saved and applied.')).toBeVisible();
   await page.goto('/');
+  await openRow(row); // a fresh page starts with every row closed
   await expect(row.getByText('AAAA synced', { exact: true })).toBeVisible();
 
   // delete with the DNS option: the dialog names both records

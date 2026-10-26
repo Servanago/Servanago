@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await login(page);
@@ -17,14 +17,14 @@ test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await page.getByLabel('User', { exact: true }).fill('alice');
   await page.getByLabel('Password', { exact: true }).fill('s3cret');
   await page.getByRole('button', { name: 'Add site' }).click();
-  const row = page.getByRole('row', { name: /bazarr\.controls\.example\.net/ });
+  const row = await openRow(siteRow(page, /bazarr\.controls\.example\.net/));
   await expect(row).toBeVisible();
-  await expect(row.getByRole('cell', { name: 'enabled' })).toBeVisible();
+  await expect(row.locator('.state')).not.toHaveText('Disabled');
 
   await row.getByRole('button', { name: 'Disable' }).click();
-  await expect(row.getByRole('cell', { name: 'disabled' })).toBeVisible();
+  await expect(row.locator('.state')).toHaveText('Disabled');
   await row.getByRole('button', { name: 'Enable' }).click();
-  await expect(row.getByRole('cell', { name: 'enabled' })).toBeVisible();
+  await expect(row.locator('.state')).not.toHaveText('Disabled');
 
   await row.getByRole('link', { name: 'Edit' }).click();
   await expect(page.getByLabel('Allowed sources')).toHaveValue('192.168.0.0/16');

@@ -271,9 +271,10 @@ var helpFuncs = template.FuncMap{
 	"helplink": func(anchor string) template.HTML {
 		return template.HTML(`<a class="help-link" href="/help#` + html.EscapeString(anchor) + `" title="Open help" aria-label="Open help">?</a>`)
 	},
-	"size":   config.FormatSize,
-	"icon":   icon,
-	"status": func(kind, state string) statusInfo { return statusHelp[kind+":"+state] },
+	"size":           config.FormatSize,
+	"icon":           icon,
+	"needsAttention": needsAttention,
+	"status":         func(kind, state string) statusInfo { return statusHelp[kind+":"+state] },
 	"errhtml": func(msg string) template.HTML {
 		return template.HTML(errorHTML(msg)) // #nosec: errorHTML escapes every piece
 	},

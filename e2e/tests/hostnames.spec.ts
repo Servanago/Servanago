@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 test('a domain can be edited, and a site can have several hostnames with a changeable main one', async ({ page }) => {
   await login(page);
@@ -23,7 +23,7 @@ test('a domain can be edited, and a site can have several hostnames with a chang
   await page.getByLabel('Upstream port').fill('8062');
   await page.getByRole('button', { name: 'Add site' }).click();
 
-  const row = page.getByRole('row', { name: /www\.multi\.example\.net/ });
+  const row = await openRow(siteRow(page, /www\.multi\.example\.net/));
   await expect(row).toContainText('shop.multi.example.net'); // the alias sits under the main name
   await expect(row.getByText('synced', { exact: false })).toHaveCount(2); // one DNS record per hostname
   await row.getByRole('link', { name: 'Edit' }).click();
@@ -35,12 +35,13 @@ test('a domain can be edited, and a site can have several hostnames with a chang
   await page.getByRole('button', { name: 'Save' }).click();
   await expect(page.getByText('Saved and applied.')).toBeVisible();
   await page.goto('/');
-  const moved = page.getByRole('row', { name: /shop\.multi\.example\.net/ });
-  await expect(moved).toContainText('www.multi.example.net');
+  const moved = siteRow(page, /shop\.multi\.example\.net/);
+  await expect(moved.locator('.host')).toContainText('www.multi.example.net');
+  await openRow(moved);
 
   // Shared server: remove the site and domain again.
   await moved.getByRole('button', { name: 'Delete' }).click();
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByRole('cell', { name: /shop\.multi\.example\.net/ })).toHaveCount(0);
+  await expect(siteRow(page, /shop\.multi\.example\.net/)).toHaveCount(0);
 });

@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { login } from './helpers';
+import { login, openRow, siteRow } from './helpers';
 
 test('list row delete panel: cancel keeps the site, delete asks about the DNS record', async ({ page }) => {
   await login(page);
@@ -14,7 +14,7 @@ test('list row delete panel: cancel keeps the site, delete asks about the DNS re
   await page.getByLabel('Upstream port').fill('8686');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.24');
   await page.getByRole('button', { name: 'Add site' }).click();
-  const row = page.getByRole('row', { name: /lidarr\.delrow\.example\.net/ });
+  const row = await openRow(siteRow(page, /lidarr\.delrow\.example\.net/));
   await expect(row.getByText('synced')).toBeVisible();
 
   await row.getByRole('button', { name: 'Delete', exact: true }).click();
@@ -31,10 +31,10 @@ test('list row delete panel: cancel keeps the site, delete asks about the DNS re
   await page.waitForResponse((r) => r.url().endsWith('/status') && r.status() === 200, { timeout: 15000 });
   await expect(page.getByRole('dialog').getByLabel('Also delete the DNS record')).toBeChecked();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByRole('cell', { name: 'lidarr.delrow.example.net' })).toHaveCount(0);
+  await expect(siteRow(page, 'lidarr.delrow.example.net')).toHaveCount(0);
 });
 
-test('row actions share one line and show a tooltip', async ({ page }) => {
+test('row actions share one line', async ({ page }) => {
   await login(page);
   await page.goto('/domains');
   await page.getByLabel('Domain', { exact: true }).fill('icons.example.net');
@@ -46,17 +46,16 @@ test('row actions share one line and show a tooltip', async ({ page }) => {
   await page.getByLabel('Upstream port').fill('8787');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.25');
   await page.getByRole('button', { name: 'Add site' }).click();
-  const row = page.getByRole('row', { name: /readarr\.icons\.example\.net/ });
+  const row = await openRow(siteRow(page, /readarr\.icons\.example\.net/));
 
   const edit = await row.getByRole('link', { name: 'Edit' }).boundingBox();
   const toggle = await row.getByRole('button', { name: 'Disable' }).boundingBox();
   const del = await row.getByRole('button', { name: 'Delete', exact: true }).boundingBox();
   expect(Math.abs(edit!.y - toggle!.y)).toBeLessThan(2);
   expect(Math.abs(toggle!.y - del!.y)).toBeLessThan(2);
-  await expect(row.getByRole('button', { name: 'Delete', exact: true })).toHaveAttribute('data-tooltip', /Delete this site/);
 
   // Shared server: take the site back out so later specs (checklist state) are unaffected.
   await row.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
-  await expect(page.getByRole('cell', { name: 'readarr.icons.example.net' })).toBeHidden();
+  await expect(siteRow(page, 'readarr.icons.example.net')).toHaveCount(0);
 });
