@@ -2,7 +2,7 @@
 
 Source of truth: the ServanaGo asset pack, `original-concept` files (the pack's SVGs are hand-drawn approximations and are not shipped).
 
-- `servanago-wordmark.png`: `logo/servanago-original-concept-wordmark.png`, unmodified (opaque dark background). Used by the README.
+- `servanago-wordmark.png`: started as `logo/servanago-original-concept-wordmark.png` (opaque dark background); replaced with an updated image on 2026-10-26, so it no longer matches the pack file. Used by the README.
 - `internal/web/static/{favicon-16,favicon-32,mark-64,mark-192}.png`: derived from `preview/original-concept-icon-panel.png`.
 - `internal/web/static/apple-touch-icon.png`: same tile, 180px, flattened onto the UI ink color `#10191B` (iOS has no transparency).
 
