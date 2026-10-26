@@ -14,12 +14,7 @@
 <script src="/static/htmx.min.js" defer></script>
 </head>
 <body{{if not .Bare}} class="app"{{end}}>
-{{if .Bare}}<header class="topbar">
-<nav>
-<ul><li><a class="brand" href="/" aria-label="ServanaGo dashboard"><img src="/static/mark-64.png" alt="" width="32" height="32"><span class="wordmark">Servana<b>Go</b></span></a></li></ul>
-</nav>
-</header>
-<main class="container">{{else}}<aside class="sidebar">
+{{if .Bare}}<main class="container">{{else}}<aside class="sidebar">
 <a class="brand" href="/" aria-label="ServanaGo dashboard"><img src="/static/mark-64.png" alt="" width="32" height="32"><span class="wordmark">Servana<b>Go</b></span></a>
 <nav class="side-nav" aria-label="Main">
 <div class="nav-group">

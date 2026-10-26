@@ -120,17 +120,11 @@ html, body {
 }
 
 /* ---- Navigation and brand -------------------------------------------------------------------- */
-/* full-bleed bar: spans 100% of the page, content inset from the edges */
-body > header.topbar { width: 100%; padding-inline: 2rem; border-bottom: 1px solid var(--sg-border); background: var(--sg-surface); margin-bottom: 1.5rem; }
-@media (max-width: 640px) { body > header.topbar { padding-inline: 1rem; } }
-body > header nav { --pico-nav-element-spacing-vertical: 0.6rem; }
 .brand { display: inline-flex; align-items: center; gap: 0.6rem; color: var(--sg-text); text-decoration: none; }
 .brand:hover { color: var(--sg-text); }
 .brand img { height: 2rem; width: auto; display: block; }
 .wordmark { font-size: 1.2rem; font-weight: 700; letter-spacing: 0.01em; }
 .wordmark b { color: var(--sg-accent); font-weight: 700; }
-body > header nav a:not(.brand) { color: var(--sg-text-secondary); }
-body > header nav a:not(.brand):hover { color: var(--sg-accent); }
 
 .login-brand { text-align: center; margin-bottom: 1.5rem; }
 .login-brand img { height: 6rem; width: auto; }
@@ -356,7 +350,28 @@ details.feature[open] > summary { color: var(--sg-text); border-bottom: 1px soli
   .sidebar a:not(.brand), .sidebar .signout { width: auto; }
 }
 
+/* ---- Shared page system: every page inside main.content --------------------------------------------- */
+main.content > h1 { margin: 0 0 0.35rem; font-size: 1.75rem; line-height: 1.2; letter-spacing: -0.02em; }
+main.content > h1 + p { max-width: 70ch; margin: 0 0 1.5rem; color: var(--sg-text-secondary); }
+main.content > h2 { margin: 2rem 0 0.8rem; font-size: 1.2rem; }
+main.content > h1 + article { margin-top: 1.2rem; }
+/* Cards are flat panels: no drop shadow, a quiet title row, and a reading width when they hold a form. */
+main.content article { margin: 0 0 1.2rem; box-shadow: none; }
+main.content article:not(:has(table)) { max-width: 48rem; }
+main.content article > header { background: transparent; color: var(--sg-text); font-size: 1rem; }
+main.content article > h2:first-child, main.content article > h3:first-child { margin-bottom: 0.9rem; font-size: 1.15rem; }
+/* Pico stretches every button to the card; actions size to their label. */
+main.content button:not(.icon-btn), main.content [role="button"], main.content input[type="submit"] { width: auto; }
+main.content article form > label, main.content article form > input:not([type="checkbox"]):not([type="radio"]), main.content article form > select, main.content article form > textarea, main.content article form > fieldset { max-width: 38rem; }
+main.content article > .explain, main.content form .explain { max-width: 62ch; font-size: 0.88rem; }
+/* Help is a reading page: a wider measure, tight contents list, and table cells that do not squeeze their text. */
+main.content article[id] { max-width: 56rem; }
+main.content article[id] td small { display: inline; width: auto; overflow: visible; }
+.help-toc ul { gap: 0.3rem 1.4rem; }
+.help-toc li { margin: 0; padding: 0; list-style: none; }
+/* Sign-in pages have no sidebar: the box sits in the middle of the window. */
+body:not(.app) > main.container { min-height: 100vh; display: grid; place-items: center; align-content: center; }
+body:not(.app) .login-box { width: 100%; }
 @media (max-width: 640px) {
-  body > header nav { flex-wrap: wrap; }
   .wordmark { font-size: 1.05rem; }
 }
