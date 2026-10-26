@@ -9,7 +9,7 @@ The release version appears in these places; change all of them:
 1. `packaging/DEBIAN/control` (`Version:`)
 2. `packaging/build-deb.sh` (default output name)
 3. `packaging/install.sh` (the `.deb` glob)
-4. `README.md` (the two `make deb` / `apt-get install` lines)
+4. `README.md` (the two `make deb` / `apt-get install` lines, also in `docs/install.md`)
 5. `cmd/servanago/packaging_test.go` (expected `Version:`)
 6. `.claude-plugin/plugin.json` (`version`)
 

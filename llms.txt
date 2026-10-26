@@ -97,7 +97,8 @@ Task skills for agents live in `skills/` (`servanago-setup`, `servanago-mcp`, `s
 
 ## Docs
 
-- [README](https://github.com/Servanago/Servanago/blob/main/README.md): what works, install, config table, warnings
+- [README](https://github.com/Servanago/Servanago/blob/main/README.md): overview, quick start, index of the docs below
+- [Install](https://github.com/Servanago/Servanago/blob/main/docs/install.md), [Configuration](https://github.com/Servanago/Servanago/blob/main/docs/configuration.md), [Sites](https://github.com/Servanago/Servanago/blob/main/docs/sites.md), [PHP](https://github.com/Servanago/Servanago/blob/main/docs/php.md), [Backups](https://github.com/Servanago/Servanago/blob/main/docs/backups.md), [Security](https://github.com/Servanago/Servanago/blob/main/docs/security.md), [MCP and CLI](https://github.com/Servanago/Servanago/blob/main/docs/mcp.md), [Development](https://github.com/Servanago/Servanago/blob/main/docs/development.md)
 - [Roadmap](https://github.com/Servanago/Servanago/blob/main/docs/ROADMAP.md): decisions and milestones (M10 is MCP)
 - [Design](https://github.com/Servanago/Servanago/blob/main/docs/DESIGN.md): architecture, apply path, DNS sync
 - [PHP from source](https://github.com/Servanago/Servanago/blob/main/docs/php-from-source-design.md): build design, section 16 as built
