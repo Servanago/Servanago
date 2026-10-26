@@ -54,7 +54,7 @@ func TestSidebarHidesAccountLinksWhenUIIsOpen(t *testing.T) {
 
 func TestSignInPagesHaveNoSidebar(t *testing.T) {
 	s := newServer(t, "pw")
-	if body := s.do(req{path: "/login"}).Body.String(); strings.Contains(body, "<aside") {
+	if body := s.do(req{path: "/login"}).Body.String(); strings.Contains(body, "<aside") || strings.Contains(body, "topbar") {
 		t.Error("sign-in page renders the app sidebar")
 	}
 }
