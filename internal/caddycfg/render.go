@@ -65,9 +65,6 @@ func Render(st State, o Options) ([]byte, error) {
 	}
 	var hr []hostSite
 	for _, r := range st.Sites {
-		if !r.Enabled { // a disabled site is not in Caddy at all: no handler, no certificate work
-			continue
-		}
 		if len(r.Hostnames) == 0 {
 			return nil, fmt.Errorf("render: site %d has no hostname", r.ID)
 		}
@@ -91,6 +88,9 @@ func Render(st State, o Options) ([]byte, error) {
 	for _, x := range hr {
 		var snip []any
 		for _, n := range x.r.Snippets {
+			if !x.r.Enabled { // the maintenance page runs no snippet
+				break
+			}
 			rs, ok := adapted[n]
 			if !ok {
 				body, known := bodies[n]
@@ -200,6 +200,11 @@ func issuer(o Options) m {
 // expansion) wrapped in the shared gate, allowlist and basic-auth chain when any of them is set. snip holds the
 // adapted routes of the site's snippets: they run after that chain and before the handler, except under /.well-known/.
 func siteHandler(host string, r store.Site, snip []any) (any, error) {
+	if !r.Enabled { // every hostname of a disabled site, ml. host included, answers the same 503
+		return m{"handler": "static_response", "status_code": 503,
+			"body":    "Down for Maintenance\n\nWe're performing scheduled maintenance. Please try again later.",
+			"headers": m{"Content-Type": []string{"text/plain; charset=utf-8"}, "Retry-After": []string{"3600"}}}, nil
+	}
 	if host == r.MLHost() {
 		return m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}, nil
 	}

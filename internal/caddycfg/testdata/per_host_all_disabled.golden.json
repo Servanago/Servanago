@@ -34,6 +34,31 @@
                 }
               ],
               "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "body": "Down for Maintenance\n\nWe're performing scheduled maintenance. Please try again later.",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ],
+                    "Retry-After": [
+                      "3600"
+                    ]
+                  },
+                  "status_code": 503
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "sonarr.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
             }
           ]
         }
@@ -63,6 +88,29 @@
             ],
             "subjects": [
               "servanago.example.com"
+            ]
+          },
+          {
+            "issuers": [
+              {
+                "challenges": {
+                  "dns": {
+                    "provider": {
+                      "api_token": "{env.CLOUDFLARE_API_TOKEN}",
+                      "name": "cloudflare"
+                    },
+                    "resolvers": [
+                      "1.1.1.1",
+                      "8.8.8.8"
+                    ]
+                  }
+                },
+                "email": "me@example.com",
+                "module": "acme"
+              }
+            ],
+            "subjects": [
+              "sonarr.example.com"
             ]
           }
         ]

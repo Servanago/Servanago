@@ -2,8 +2,6 @@ package apply
 
 import (
 	"context"
-	"crypto/tls"
-	"fmt"
 	"net"
 	"os"
 	"path/filepath"
@@ -265,11 +263,10 @@ func TestDisabledRouteIsNotServed(t *testing.T) {
 		t.Fatal(err)
 	}
 	f.routeWith(t, func(r *store.Site) { r.Enabled = false })
-	// A disabled host is not in Caddy at all: no certificate is managed for it, so even the handshake fails.
+	// A disabled host keeps its certificate and answers the maintenance 503, never the upstream's content.
 	caddytest.WaitCert(t, f.httpsPort, "other.example.com")
-	if c, err := tls.Dial("tcp", fmt.Sprintf("127.0.0.1:%d", f.httpsPort), &tls.Config{InsecureSkipVerify: true, ServerName: "app.example.com"}); err == nil {
-		c.Close()
-		t.Fatal("disabled host completed a TLS handshake")
+	if code, body := caddytest.Get(t, f.httpsPort, "app.example.com"); code != 503 || !strings.HasPrefix(body, "Down for Maintenance") {
+		t.Fatalf("disabled: %d %q", code, body)
 	}
 	err := f.svc.Mutate(context.Background(), func(tx *store.Store) error {
 		rs, _ := tx.ListSites(context.Background())

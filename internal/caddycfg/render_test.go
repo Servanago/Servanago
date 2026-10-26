@@ -406,3 +406,40 @@ func TestPHPFileMatchersUseTheSiteRoot(t *testing.T) {
 		t.Errorf("%d file matchers, %d with the site root:\n%s", files, rooted, got)
 	}
 }
+
+// A disabled site answers 503 on every hostname (primary, alias, ml.) and never reaches its handler chain.
+func TestDisabledSiteServesMaintenance(t *testing.T) {
+	s := with(site, func(r *store.Site) {
+		r.Enabled, r.GateMode, r.Hostnames = false, "open", []string{"sonarr.example.com", "tv.example.com"}
+	})
+	b, err := Render(State{[]store.Domain{dom}, []store.Site{s}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg struct {
+		Apps struct {
+			HTTP struct {
+				Servers map[string]struct {
+					Routes []struct {
+						Match  []struct{ Host []string }
+						Handle []map[string]any
+					}
+				}
+			}
+		}
+	}
+	if err := json.Unmarshal(b, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]map[string]any{}
+	for _, r := range cfg.Apps.HTTP.Servers["srv0"].Routes {
+		got[r.Match[0].Host[0]] = r.Handle[0]
+	}
+	for _, h := range []string{"sonarr.example.com", "tv.example.com", "ml.sonarr.example.com"} {
+		hd := got[h]
+		if hd["handler"] != "static_response" || hd["status_code"] != float64(503) ||
+			hd["body"] != "Down for Maintenance\n\nWe're performing scheduled maintenance. Please try again later." {
+			t.Errorf("%s: handler = %v, want the maintenance response", h, hd)
+		}
+	}
+}

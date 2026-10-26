@@ -38,6 +38,31 @@
             {
               "handle": [
                 {
+                  "body": "Down for Maintenance\n\nWe're performing scheduled maintenance. Please try again later.",
+                  "handler": "static_response",
+                  "headers": {
+                    "Content-Type": [
+                      "text/plain; charset=utf-8"
+                    ],
+                    "Retry-After": [
+                      "3600"
+                    ]
+                  },
+                  "status_code": 503
+                }
+              ],
+              "match": [
+                {
+                  "host": [
+                    "off.example.com"
+                  ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
                   "handler": "reverse_proxy",
                   "upstreams": [
                     {
@@ -101,6 +126,7 @@
               }
             ],
             "subjects": [
+              "off.example.com",
               "radarr.example.com",
               "sonarr.example.com"
             ]
