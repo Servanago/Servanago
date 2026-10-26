@@ -25,6 +25,7 @@ test('gated site: magic link in, revoke out', async ({ page }) => {
   await page.getByLabel('Hostnames').fill('st.gate.example.test');
   await page.getByLabel('Upstream host or IP').fill('127.0.0.1');
   await page.getByLabel('Upstream port').fill('29111');
+  await page.locator('summary', { hasText: 'Magic-link access' }).click(); // access features start closed on a new site
   await page.locator('select[name=gate_mode]').selectOption('open');
   // The site mails its own links: point its provider at the SMTP sink.
   await page.locator('select[name=gate_provider]').selectOption('smtp');

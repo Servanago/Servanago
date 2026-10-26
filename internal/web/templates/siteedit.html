@@ -1,5 +1,6 @@
 {{define "content"}}
 {{with .Data}}
+<p class="crumb"><a href="/">Sites</a> <span aria-hidden="true">/</span> {{if .Edit}}{{index .Site.Hostnames 0}}{{else}}New site{{end}}</p>
 <h1>{{if .Edit}}{{index .Site.Hostnames 0}}{{else}}Add site{{end}} {{helplink "sites"}}</h1>
 {{if .Row}}<p class="chips">
 {{if not .Row.Enabled}}<span class="chip">disabled</span>{{else if .Row.Probed}}
@@ -8,17 +9,23 @@
 {{if and .DNSOn .Row.DNSState}}<span class="chip dns-{{.Row.DNSState}}">DNS {{.Row.DNSState}}</span>{{end}}
 {{end}}
 </p>{{end}}
-<article>
+<div class="editor">
+<nav class="toc" aria-label="On this page">
+<a href="#sec-basics">Basics</a>
+<a href="#sec-access">Access</a>
+<a href="#sec-behaviour">Behaviour</a>
+{{if .Unit}}<a href="#service">Service</a>{{end}}
+{{if .Edit}}<a href="#sec-danger">Delete</a>{{end}}
+</nav>
+<div class="editor-main">
 <form {{if .Edit}}hx-put="/sites/{{.Site.ID}}"{{else}}hx-post="/sites"{{end}} hx-target="#msg">
-<fieldset>
-<legend>Address</legend>
+<section class="sect" id="sec-basics">
+<h2>Basics</h2>
+<p class="sect-note">What the site is called and what it serves. Most sites need nothing else.</p>
 <label>Hostnames (one per line; the first is the main address)
 <textarea name="hostnames" id="hostnames" rows="2" placeholder="app.example.com" autocomplete="off" required aria-describedby="hint-{{if .DNSOn}}hostnames{{else}}hostnames_nodns{{end}}"{{if .Edit}} data-initial="{{index .Site.Hostnames 0}}"{{end}}>{{.HostLines}}</textarea></label>
 {{if .DNSOn}}{{hintid "hostnames"}}{{else}}{{hintid "hostnames_nodns"}}{{end}}
 {{if and .Edit .DNSOn}}<p id="rename-note" class="notice" hidden>The main address changed. ServanaGo removes the old DNS record if it created it, and creates one for the new name.</p>{{end}}
-</fieldset>
-<fieldset>
-<legend>What it serves</legend>
 <label>Kind
 <select name="kind" id="kind" aria-describedby="hint-kind">
 <option value="proxy"{{if eq .Site.Kind "proxy"}} selected{{end}}>Proxy: forward to an app</option>
@@ -120,11 +127,15 @@
 <label>Health path (optional) <input name="php_health_path" value="{{.Site.PHPHealthPath}}" placeholder="/healthz" autocomplete="off" aria-describedby="hint-php_health_path"></label>
 {{hintid "php_health_path"}}
 </div>
-</fieldset>
-<fieldset>
-<legend>Who can open this site</legend>
-<fieldset>
-<legend>Magic-link access (optional)</legend>
+<label><input type="checkbox" name="enabled"{{if .Site.Enabled}} checked{{end}} aria-describedby="hint-enabled"> Enabled</label>
+{{hintid "enabled"}}
+</section>
+<section class="sect" id="sec-access">
+<h2>Access</h2>
+<p class="sect-note">Who can open the site. Anyone, unless you restrict it here.</p>
+<details class="feature"{{if .Site.GateMode}} open{{end}}>
+<summary>Magic-link access <span class="feature-state">{{if .Site.GateMode}}on{{else}}off{{end}}</span></summary>
+<div class="feature-body">
 {{if .MailOK}}<label>Require a magic link before the site is served?
 <select name="gate_mode" aria-describedby="hint-gate_mode">
 <option value=""{{if not .Site.GateMode}} selected{{end}}>No</option>
@@ -169,17 +180,32 @@
 {{else}}<p>Magic-link access needs Cloudflare to be connected (the site gets an <code>ml.</code> host there) and SERVANAGO_SECRET_KEY in the environment file.</p>
 {{hintid "smtp_setup"}}
 {{end}}
-</fieldset>
+</div>
+</details>
+<details class="feature"{{if .Site.Allowlist}} open{{end}}>
+<summary>IP allowlist <span class="feature-state">{{if .Site.Allowlist}}on{{else}}off{{end}}</span> {{helplink "access"}}</summary>
+<div class="feature-body">
 <label>Allowed sources (CIDR ranges, one per line; empty = anyone)
 <textarea name="allowlist" rows="3" placeholder="192.168.0.0/16" aria-describedby="hint-allowlist">{{.Site.Allowlist}}</textarea></label>
-{{hintid "allowlist"}} {{helplink "access"}}
-<fieldset>
-<legend>Basic authentication (optional)</legend>
+{{hintid "allowlist"}}
+</div>
+</details>
+<details class="feature"{{if .Site.BasicUser}} open{{end}}>
+<summary>Basic authentication <span class="feature-state">{{if .Site.BasicUser}}on{{else}}off{{end}}</span></summary>
+<div class="feature-body">
 <label>User <input name="basic_user" value="{{.Site.BasicUser}}" autocomplete="off"></label>
 <label>Password <input type="password" name="basic_password" autocomplete="new-password" aria-describedby="hint-basic_auth" placeholder="{{if .Site.BasicHash}}leave blank to keep the current password{{end}}"></label>
 {{hintid "basic_auth"}}
-</fieldset>
-</fieldset>
+</div>
+</details>
+</section>
+<section class="sect" id="sec-behaviour">
+<h2>Behaviour</h2>
+<p class="sect-note">Snippets, extra routes, notes and tuning. All optional.</p>
+{{if .Snippets}}<fieldset aria-describedby="hint-snippets"><legend>Snippets</legend>
+{{range .Snippets}}<label><input type="checkbox" name="snippets" value="{{.Name}}"{{if .On}} checked{{end}}> {{.Name}}</label>
+{{end}}</fieldset>
+{{hintid "snippets"}}{{end}}
 <details>
 <summary>Advanced</summary>
 {{if .DNSOn}}<label>DNS record IP (blank = the domain's default IP) <input name="record_ip" value="{{.Site.RecordIP}}" placeholder="192.168.1.20" aria-describedby="hint-record_ip"></label>
@@ -199,24 +225,28 @@
 {{hintid "extra_routes"}}
 <label>Notes <textarea name="notes" rows="4" maxlength="10000" aria-describedby="hint-notes">{{.Site.Notes}}</textarea></label>
 {{hintid "notes"}}
-{{if .Snippets}}<fieldset aria-describedby="hint-snippets"><legend>Snippets</legend>
-{{range .Snippets}}<label><input type="checkbox" name="snippets" value="{{.Name}}"{{if .On}} checked{{end}}> {{.Name}}</label>
-{{end}}</fieldset>
-{{hintid "snippets"}}{{end}}
-<label><input type="checkbox" name="enabled"{{if .Site.Enabled}} checked{{end}} aria-describedby="hint-enabled"> Enabled</label>
-{{hintid "enabled"}}
+</section>
+<div class="savebar">
 <p id="preview" class="preview" aria-live="polite" data-server-ip="{{.ServerIP}}" data-dns="{{if .DNSOn}}1{{end}}"></p>
-<button type="submit">{{if .Edit}}Save{{else}}Add site{{end}}</button>
+<div class="savebar-actions">
 <p id="msg" role="alert"></p>
+<button type="submit">{{if .Edit}}Save{{else}}Add site{{end}}</button>
+</div>
+</div>
 </form>
-{{with .Unit}}<section id="service" aria-labelledby="service-h">
+{{with .Unit}}<section class="sect" id="service" aria-labelledby="service-h">
 <h2 id="service-h">Service</h2>
 {{if .Err}}<p class="explain" role="alert">{{.Err}}</p>{{else}}<p><strong>{{.State}}</strong>{{if .PID}} · pid {{.PID}}{{end}}</p>
 {{if .Logs}}<pre id="unit-logs" tabindex="0" aria-label="Recent log lines">{{range .Logs}}{{.}}
 {{end}}</pre>{{else}}<p>No log lines yet.</p>{{end}}{{end}}
 </section>{{end}}
-{{if .Edit}}<button type="button" class="outline danger delete-site" data-id="{{.Site.ID}}" data-host="{{index .Site.Hostnames 0}}" data-dns-ip="{{with .Row}}{{.OwnedSummary}}{{end}}">Delete site</button>{{end}}
-</article>
+{{if .Edit}}<section class="sect" id="sec-danger">
+<h2>Delete</h2>
+<p class="sect-note">Stops serving the site and removes it. This cannot be undone.</p>
+<button type="button" class="outline danger delete-site" data-id="{{.Site.ID}}" data-host="{{index .Site.Hostnames 0}}" data-dns-ip="{{with .Row}}{{.OwnedSummary}}{{end}}">Delete site</button>
+</section>{{end}}
+</div>
+</div>
 {{template "deletedlg" .DNSOn}}
 <script>
 (function () {

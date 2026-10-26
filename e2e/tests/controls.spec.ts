@@ -13,7 +13,9 @@ test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await page.getByLabel('Hostnames').fill('bazarr.controls.example.net');
   await page.getByLabel('Upstream port').fill('6767');
   await page.getByLabel('Upstream host or IP').fill('192.168.1.22');
+  await page.getByText('IP allowlist').click(); // access features start closed on a new site
   await page.getByLabel('Allowed sources').fill('192.168.0.0/16');
+  await page.getByText('Basic authentication').click();
   await page.getByLabel('User', { exact: true }).fill('alice');
   await page.getByLabel('Password', { exact: true }).fill('s3cret');
   await page.getByRole('button', { name: 'Add site' }).click();

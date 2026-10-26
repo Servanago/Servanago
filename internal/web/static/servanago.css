@@ -307,6 +307,42 @@ ul.attn li a { margin-left: auto; font-weight: 600; color: var(--sg-warning); }
 .strip section { display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem 0.8rem; }
 .strip-label { color: var(--sg-text-muted); }
 .strip-note { margin: 0.6rem 0 0; font-size: 0.8rem; color: var(--sg-text-muted); }
+
+/* ---- Site editor: sections, collapsible access features, pinned save bar ------------------------------- */
+.crumb { margin: 0 0 0.3rem; font-size: 0.9rem; color: var(--sg-text-muted); }
+.crumb a { color: var(--sg-text-secondary); text-decoration: none; }
+.crumb a:hover { color: var(--sg-text); }
+.chips { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0.2rem 0 1.2rem; }
+.chips .chip { padding: 0.05rem 0.6rem; border-radius: 999px; background: var(--sg-surface-raised); color: var(--sg-text-secondary); font-size: 0.8rem; border: 1px solid transparent; }
+.chips .chip[class*="up-"], .chips .chip[class*="cert-"], .chips .chip[class*="dns-"] { border-color: currentColor; }
+.chips .up-up, .chips .cert-issued, .chips .dns-synced { color: var(--sg-success); }
+.chips .up-down, .chips .cert-error, .chips .dns-error { color: var(--sg-danger); }
+.chips .cert-pending, .chips .cert-expiring, .chips .dns-pending, .chips .dns-conflict { color: var(--sg-warning); }
+.editor { display: grid; grid-template-columns: 11rem minmax(0, 1fr); gap: 2.5rem; align-items: start; }
+.toc { position: sticky; top: 2rem; display: flex; flex-direction: column; gap: 0.1rem; }
+.toc a { padding: 0.35rem 0.6rem; border-radius: var(--sg-radius-sm); color: var(--sg-text-muted); font-size: 0.9rem; text-decoration: none; }
+.toc a:hover { color: var(--sg-text); background: var(--sg-surface); }
+.editor-main { max-width: 44rem; }
+.editor-main form { margin: 0; }
+.sect { margin: 0 0 2.2rem; padding: 0 0 1.6rem; border-bottom: 1px solid var(--sg-border); scroll-margin-top: 1.5rem; }
+.sect:last-child { border-bottom: 0; }
+.sect h2 { margin: 0 0 0.2rem; font-size: 1.15rem; }
+.sect-note { margin: 0 0 1.2rem; color: var(--sg-text-muted); font-size: 0.92rem; }
+details.feature { margin: 0 0 0.7rem; border: 1px solid var(--sg-border); border-radius: var(--sg-radius-md); background: var(--sg-surface); }
+details.feature > summary { display: flex; align-items: center; gap: 0.6rem; margin: 0; padding: 0.8rem 1rem; list-style: none; cursor: pointer; font-weight: 600; color: var(--sg-text); }
+details.feature > summary::after { margin-left: auto; }
+details.feature[open] > summary { color: var(--sg-text); border-bottom: 1px solid var(--sg-border); }
+.feature-state { font-weight: 400; font-size: 0.85rem; color: var(--sg-text-muted); }
+.feature-body { padding: 1rem 1rem 0.2rem; }
+.savebar { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.6rem 1.5rem; margin: 0 -0.5rem; padding: 0.9rem 0.5rem; border-top: 1px solid var(--sg-border); background: var(--sg-bg); }
+.savebar .preview { flex: 1 1 22rem; margin: 0; font-size: 0.85rem; }
+.savebar-actions { display: flex; align-items: center; gap: 1rem; }
+.savebar-actions p { margin: 0; }
+.savebar-actions button { margin: 0; width: auto; }
+@media (max-width: 860px) {
+  .editor { grid-template-columns: 1fr; }
+  .toc { display: none; }
+}
 @media (max-width: 860px) {
   .srow > summary { grid-template-columns: 0.7rem minmax(0, 1fr) auto; }
   .srow .target, .srow .chip { display: none; }
