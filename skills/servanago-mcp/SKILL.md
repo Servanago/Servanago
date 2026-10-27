@@ -13,6 +13,7 @@ ServanaGo is a self-hosted web runtime manager (embedded Caddy, SQLite, systemd)
 
 - Streamable HTTP, stateless: `https://<SERVANAGO_HOST>/mcp` with header `Authorization: Bearer <token>`. The token is the host's `SERVANAGO_MCP_TOKEN`; ask the operator for it, never invent or log one.
 - Since 0.9.0 the public URL answers 404 unless the operator set `SERVANAGO_MCP_PUBLIC=true` (and optionally `SERVANAGO_MCP_ALLOWLIST`). Without it, only a client on the host works: run `servanago mcp`, a stdio relay that needs `SERVANAGO_MCP_TOKEN` in its environment (`SERVANAGO_MCP_URL` overrides the endpoint, default the local UI listener).
+- For Claude Code: `claude mcp add servanago -s user -e SERVANAGO_MCP_TOKEN=<token> -- /usr/bin/servanago mcp`, or, with the public endpoint on, `claude mcp add servanago -s user --transport http https://<host>/mcp -H 'Authorization: Bearer ${SERVANAGO_MCP_TOKEN}'` (single-quoted, so the token is expanded at connect time instead of stored in `~/.claude.json`).
 - Errors: 404 = MCP off, or you are outside the public/allowlist rules; 401 = wrong token; 429 = too many wrong tokens from your address (5 per 15 minutes). Do not retry a 401 in a loop.
 - Setting any of this up on the host is the `servanago-setup` skill.
 

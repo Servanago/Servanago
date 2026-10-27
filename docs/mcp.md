@@ -12,6 +12,22 @@ Clients that only speak stdio run `servanago mcp`, which relays to the local end
 
 **One token, read and write, no scopes and no per-person audit.** A leaked token can create, change and delete sites: treat it like an administrator password. Gate credentials, basic-auth passwords and upload limits are UI-only. The panel is never restored over MCP.
 
+### Claude Code
+
+Two ways to connect; the token is the same `SERVANAGO_MCP_TOKEN`.
+
+```sh
+# Local relay: the packaged binary (a stdio relay to the local endpoint; SERVANAGO_MCP_URL picks another one)
+claude mcp add servanago -s user -e SERVANAGO_MCP_TOKEN=<SERVANAGO_MCP_TOKEN> -- /usr/bin/servanago mcp
+
+# Remote endpoint: needs SERVANAGO_MCP_PUBLIC=true (and the allowlist) to answer beyond the host
+claude mcp add servanago -s user --transport http https://<SERVANAGO_HOST>/mcp \
+  -H 'Authorization: Bearer ${SERVANAGO_MCP_TOKEN}'
+```
+
+- `-s user` makes the server available in every project of yours; without it, the scope is the current project. Remove with `claude mcp remove servanago -s user`; `claude mcp list` shows whether it connects.
+- The HTTP form single-quotes the header on purpose: Claude Code stores the literal `${SERVANAGO_MCP_TOKEN}` and expands it from the environment at connect time. Quoting it double-quoted instead bakes the token itself into `~/.claude.json` — avoid, and treat that file as a secret either way.
+
 ## Command line
 
 | Command | What it does |
