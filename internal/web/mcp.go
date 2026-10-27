@@ -202,27 +202,43 @@ func (s *Server) mcpRun(ctx context.Context, ip string, h http.HandlerFunc, meth
 }
 
 type siteView struct {
-	ID           int64    `json:"id"`
-	Slug         string   `json:"slug"`
-	Kind         string   `json:"kind"`
-	Hostnames    []string `json:"hostnames"`
-	Enabled      bool     `json:"enabled"`
-	StaticRoot   string   `json:"static_root,omitempty"`
-	Upstream     string   `json:"upstream,omitempty"`
-	StartCommand string   `json:"start_command,omitempty"`
-	FPMVersion   string   `json:"fpm_version,omitempty"`
-	Allowlist    string   `json:"allowlist,omitempty"`
-	GateMode     string   `json:"gate_mode,omitempty"`
-	BasicAuth    bool     `json:"basic_auth"`
-	Snippets     []string `json:"snippets,omitempty"`
-	Notes        string   `json:"notes,omitempty"`
-	UpdatedAt    string   `json:"updated_at,omitempty"`
+	ID           int64     `json:"id"`
+	Slug         string    `json:"slug"`
+	Kind         string    `json:"kind"`
+	Hostnames    []string  `json:"hostnames"`
+	Enabled      bool      `json:"enabled"`
+	StaticRoot   string    `json:"static_root,omitempty"`
+	Upstream     string    `json:"upstream,omitempty"`
+	StartCommand string    `json:"start_command,omitempty"`
+	FPMVersion   string    `json:"fpm_version,omitempty"`
+	Allowlist    string    `json:"allowlist,omitempty"`
+	GateMode     string    `json:"gate_mode,omitempty"`
+	BasicAuth    bool      `json:"basic_auth"`
+	Snippets     []string  `json:"snippets,omitempty"`
+	Notes        string    `json:"notes,omitempty"`
+	RecordIP     string    `json:"record_ip,omitempty"`
+	RecordIPv6   string    `json:"record_ip6,omitempty"`
+	DNS          []dnsView `json:"dns,omitempty"`
+	UpdatedAt    string    `json:"updated_at,omitempty"`
+}
+
+// dnsView is one DNS record's sync state: what the dashboard shows per hostname.
+type dnsView struct {
+	Hostname string `json:"hostname"`
+	Family   string `json:"family"`
+	State    string `json:"state"` // pending | synced | error | conflict
+	Content  string `json:"content,omitempty"`
+	Error    string `json:"error,omitempty"`
+}
+
+func dnsViewOf(x store.DNSRecord) dnsView {
+	return dnsView{Hostname: x.Hostname, Family: x.Family, State: x.State, Content: x.Content, Error: x.Error}
 }
 
 // viewOf drops every secret: the basic-auth hash never leaves the process.
 func viewOf(x store.Site) siteView {
 	v := siteView{ID: x.ID, Slug: x.Slug, Kind: x.Kind, Hostnames: x.Hostnames, Enabled: x.Enabled, StaticRoot: x.StaticRoot,
-		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, UpdatedAt: x.UpdatedAt}
+		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, RecordIP: x.RecordIP, RecordIPv6: x.RecordIP6, UpdatedAt: x.UpdatedAt}
 	switch {
 	case x.UpstreamPort != 0:
 		v.Upstream = net.JoinHostPort(x.UpstreamHost, strconv.Itoa(x.UpstreamPort))
@@ -252,6 +268,25 @@ type (
 		ID int64 `json:"id"`
 		siteArgs
 	}
+	domainArgs struct {
+		ID         int64  `json:"id"`
+		DefaultIP  string `json:"default_ip,omitempty" jsonschema:"IPv4 for the domain's A records; left out = keep the stored one"`
+		DefaultIP6 string `json:"default_ip6,omitempty" jsonschema:"left out = keep the stored one"`
+		CertMode   string `json:"cert_mode,omitempty" jsonschema:"wildcard | per_host; left out = keep the stored one"`
+	}
+	domainNew struct {
+		Name       string `json:"name" jsonschema:"the domain name (a Cloudflare zone)"`
+		DefaultIP  string `json:"default_ip,omitempty" jsonschema:"IPv4 for the domain's A records; required with a Cloudflare token"`
+		DefaultIP6 string `json:"default_ip6,omitempty"`
+		CertMode   string `json:"cert_mode,omitempty" jsonschema:"wildcard | per_host; empty = wildcard with Cloudflare, per_host without"`
+	}
+	domainDone struct {
+		Name string `json:"name"`
+	}
+	dnsDone struct {
+		ID   int64     `json:"id"`
+		Rows []dnsView `json:"rows,omitempty"`
+	}
 )
 
 func (s *Server) mcpServer(ip string) *mcp.Server {
@@ -279,10 +314,19 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 			return nil, out, err
 		})
 
-	mcp.AddTool(srv, &mcp.Tool{Name: "get_site", Description: "One site by id.", Annotations: ro},
+	mcp.AddTool(srv, &mcp.Tool{Name: "get_site", Description: "One site by id, including its record IPs and DNS rows.", Annotations: ro},
 		func(ctx context.Context, _ *mcp.CallToolRequest, in idArgs) (*mcp.CallToolResult, siteView, error) {
 			x, err := site(ctx, in.ID)
-			return nil, viewOf(x), err
+			if err != nil {
+				return nil, siteView{}, err
+			}
+			v := viewOf(x)
+			rows, rerr := s.deps.Store.ListSiteDNS(ctx, in.ID)
+			println("DBG get_site rows:", fmt.Sprint(rows))
+			for _, r := range rows {
+				v.DNS = append(v.DNS, dnsViewOf(r))
+			}
+			return nil, v, errors.Join(err, rerr)
 		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_domains", Description: "Managed domains (Cloudflare zones) and their certificate mode.", Annotations: ro},
@@ -294,9 +338,46 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 			}
 			ds, err := s.deps.Store.ListDomains(ctx)
 			for _, d := range ds {
-				out.Domains = append(out.Domains, map[string]string{"name": d.Name, "default_ip": d.DefaultIP, "default_ip6": d.DefaultIP6, "cert_mode": d.CertMode})
+				out.Domains = append(out.Domains, map[string]string{"id": strconv.FormatInt(d.ID, 10), "name": d.Name, "default_ip": d.DefaultIP, "default_ip6": d.DefaultIP6, "cert_mode": d.CertMode})
 			}
 			return nil, out, err
+		})
+
+	// The domain tools run the UI's own add/edit handlers; update_domain changes no record, so resync_dns (or take_dns) converges the sites.
+	mcp.AddTool(srv, &mcp.Tool{Name: "create_domain", Description: "Add a domain (a Cloudflare zone): name, default record IPs and certificate mode. The zone must be visible to the Cloudflare token; wildcard certificates need Cloudflare. Audited as 'mcp token'."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in domainNew) (*mcp.CallToolResult, domainDone, error) {
+			v := url.Values{"name": {in.Name}}
+			if in.DefaultIP != "" {
+				v.Set("default_ip", in.DefaultIP)
+			}
+			if in.DefaultIP6 != "" {
+				v.Set("default_ip6", in.DefaultIP6)
+			}
+			if in.CertMode != "" {
+				v.Set("cert_mode", in.CertMode)
+			}
+			_, err := s.mcpRun(ctx, ip, s.addDomain, "POST", "/domains", 0, v)
+			return nil, domainDone{Name: strings.ToLower(strings.TrimSpace(in.Name))}, err
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "update_domain", Description: "Change a domain's default IPs and certificate mode. Existing DNS records are not touched: resync_dns (or take_dns) each site to converge. Only the fields you pass change."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in domainArgs) (*mcp.CallToolResult, domainDone, error) {
+			d, err := s.deps.Store.GetDomain(ctx, in.ID)
+			if err != nil {
+				return nil, domainDone{}, fmt.Errorf("domain %d not found", in.ID)
+			}
+			v := url.Values{"default_ip": {d.DefaultIP}, "default_ip6": {d.DefaultIP6}, "cert_mode": {d.CertMode}}
+			if in.DefaultIP != "" {
+				v.Set("default_ip", in.DefaultIP)
+			}
+			if in.DefaultIP6 != "" {
+				v.Set("default_ip6", in.DefaultIP6)
+			}
+			if in.CertMode != "" {
+				v.Set("cert_mode", in.CertMode)
+			}
+			_, err = s.mcpRun(ctx, ip, s.updateDomain, "PUT", "/domains/"+strconv.FormatInt(in.ID, 10), in.ID, v)
+			return nil, domainDone{d.Name}, err
 		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "runtime_report", Description: "Which runtimes this host has: node, php-fpm versions, frankenphp, fcgiwrap. ServanaGo builds PHP itself (the /php page) and never installs the others.", Annotations: ro},
@@ -402,6 +483,28 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 			warn, err := s.mcpRun(ctx, ip, s.deleteSite, "DELETE", target, in.ID, nil)
 			return nil, changed{ID: in.ID, Hostnames: x.Hostnames, Warnings: warn}, err
 		})
+
+	// The site DNS tools are the dashboard's Retry and Take over buttons: the same handlers, with the
+	// refreshed rows as the result. Both are no-ops on records that already match.
+	dnsTool := func(name, path, desc string, h http.HandlerFunc) {
+		mcp.AddTool(srv, &mcp.Tool{Name: name, Description: desc},
+			func(ctx context.Context, _ *mcp.CallToolRequest, in idArgs) (*mcp.CallToolResult, dnsDone, error) {
+				_, err := s.mcpRun(ctx, ip, h, "POST", "/sites/"+strconv.FormatInt(in.ID, 10)+"/dns/"+path, in.ID, nil)
+				if err != nil {
+					return nil, dnsDone{}, err
+				}
+				rows, rerr := s.deps.Store.ListSiteDNS(ctx, in.ID)
+				out := dnsDone{ID: in.ID}
+				for _, r := range rows {
+					out.Rows = append(out.Rows, dnsViewOf(r))
+				}
+				return nil, out, rerr
+			})
+	}
+	dnsTool("resync_dns", "resync",
+		"Sync a site's DNS records: create missing, point owned ones at the wanted IP (record_ip, else the domain default), adopt matching ones. A conflicting record needs take_dns.", s.resyncDNS)
+	dnsTool("take_dns", "takeover",
+		"Take over a site's conflicting DNS records: overwrite them with the wanted IP (record_ip, else the domain default) and mark them managed. Idempotent on already-synced records.", s.takeOverDNS)
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_snippets", Description: "Caddyfile snippets sites can attach (update_site snippets): name, directives and the sites using each.", Annotations: ro},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, struct {

@@ -27,6 +27,8 @@ Read (safe, no side effects):
 
 Write (each runs the UI's own handlers: same validation, apply path, DNS, runtime setup, audit):
 - Sites: `create_site`, `update_site`, `set_site_enabled`, `delete_site` (see `servanago-sites`).
+- Site DNS: `resync_dns {id}`, `take_dns {id}` (since 0.10.0): refresh or take over the DNS records; see `servanago-sites`.
+- Domains: `create_domain`, `update_domain` (since 0.10.0) — the zone with its default record IPs; see `servanago-sites`.
 - Snippets: `create_snippet`, `update_snippet`, `delete_snippet` (see `servanago-snippets`).
 - Backups: `run_backup`, `restore_site` (see `servanago-backups`).
 

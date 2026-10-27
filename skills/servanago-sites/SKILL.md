@@ -7,7 +7,15 @@ description: Create, inspect, update, disable and delete ServanaGo sites (proxy,
 
 Requires ServanaGo 0.2.0 or newer.
 
-Tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `create_site`, `update_site`, `set_site_enabled`, `delete_site`. Connection and safety rules are in `servanago-mcp`.
+Tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `create_site`, `update_site`, `set_site_enabled`, `delete_site`, and since 0.10.0 the DNS tools `resync_dns` and `take_dns` plus the domain tools `create_domain` and `update_domain`. Connection and safety rules are in `servanago-mcp`.
+
+## Domains and DNS records
+
+A hostname's DNS record points at `record_ip`/`record_ip6` if the site sets one, else the domain's `default_ip`/`default_ip6` (`list_domains` shows them). Without a Cloudflare zone there is no DNS sync.
+
+- `create_domain {name, default_ip, default_ip6?, cert_mode?}` adds a zone; the name must be visible to the Cloudflare token.
+- `update_domain {id, default_ip, default_ip6?, cert_mode?}` changes only what you pass. Existing records are not touched: run `resync_dns {id}` on each site to converge.
+- `get_site` returns per-hostname DNS rows (`state` synced | pending | conflict | error). A `conflict` row (Cloudflare already points elsewhere, unowned) is only resolved by `take_dns`, which overwrites the record and marks it managed; `resync_dns` leaves it alone. Both are idempotent on synced records.
 
 ## Create
 

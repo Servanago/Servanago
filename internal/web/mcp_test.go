@@ -10,6 +10,9 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/store"
 )
 
 const mcpToken = "0123456789abcdef0123456789abcdef"
@@ -204,6 +207,208 @@ func TestMCPToolErrors(t *testing.T) {
 	}
 	if rs, _ := s.deps.Store.ListSites(context.Background()); len(rs) != 0 || host.log() != "" {
 		t.Errorf("refused calls left state: sites=%v helper=%q", rs, host.log())
+	}
+}
+
+// A domain-less hostname (no zone in Cloudflare) still needs a possible host IP: the create path
+// validates SERVANAGO_HOST_IP when Cloudflare is on. newDNSServer with that IP, plus the fake again.
+func mcpDnsServer(t *testing.T) (*Server, *cfFake, store.Domain) {
+	t.Helper()
+	cf := &cfFake{zones: zonesOK}
+	s := cfgServer(t, cf, config.Config{Host: "panel.example.com", HostIP: "203.0.113.10", HostIP6: "2001:db8::10"})
+	d, err := s.deps.Store.CreateDomain(context.Background(), store.Domain{Name: "example.com", ZoneID: "zone123", DefaultIP: "10.0.0.1", CertMode: "wildcard"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s, cf, d
+}
+
+// getSite decodes get_site into a fresh struct: unmarshalling into a reused
+// one merges old field values in (encoding/json reuses existing slice
+// elements), and every siteView field is omitempty.
+func getSite(t *testing.T, sess *mcp.ClientSession, id int64) siteView {
+	t.Helper()
+	var out siteView
+	if err := call(t, sess, "get_site", map[string]any{"id": id}, &out); err != nil {
+		t.Fatalf("get_site %d: %v", id, err)
+	}
+	return out
+}
+
+// The DNS tools run the UI's own resync/takeover/domain handlers: a conflict
+// is only solvable by take_dns, resync does not unsettle it, an update_domain
+// changes no record, and a site whose record_ip is not mentioned keeps it.
+func TestMCPDnsTools(t *testing.T) {
+	s, cf, d := mcpDnsServer(t)
+	s.deps.Cfg.MCPToken = mcpToken
+	sess := mcpSession(t, s, mcpToken)
+
+	tools, err := sess.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, tl := range tools.Tools {
+		have[tl.Name] = true
+	}
+	for _, want := range []string{"take_dns", "resync_dns", "update_domain", "create_domain"} {
+		if !have[want] {
+			t.Errorf("tool %s missing (have %v)", want, have)
+		}
+	}
+
+	x := addRoute(t, s, d) // syncs sonarr.example.com to 10.0.0.1
+	v := getSite(t, sess, x.ID)
+	if v.RecordIP != "" || v.RecordIPv6 != "" || len(v.DNS) != 1 ||
+		v.DNS[0] != (dnsView{Hostname: "sonarr.example.com", Family: "A", State: "synced", Content: "10.0.0.1"}) {
+		t.Fatalf("get_site DNS view wrong: %+v", v)
+	}
+
+	// record_ip works like the form's DNS record IP field, and survives an update that omits it.
+	if err := call(t, sess, "update_site", map[string]any{"id": x.ID, "record_ip": "10.0.0.5"}, nil); err != nil {
+		t.Fatalf("update_site record_ip: %v", err)
+	}
+	v = getSite(t, sess, x.ID)
+	recs := cf.dns.Records()
+	if v.RecordIP != "10.0.0.5" || len(recs) != 1 || recs[0].Content != "10.0.0.5" {
+		t.Fatalf("record_ip not applied: %+v %v", v, recs)
+	}
+	if err := call(t, sess, "update_site", map[string]any{"id": x.ID, "notes": "kept"}, nil); err != nil {
+		t.Fatalf("update_site notes: %v", err)
+	}
+	if v := getSite(t, sess, x.ID); v.RecordIP != "10.0.0.5" {
+		t.Fatalf("update_site dropped record_ip: %+v", v)
+	}
+
+	// A Cloudflare record pointing elsewhere, unowned: conflict until take_dns.
+	root := t.TempDir()
+	cf.dns.Seed("tv.example.com", "9.9.9.9")
+	var made changed
+	if err := call(t, sess, "create_site", map[string]any{"kind": "static", "static_root": root, "hostnames": []string{"tv.example.com"}}, &made); err != nil {
+		t.Fatalf("create_site: %v", err)
+	}
+	if v := getSite(t, sess, made.ID); len(v.DNS) != 1 || v.DNS[0].State != "conflict" || !strings.Contains(v.DNS[0].Error, "9.9.9.9") {
+		t.Fatalf("conflict not visible: %+v", v)
+	}
+	if err := call(t, sess, "resync_dns", map[string]any{"id": made.ID}, nil); err != nil {
+		t.Fatalf("resync_dns: %v", err)
+	}
+	if v := getSite(t, sess, made.ID); len(v.DNS) != 1 || v.DNS[0].State != "conflict" {
+		t.Fatalf("resync must leave a conflict alone: %+v", v)
+	}
+	if err := call(t, sess, "take_dns", map[string]any{"id": made.ID}, nil); err != nil {
+		t.Fatalf("take_dns: %v", err)
+	}
+	row, _ := s.deps.Store.GetDNS(context.Background(), "tv.example.com", store.FamilyA)
+	cfContent := ""
+	for _, rec := range cf.dns.Records() { // Records() is unordered (a map)
+		if rec.Name == "tv.example.com" {
+			cfContent = rec.Content
+		}
+	}
+	if v := getSite(t, sess, made.ID); len(v.DNS) != 1 || v.DNS[0].State != "synced" || v.DNS[0].Content != "10.0.0.1" || !row.Owned || cfContent != "10.0.0.1" {
+		t.Fatalf("takeover not applied: %+v %+v %q", v, row, cfContent)
+	}
+
+	// Idempotent: a second takeover rewrites nothing.
+	before := cf.dns.Writes()
+	if err := call(t, sess, "take_dns", map[string]any{"id": made.ID}, nil); err != nil {
+		t.Fatalf("take_dns again: %v", err)
+	}
+	if cf.dns.Writes() != before {
+		t.Errorf("idempotent takeover wrote DNS: %d -> %d", before, cf.dns.Writes())
+	}
+
+	// Refusals.
+	if err := call(t, sess, "take_dns", map[string]any{"id": 999}, nil); err == nil {
+		t.Error("take_dns accepted an unknown site")
+	}
+	if err := call(t, sess, "resync_dns", map[string]any{"id": 999}, nil); err == nil {
+		t.Error("resync_dns accepted an unknown site")
+	}
+
+	// A hostname with no domain has no rows, and resync on it is a clean no-op.
+	var solo changed
+	if err := call(t, sess, "create_site", map[string]any{"kind": "static", "static_root": root, "hostnames": []string{"solo.example.org"}}, &solo); err != nil {
+		t.Fatalf("create_site solo: %v", err)
+	}
+	if v := getSite(t, sess, solo.ID); len(v.DNS) != 0 {
+		t.Errorf("domain-less hostnames grew DNS rows: %+v", v.DNS)
+	}
+	if err := call(t, sess, "resync_dns", map[string]any{"id": solo.ID}, nil); err != nil {
+		t.Errorf("resync_dns on a domain-less site: %v", err)
+	}
+
+	rows, _ := s.deps.Store.ListAudit(context.Background(), 30)
+	seen := map[string]bool{}
+	for _, r := range rows {
+		if r.Actor == "mcp token" {
+			seen[r.Action] = true
+		}
+	}
+	for _, a := range []string{"site.dns_taken_over", "site.dns_resynced"} {
+		if !seen[a] {
+			t.Errorf("no %q audit row by 'mcp token': %+v", a, rows)
+		}
+	}
+}
+
+// The domain tools run the UI's own add/update handlers. create completes the
+// headless flow; update changes no record — resync_dns converges the sites.
+func TestMCPDomainTools(t *testing.T) {
+	cf := &cfFake{zones: zonesOK}
+	s := cfgServer(t, cf, config.Config{})
+	s.deps.Cfg.MCPToken = mcpToken
+	sess := mcpSession(t, s, mcpToken)
+	root := t.TempDir()
+
+	var made domainDone
+	if err := call(t, sess, "create_domain", map[string]any{"name": "Example.com", "default_ip": "203.0.113.1"}, &made); err != nil || made.Name != "example.com" {
+		t.Fatalf("create_domain: %+v %v", made, err)
+	}
+	var list struct {
+		Domains []map[string]string `json:"domains"`
+	}
+	if err := call(t, sess, "list_domains", nil, &list); err != nil || len(list.Domains) != 1 || list.Domains[0]["default_ip"] != "203.0.113.1" {
+		t.Fatalf("list_domains: %+v %v", list, err)
+	}
+
+	var site changed
+	if err := call(t, sess, "create_site", map[string]any{"kind": "static", "static_root": root, "hostnames": []string{"app.example.com"}}, &site); err != nil {
+		t.Fatalf("create_site under the domain: %v", err)
+	}
+	if recs := cf.dns.Records(); len(recs) != 1 || recs[0].Content != "203.0.113.1" {
+		t.Fatalf("site did not pick up the domain default: %+v", recs)
+	}
+
+	before := cf.dns.Writes() // Writes is cumulative; only the delta counts
+	if err := call(t, sess, "update_domain", map[string]any{"id": 1, "default_ip": "203.0.113.9", "cert_mode": "per_host"}, nil); err != nil {
+		t.Fatalf("update_domain: %v", err)
+	}
+	if err := call(t, sess, "list_domains", nil, &list); err != nil || list.Domains[0]["default_ip"] != "203.0.113.9" || list.Domains[0]["cert_mode"] != "per_host" {
+		t.Fatalf("list_domains after update: %+v %v", list, err)
+	}
+	if cf.dns.Writes() != before {
+		t.Errorf("update_domain wrote DNS records")
+	}
+	if recs := cf.dns.Records(); len(recs) != 1 || recs[0].Content != "203.0.113.1" {
+		t.Fatalf("update_domain touched records: %+v", recs)
+	}
+	if err := call(t, sess, "resync_dns", map[string]any{"id": site.ID}, nil); err != nil {
+		t.Fatalf("resync after update: %v", err)
+	}
+	if recs := cf.dns.Records(); len(recs) != 1 || recs[0].Content != "203.0.113.9" {
+		t.Fatalf("resync did not converge to the new default: %+v", recs)
+	}
+
+	for name, args := range map[string]map[string]any{
+		"unseeable zone": {"name": "elsewhere.example"},
+		"unknown id":     {"id": 999},
+		"bad ipv6":       {"id": 1, "default_ip6": "notanip"},
+	} {
+		if err := call(t, sess, map[string]string{"unseeable zone": "create_domain", "unknown id": "update_domain", "bad ipv6": "update_domain"}[name], args, nil); err == nil {
+			t.Errorf("%s: accepted", name)
+		}
 	}
 }
 
