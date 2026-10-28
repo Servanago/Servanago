@@ -1,16 +1,16 @@
 # ServanaGo
 
-> Lightweight self-hosted web runtime manager: a Go app with a web UI, embedded Caddy, SQLite and systemd supervision. One native host, one Caddy ingress for every site. Site kinds: reverse proxy, static, Node.js, PHP-FPM (distro PHP or PHP that ServanaGo compiles itself), FrankenPHP, FastCGI and CGI. Optional Cloudflare (DNS-01 certificates, A/AAAA records), optional MCP endpoint for agents. Status: early (v0.11.0); not a hosting control panel and not a sandbox for mutually untrusted tenants. MIT licensed.
+> Lightweight self-hosted web runtime manager: a Go app with a web UI, embedded Caddy, SQLite and systemd supervision. One native host, one Caddy ingress for every site. Site kinds: reverse proxy, static, Node.js, PHP-FPM (distro PHP or PHP that ServanaGo compiles itself), FrankenPHP, FastCGI and CGI. Optional Cloudflare (DNS-01 certificates, A/AAAA records), optional MCP endpoint for agents. Status: early (v0.11.1); not a hosting control panel and not a sandbox for mutually untrusted tenants. MIT licensed.
 
 Target platform: native host, Debian 12+ / Ubuntu 22.04+ with systemd 252+. Packaged as a `.deb`. There is no container image.
 
 ## Install
 
-- Build and install the package: `make deb`, then `sudo apt-get install ./bin/servanago_0.11.0_amd64.deb`. Or `sudo packaging/install.sh` from a checkout. Releases carry the `.deb`.
+- Build and install the package: `make deb`, then `sudo apt-get install ./bin/servanago_0.11.1_amd64.deb`. Or `sudo packaging/install.sh` from a checkout. Releases carry the `.deb`.
 - The deb installs the binary, a `servanago` system user, `/etc/servanago/servanago.env` (a conffile; dpkg keeps your edits), `servanago.service`, and `servanago-helper.service`. `DATA_DIR` is `/var/lib/servanago`, logs go to journald (`journalctl -u servanago`).
 - The unit is enabled but not started. Fill in the env file (`SERVANAGO_HOST`, `ACME_EMAIL`, `ADMIN_PASSWORD`), then `systemctl start servanago`.
 - The helper is a root daemon the control plane asks over a Unix socket (SO_PEERCRED) for privileged work: per-site units, system users, php-fpm pools, PHP builds, backups. It accepts a closed set of typed actions only; the web UI never runs as root. Running from source without it works, but pages that need it say so.
-- Upgrades apply SQLite migrations on start. Back up `servanago.db` before upgrading.
+- Upgrades apply SQLite migrations on start. Back up `servanago.db` before upgrading. A database from before 0.5.0 that lacks the PHP and site-user columns is repaired on start: a snapshot `servanago.db.pre-repair` is written first and the Audit page shows `schema.repaired`. A database older than the 0.2.0 schema is refused with a "not repairable" error.
 
 From source (no Node build step): `make build` gives `bin/servanago`; `cp .env.example .env`, export it (`set -a; . ./.env; set +a`; ServanaGo reads the process environment only), run `DATA_DIR="$PWD/data" ./bin/servanago` as an unprivileged user. To bind 80/443: `sudo setcap cap_net_bind_service=+ep bin/servanago`, or set `HTTP_PORT`/`HTTPS_PORT`. Open `https://<SERVANAGO_HOST>` and sign in. Startup fails fast naming the missing or invalid variable. `ACME_STAGING=true` avoids Let's Encrypt rate limits.
 

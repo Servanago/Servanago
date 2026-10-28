@@ -5,8 +5,8 @@
 Debian 12+ or Ubuntu 22.04+ with systemd. One deb installs the binary, a `servanago` system user, `/etc/servanago/servanago.env`, the `servanago.service` unit, `/var/lib/servanago` (`DATA_DIR`) and `/var/log/servanago`.
 
 ```sh
-make deb                                    # bin/servanago_0.11.0_amd64.deb
-sudo apt-get install ./bin/servanago_0.11.0_amd64.deb
+make deb                                    # bin/servanago_0.11.1_amd64.deb
+sudo apt-get install ./bin/servanago_0.11.1_amd64.deb
 ```
 
 Or all of it with nothing but this checkout: `sudo packaging/install.sh`.
@@ -14,6 +14,7 @@ Or all of it with nothing but this checkout: `sudo packaging/install.sh`.
 The unit is enabled but not started. Fill in the env file first (`SERVANAGO_HOST`, `ACME_EMAIL`, `ADMIN_PASSWORD`; see [Configuration](configuration.md)), then `systemctl start servanago`.
 
 - The env file is a conffile: dpkg keeps your edits across upgrades.
+- Database changes apply on start. A database from before 0.5.0 that lacks the PHP and site-user columns is repaired first: ServanaGo writes `servanago.db.pre-repair` (readable by its owner only), adds the missing columns, and records `schema.repaired` on the Audit page. A database older than the 0.2.0 schema is refused with a "not repairable" error and left untouched.
 - Logs go to journald (`journalctl -u servanago`).
 - Removing the package stops and disables the unit. Purging it also removes the `servanago` user but keeps `/var/lib/servanago` until you delete it.
 
