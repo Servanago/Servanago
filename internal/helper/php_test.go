@@ -657,7 +657,6 @@ func TestUserDefaultShell(t *testing.T) {
 	}
 	write("servanago-php-path", pathScript)
 	write("php", phpShim)
-	write("composer", composerShim)
 	me, _ := exec.Command("id", "-un").Output()
 	user := strings.TrimSpace(string(me))
 	setLabel := func(label string) {
@@ -703,7 +702,41 @@ func TestUserDefaultShell(t *testing.T) {
 	if got := run("php", "-v"); got != "8.4.27-1 -v" {
 		t.Errorf("php shim: %q", got)
 	}
-	if got := run("composer", "about"); got != "8.4.27-1 -composer.phar about" {
-		t.Errorf("composer shim: %q", got)
+}
+
+// composer is a PHP file, so `php /usr/local/bin/composer` (what Composer's self-update, IDEs and scripts run) runs it
+// instead of printing a shell script.
+func TestComposerShimRunsAsExecutableAndAsPHPScript(t *testing.T) {
+	realPHP, err := exec.LookPath("php")
+	if err != nil {
+		t.Skip("no php")
+	}
+	dir := t.TempDir()
+	phpShimPath := filepath.Join(dir, "php")
+	if err := os.WriteFile(phpShimPath, []byte("#!/bin/sh\nexec "+realPHP+" \"$@\"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	phar := filepath.Join(dir, "composer.phar")
+	if err := os.WriteFile(phar, []byte("<?php echo json_encode([basename($_SERVER['argv'][0]), array_slice($_SERVER['argv'], 1)]);"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	shim := filepath.Join(dir, "composer")
+	body := strings.Replace(composerShim, "#!/usr/local/bin/php", "#!"+phpShimPath, 1)
+	if body == composerShim {
+		t.Fatal("composer shim must start with the #!/usr/local/bin/php shebang")
+	}
+	if err := os.WriteFile(shim, []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const want = `["composer.phar",["about","--no-ansi"]]`
+	for name, cmd := range map[string]*exec.Cmd{
+		"executed": exec.Command(shim, "about", "--no-ansi"),
+		"via php":  exec.Command(realPHP, shim, "about", "--no-ansi"),
+	} {
+		cmd.Env = append(os.Environ(), "SERVANAGO_COMPOSER="+phar)
+		out, err := cmd.CombinedOutput()
+		if err != nil || strings.TrimSpace(string(out)) != want {
+			t.Errorf("%s: %q (%v), want %s", name, out, err, want)
+		}
 	}
 }

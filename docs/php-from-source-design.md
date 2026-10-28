@@ -148,7 +148,7 @@ branch label -> newest dir matching /opt/servanago/php/<branch>.*-*, chosen with
 dir missing  -> exec the distro php (/usr/bin/php), never fail
 ```
 
-`/usr/local/bin/composer` runs `php /opt/servanago/composer/composer.phar "$@"` through the same resolution. `/etc/profile.d/servanago-php.sh` prepends the resolved `bin/` to `PATH` for login shells, so `phpize` and friends come along.
+`/usr/local/bin/composer` is a PHP script (shebang `/usr/local/bin/php`) that requires `/opt/servanago/composer/composer.phar` under the same resolution, so `composer …` and `php /usr/local/bin/composer …` both work. `/etc/profile.d/servanago-php.sh` prepends the resolved `bin/` to `PATH` for login shells, so `phpize` and friends come along.
 
 `php-user-default` validates the user: `os/user.Lookup`, UID >= 1000, the shell in `/etc/passwd` is not `nologin` or `false`, name matches `^[a-z_][a-z0-9_-]{0,31}$`. Shims are written with `put()` semantics (temp file, rename, no symlink targets). Clearing the last user default leaves the shims in place (they fall through to the distro `php`); removing them is not needed.
 

@@ -495,10 +495,15 @@ esac
 exec "$bin" "$@"
 `
 
-const composerShim = `#!/bin/sh
-# ServanaGo: composer under the same PHP that "php" resolves to.
-dir=$(dirname "$0")
-exec "$dir/php" "${SERVANAGO_COMPOSER:-` + composerPhar + `}" "$@"
+// composerShim is PHP, not shell: Composer's self-update, IDEs and scripts run `php /usr/local/bin/composer`, and PHP
+// prints a shell script as text. The shebang is the php shim, so the user's PHP runs it either way.
+const composerShim = `#!/usr/local/bin/php
+<?php
+// ServanaGo: composer under the same PHP that "php" resolves to.
+$phar = getenv('SERVANAGO_COMPOSER') ?: '` + composerPhar + `';
+$_SERVER['argv'][0] = $_SERVER['SCRIPT_NAME'] = $_SERVER['SCRIPT_FILENAME'] = $_SERVER['PHP_SELF'] = $phar;
+$argv = $_SERVER['argv'];
+require $phar;
 `
 
 const profileScript = `# ServanaGo: put this user's default PHP first on PATH (set on the PHP page). Login shells only; /usr/local/bin/php covers the rest.
