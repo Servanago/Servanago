@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -54,6 +55,11 @@ func cfgServer(t *testing.T, cf *cfFake, cfg config.Config) *Server {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/zones/") { // zones/{id}: the admin DNS page's zone lookup, always active
+			id := strings.TrimPrefix(r.URL.Path, "/zones/")
+			_, _ = w.Write([]byte(fmt.Sprintf(`{"success":true,"errors":[],"messages":[],"result":{"id":%q,"name":"example.com","status":"active"}}`, id)))
+			return
+		}
 		switch r.URL.Path {
 		case "/zones":
 			if cf.zonesCode != 0 {

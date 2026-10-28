@@ -86,7 +86,9 @@ func (c *Client) VerifyToken(ctx context.Context) error {
 // Record is the subset of a Cloudflare address record ServanaGo cares about.
 type Record struct{ ID, Name, Content string }
 
-const managedComment = "managed by servanago"
+// ManagedComment marks the records dnssync wrote; the admin DNS page uses it (plus the dns_records
+// rows) to badge rows that the next reconcile may rewrite.
+const ManagedComment = "managed by servanago"
 
 // Record families ServanaGo manages: A (IPv4) and AAAA (IPv6).
 const (
@@ -142,12 +144,12 @@ func recordBody(name, family, ip string) recordParam {
 	if family == FamilyAAAA {
 		return dns.AAAARecordParam{
 			Name: cloudflare.F(name), Content: cloudflare.F(ip), Type: cloudflare.F(dns.AAAARecordTypeAAAA),
-			TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(managedComment),
+			TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(ManagedComment),
 		}
 	}
 	return dns.ARecordParam{
 		Name: cloudflare.F(name), Content: cloudflare.F(ip), Type: cloudflare.F(dns.ARecordTypeA),
-		TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(managedComment),
+		TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(ManagedComment),
 	}
 }
 

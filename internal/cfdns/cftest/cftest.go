@@ -179,6 +179,16 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 		pageReply(w, page, map[string]any{"page": pg, "per_page": per, "count": len(page), "total_pages": max(1, (len(names)+per-1)/per), "total_count": len(names)})
 		return
 	}
+	if len(parts) == 2 && parts[0] == "zones" && r.Method == http.MethodGet { // zone lookup by id
+		for n, id := range f.zones {
+			if id == parts[1] {
+				reply(w, 200, true, map[string]any{"id": id, "name": n, "status": "active"}, "")
+				return
+			}
+		}
+		reply(w, 404, false, nil, "no such zone")
+		return
+	}
 	if len(parts) < 3 || parts[0] != "zones" || parts[2] != "dns_records" {
 		http.NotFound(w, r)
 		return

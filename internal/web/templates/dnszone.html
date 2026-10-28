@@ -1,0 +1,77 @@
+{{define "content"}}
+<div class="crumb"><a href="/dns">DNS</a> / {{.Data.Zone.Name}}</div>
+<h1>Records</h1>
+<p>Every DNS record of the zone {{.Data.Zone.Name}}, as Cloudflare holds it. Rows marked managed are the ones ServanaGo writes for sites: edit them freely, but the next site save or startup may write the site's value back. {{hint "dns_records"}} {{hint "dns_managed"}}</p>
+{{if .Data.Err}}<div class="empty">{{.Data.Err}}</div>{{else}}
+<form method="get" class="ref-controls"><label>Filter <input type="search" name="name" value="{{.Data.Filter}}" placeholder="cdn"></label><button type="submit">Filter</button></form>
+{{if gt .Data.Last 1}}<p>Page {{.Data.Page}} of {{.Data.Last}}:{{if .Data.Prev}} <a href="{{.Data.Prev}}">newer</a>{{end}}{{if .Data.Next}} <a href="{{.Data.Next}}">older</a>{{end}}</p>{{end}}
+{{$zid := .Data.Zone.ID}}
+<article>
+{{if .Data.Rows}}
+<table>
+<thead><tr><th>Type</th><th>Name</th><th>Content</th><th>TTL</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Rows}}
+<tr>
+<td><code>{{.Type}}</code>{{if .Proxied}} <span class="tune" title="Cloudflare proxies requests to this record">cloud</span>{{end}}{{if .Managed}} <span class="tune" title="ServanaGo writes this record for a site; the next save or startup may write it back">managed</span>{{end}}{{if ne .Priority 0}} <small>prio {{.Priority}}</small>{{end}}</td>
+<td><code>{{.Name}}</code></td>
+<td><code>{{.Content}}</code>{{if .Comment}}<br><small>{{.Comment}}</small>{{end}}</td>
+<td>{{if eq .TTL 1}}Auto{{else}}{{.TTL}}{{end}}</td>
+<td><details class="edit-snippet"><summary>Edit</summary>
+<form hx-put="/dns/zones/{{$zid}}/records/{{.ID}}" hx-target="#msg">
+{{template "recordfields" .Fields}}
+<button type="submit">Save</button>
+</form></details>
+<button class="outline danger" hx-delete="/dns/zones/{{$zid}}/records/{{.ID}}" hx-target="#msg" hx-confirm="Delete record {{.Type}} {{.Name}}?">Remove</button></td>
+</tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p>No records {{if .Data.Filter}}match that filter{{else}}yet{{end}}.</p>
+{{end}}
+<p id="msg" role="alert"></p>
+</article>
+<article>
+<header>Add record</header>
+<form hx-post="/dns/zones/{{$zid}}/records" hx-target="#msg">
+<label>Type <select name="type" hx-get="/dns/zones/{{$zid}}/form" hx-target="#record-fields" hx-trigger="change">{{range $t := .Data.Types}}<option value="{{$t}}">{{$t}}</option>{{end}}</select></label>
+<div id="record-fields">{{template "recordfields" .Data.Blank}}</div>
+<button type="submit">Create record</button>
+</form>
+</article>
+{{end}}
+{{end}}
+
+{{define "recordfields"}}{{$t := .T}}{{$r := .R}}
+<input type="hidden" name="type" value="{{$t}}">
+{{if eq $t "A"}}
+<label>IPv4 address <input name="content" placeholder="203.0.113.10"{{if $r.Content}} value="{{$r.Content}}"{{end}} required></label>
+{{else if eq $t "AAAA"}}
+<label>IPv6 address <input name="content" placeholder="2001:db8::10"{{if $r.Content}} value="{{$r.Content}}"{{end}} required></label>
+{{else if eq $t "CNAME"}}
+<label>Target name <input name="content" placeholder="app.example.com"{{if $r.Content}} value="{{$r.Content}}"{{end}} required></label>
+{{else if eq $t "NS"}}
+<label>Nameserver <input name="content" placeholder="ns1.example.net"{{if $r.Content}} value="{{$r.Content}}"{{end}} required></label>
+{{else if eq $t "TXT"}}
+<label>Text <textarea name="content" rows="3" required>{{$r.Content}}</textarea></label>
+{{else if eq $t "MX"}}
+<label>Mail server <input name="content" placeholder="mail.example.com"{{if $r.Content}} value="{{$r.Content}}"{{end}} required></label>
+<label>Priority <input name="priority" inputmode="numeric" placeholder="10"{{if gt $r.Priority 0}} value="{{$r.Priority}}"{{end}}></label>
+{{else if eq $t "SRV"}}
+<label>Priority <input name="srv_priority" inputmode="numeric" placeholder="10" value="{{$r.SRVPri}}"></label>
+<label>Weight <input name="srv_weight" inputmode="numeric" placeholder="5" value="{{$r.SRVWeight}}"></label>
+<label>Port <input name="srv_port" inputmode="numeric" placeholder="8080" value="{{$r.SRVPort}}"></label>
+<label>Target <input name="srv_target" placeholder="sip.example.com" value="{{$r.SRVTarget}}"></label>
+{{else if eq $t "CAA"}}
+<label>Flags <input name="caa_flags" inputmode="numeric" placeholder="0" value="{{$r.CAAFlags}}"></label>
+<label>Tag <select name="caa_tag"><option value="issue"{{if or (not $r.CAATag) (eq $r.CAATag "issue")}} selected{{end}}>issue</option><option value="issuewild"{{if eq $r.CAATag "issuewild"}} selected{{end}}>issuewild</option><option value="iodef"{{if eq $r.CAATag "iodef"}} selected{{end}}>iodef</option></select></label>
+<label>Value <input name="caa_value" placeholder="letsencrypt.org" value="{{$r.CAAValue}}"></label>
+{{end}}
+{{if or (eq $t "A") (eq $t "AAAA") (eq $t "CNAME")}}
+<label>Proxied by Cloudflare <input type="checkbox" name="proxied"{{if $r.Proxied}} checked{{end}}></label>
+{{end}}
+<label>Name (relative to the zone: www, _dmarc, *.static; @ for the zone itself) <input name="name" placeholder="cdn"{{if $r.Name}} value="{{$r.Name}}"{{end}}></label>
+<label>TTL in seconds (blank or 1 = Auto) <input name="ttl" inputmode="numeric"{{if gt $r.TTL 1}} value="{{$r.TTL}}"{{end}}></label>
+<label>Comment <input name="comment" value="{{$r.Comment}}"></label>
+{{end}}

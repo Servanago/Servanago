@@ -33,19 +33,56 @@ func checkCrudType(t string) error {
 	return nil
 }
 
+// Zone fetches one token-visible zone by id (the admin DNS page needs its name for display,
+// relative-record names and the audit trail).
+func (c *Client) Zone(ctx context.Context, id string) (Zone, error) {
+	z, err := c.api.Zones.Get(ctx, zones.ZoneGetParams{ZoneID: cloudflare.F(id)})
+	if err != nil {
+		return Zone{}, fmt.Errorf("get zone %s: %w", id, err)
+	}
+	return Zone{ID: z.ID, Name: z.Name, Status: string(z.Status)}, nil
+}
+
 // Zone is one token-visible DNS zone of the admin DNS page.
 type Zone struct{ ID, Name, Status string }
 
-// ListZones returns every zone the token can see, sorted by name.
+// dnsZonesEnvelope decodes the raw zone JSON: the SDK's autopager walks pages by replaying the
+// query and only stops on an empty page, which a test server returning a fixed body would loop
+// on; the manual loop below breaks on a short page instead.
+type dnsZonesEnvelope struct {
+	Result []struct {
+		ID, Name, Status string
+	} `json:"result"`
+}
+
+const zonesPerPage = 50.0
+
+// ListZones returns every zone the token can see, sorted by name. The loop pages through the API
+// and stops when a page brings no new zone ids: an empty page ends the real API, and a test
+// server that ignores paging repeats itself.
 func (c *Client) ListZones(ctx context.Context) ([]Zone, error) {
 	var out []Zone
-	it := c.api.Zones.ListAutoPaging(ctx, zones.ZoneListParams{PerPage: cloudflare.F(50.0)})
-	for it.Next() {
-		z := it.Current()
-		out = append(out, Zone{ID: z.ID, Name: z.Name, Status: string(z.Status)})
-	}
-	if err := it.Err(); err != nil {
-		return nil, fmt.Errorf("list zones: %w", err)
+	seen := map[string]bool{}
+	for page := 1; page <= 200; page++ {
+		env := dnsZonesEnvelope{} // fresh each page: a reused struct would merge stale fields
+		_, err := c.api.Zones.List(ctx, zones.ZoneListParams{
+			Page:    cloudflare.F(float64(page)),
+			PerPage: cloudflare.F(zonesPerPage),
+		}, option.WithResponseBodyInto(&env))
+		if err != nil {
+			return nil, fmt.Errorf("list zones: %w", err)
+		}
+		added := 0
+		for _, z := range env.Result {
+			if !seen[z.ID] {
+				seen[z.ID] = true
+				added++
+				out = append(out, Zone{ID: z.ID, Name: z.Name, Status: z.Status})
+			}
+		}
+		if len(env.Result) == 0 || page > 1 && added == 0 {
+			break
+		}
 	}
 	slices.SortFunc(out, func(a, b Zone) int { return strings.Compare(a.Name, b.Name) })
 	return out, nil

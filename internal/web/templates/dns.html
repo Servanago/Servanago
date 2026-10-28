@@ -1,0 +1,19 @@
+{{define "content"}}
+<h1>DNS zones</h1>
+<p>Open a Cloudflare zone to manage its DNS records. Site records ServanaGo writes itself appear there too, marked managed. {{hint "dns_zones"}}</p>
+{{if not .Data.Ready}}
+<div class="empty">Cloudflare DNS is not configured, so there are no zones and no DNS records to manage. {{helplink "token"}}</div>
+{{else if .Data.Err}}
+<div class="empty">The zones could not be read: {{.Data.Err}} {{helplink "token"}}</div>
+{{else}}
+<form method="get" action="/dns" class="ref-controls"><label>Filter <input type="search" name="name" value="{{.Data.Filter}}" placeholder="example.com"></label><button type="submit">Filter</button></form>
+<article>
+{{if .Data.Zones}}
+<table><thead><tr><th>Zone</th><th>Status</th></tr></thead>
+<tbody>{{range .Data.Zones}}
+<tr><td><a href="/dns/zones/{{.ID}}">{{.Name}}</a></td><td><span class="tune">{{.Status}}</span></td></tr>
+{{end}}</tbody></table>
+{{else}}<p>No zones {{if .Data.Filter}}match that filter{{else}}are visible to this token{{end}}.</p>{{end}}
+</article>
+{{end}}
+{{end}}
