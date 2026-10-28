@@ -15,6 +15,7 @@ import (
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/store"
 )
@@ -199,6 +200,25 @@ func (s *Server) mcpRun(ctx context.Context, ip string, h http.HandlerFunc, meth
 	r.SetPathValue("id", strconv.FormatInt(id, 10))
 	w := httptest.NewRecorder()
 	h(w, withUser(r, mcpActor))
+	return s.mcpAnswer(w)
+}
+
+// mcpRunPath is mcpRun for handlers whose route carries named segments other than {id}
+// (the DNS record pages: {zid} before {rid}); leave a segment empty when the route has none.
+func (s *Server) mcpRunPath(ctx context.Context, ip string, h http.HandlerFunc, method, target string, segs [][2]string, form url.Values) (warnings []string, err error) {
+	r := httptest.NewRequestWithContext(ctx, method, target, strings.NewReader(form.Encode()))
+	r.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	r.RemoteAddr = net.JoinHostPort(ip, "0")
+	for _, kv := range segs {
+		r.SetPathValue(kv[0], kv[1])
+	}
+	w := httptest.NewRecorder()
+	h(w, withUser(r, mcpActor))
+	return s.mcpAnswer(w)
+}
+
+// mcpAnswer finishes an mcpRun: flashes are warnings, a non-2xx status is the error.
+func (s *Server) mcpAnswer(w *httptest.ResponseRecorder) (warnings []string, err error) {
 	warnings = s.takeFlashes() // runtime setup problems are notices, not errors: the site is saved either way
 	if w.Code != http.StatusOK && w.Code != http.StatusNoContent {
 		return warnings, fmt.Errorf("%d: %s", w.Code, strings.TrimSpace(w.Body.String()))
@@ -292,6 +312,39 @@ type (
 	dnsDone struct {
 		ID   int64     `json:"id"`
 		Rows []dnsView `json:"rows,omitempty"`
+	}
+	dnsZoneArgs struct {
+		Zone string `json:"zone" jsonschema:"zone id or name, from list_dns_zones"`
+	}
+	// SRV and CAA arrive as structured args and compose their content lines server-side.
+	dnsSrvArgs struct {
+		Priority int    `json:"priority,omitempty"`
+		Weight   int    `json:"weight,omitempty"`
+		Port     int    `json:"port,omitempty"`
+		Target   string `json:"target,omitempty"`
+	}
+	dnsCaaArgs struct {
+		Flags int    `json:"flags,omitempty" jsonschema:"0 or 128"`
+		Tag   string `json:"tag,omitempty" jsonschema:"issue | issuewild | iodef"`
+		Value string `json:"value,omitempty"`
+	}
+	dnsRecordArgs struct {
+		Zone     string     `json:"zone" jsonschema:"zone id or name, from list_dns_zones"`
+		ID       string     `json:"id,omitempty" jsonschema:"record id, for update and delete"`
+		Type     string     `json:"type,omitempty" jsonschema:"A, AAAA, CNAME, TXT, MX, SRV, CAA or NS (create required, update fixed)"`
+		Name     string     `json:"name,omitempty" jsonschema:"zone-relative: www, _dmarc, *.static; @ for the zone apex"`
+		Content  string     `json:"content,omitempty" jsonschema:"address for A/AAAA, hostname for CNAME/NS/MX, text for TXT; SRV/CAA compose their content lines instead"`
+		TTL      int        `json:"ttl,omitempty" jsonschema:"seconds; blank or 1 = Auto"`
+		Proxied  *bool      `json:"proxied,omitempty" jsonschema:"only for A, AAAA and CNAME"`
+		Comment  string     `json:"comment,omitempty"`
+		Priority *int       `json:"priority,omitempty" jsonschema:"MX priority 0-65535"`
+		Srv      dnsSrvArgs `json:"srv,omitempty"`
+		Caa      dnsCaaArgs `json:"caa,omitempty"`
+	}
+	dnsRecordDone struct {
+		Zone string `json:"zone"`
+		Type string `json:"type,omitempty"`
+		Name string `json:"name,omitempty"`
 	}
 )
 
@@ -511,6 +564,183 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 		"Sync a site's DNS records: create missing, point owned ones at the wanted IP (record_ip, else the domain default), adopt matching ones. A conflicting record needs take_dns.", s.resyncDNS)
 	dnsTool("take_dns", "takeover",
 		"Take over a site's conflicting DNS records: overwrite them with the wanted IP (record_ip, else the domain default) and mark them managed. Idempotent on already-synced records.", s.takeOverDNS)
+
+	// The DNS CRUD tools are the /dns pages over MCP: full independent record management in any
+	// zone the token sees, not just the domains ServanaGo knows. They run the UI's own handlers,
+	// so validation, audit and error bodies are exactly what the pages would answer.
+	zoneRef := func(ctx context.Context, ref string) (cfdns.Zone, error) {
+		zs, err := s.deps.CF.ListZones(ctx)
+		if err != nil {
+			return cfdns.Zone{}, err
+		}
+		for _, z := range zs {
+			if z.ID == ref || strings.EqualFold(z.Name, ref) {
+				return z, nil
+			}
+		}
+		return cfdns.Zone{}, fmt.Errorf("no zone %q is visible to the Cloudflare token", ref)
+	}
+	type zoneView struct {
+		ID     string `json:"id"`
+		Name   string `json:"name"`
+		Status string `json:"status"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_dns_zones", Description: "Every Cloudflare zone the token can see: id, name, status. Records of any zone are manageable with the dns_record tools, not just managed domains.", Annotations: ro},
+		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, struct {
+			Zones []zoneView `json:"zones"`
+		}, error) {
+			var out struct {
+				Zones []zoneView `json:"zones"`
+			}
+			zs, err := s.deps.CF.ListZones(ctx)
+			for _, z := range zs {
+				out.Zones = append(out.Zones, zoneView{ID: z.ID, Name: z.Name, Status: z.Status})
+			}
+			return nil, out, err
+		})
+
+	type dnsRecordView struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Type     string `json:"type"`
+		Content  string `json:"content"`
+		TTL      int    `json:"ttl"`
+		Proxied  bool   `json:"proxied"`
+		Comment  string `json:"comment,omitempty"`
+		Priority int    `json:"priority,omitempty"`
+		Managed  bool   `json:"managed,omitempty"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_dns_records", Description: "A zone's DNS records of every type (zone-relative name without the zone suffix possible in the type/name fields; SRV and CAA arrive as composed content lines). Marked managed when ServanaGo writes them itself.", Annotations: ro},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in dnsZoneArgs) (*mcp.CallToolResult, struct {
+			Records []dnsRecordView `json:"records"`
+		}, error) {
+			z, err := zoneRef(ctx, in.Zone)
+			var out struct {
+				Records []dnsRecordView `json:"records"`
+			}
+			if err != nil {
+				return nil, out, err
+			}
+			rs, err := s.deps.CF.ListRecords(ctx, z.ID)
+			if err != nil {
+				return nil, out, err
+			}
+			managed := s.managedCFIDs(ctx)
+			for _, fr := range rs {
+				out.Records = append(out.Records, dnsRecordView{ID: fr.ID, Name: fr.Name, Type: fr.Type, Content: fr.Content,
+					TTL: fr.TTL, Proxied: fr.Proxied, Comment: fr.Comment, Priority: fr.Priority, Managed: managed[fr.ID]})
+			}
+			return nil, out, nil
+		})
+
+	// dnsRecordForm turns the tool's fields into the page form; unset fields stay blank.
+	dnsRecordForm := func(in dnsRecordArgs) url.Values {
+		v := url.Values{}
+		set := func(k, s string) {
+			if s != "" {
+				v.Set(k, s)
+			}
+		}
+		set("type", in.Type)
+		set("name", in.Name)
+		set("content", in.Content)
+		set("comment", in.Comment)
+		if in.TTL != 0 {
+			v.Set("ttl", strconv.Itoa(in.TTL))
+		}
+		if in.Proxied != nil && *in.Proxied {
+			v.Set("proxied", "on")
+		}
+		if in.Priority != nil {
+			v.Set("priority", strconv.Itoa(*in.Priority))
+		}
+		if in.Srv.Priority != 0 {
+			v.Set("srv_priority", strconv.Itoa(in.Srv.Priority))
+		}
+		if in.Srv.Weight != 0 {
+			v.Set("srv_weight", strconv.Itoa(in.Srv.Weight))
+		}
+		if in.Srv.Port != 0 {
+			v.Set("srv_port", strconv.Itoa(in.Srv.Port))
+		}
+		set("srv_target", in.Srv.Target)
+		if in.Caa.Flags != 0 {
+			v.Set("caa_flags", strconv.Itoa(in.Caa.Flags))
+		}
+		set("caa_tag", in.Caa.Tag)
+		set("caa_value", in.Caa.Value)
+		return v
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "create_dns_record", Description: "Create a DNS record in a zone. Type, name required; content or the srv/caa args; ttl blank = Auto; proxied only for A, AAAA and CNAME; priority for MX. Audited as 'mcp token'."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in dnsRecordArgs) (*mcp.CallToolResult, dnsRecordDone, error) {
+			z, err := zoneRef(ctx, in.Zone)
+			if err != nil {
+				return nil, dnsRecordDone{}, err
+			}
+			_, err = s.mcpRunPath(ctx, ip, s.dnsRecordCreate, "POST", "/dns/zones/"+z.ID+"/records", [][2]string{{"zid", z.ID}}, dnsRecordForm(in))
+			return nil, dnsRecordDone{Zone: z.Name, Type: in.Type, Name: in.Name}, err
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "update_dns_record", Description: "Change one DNS record: only the fields you pass change; the rest keeps its current value. The record id comes from list_dns_records."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in dnsRecordArgs) (*mcp.CallToolResult, dnsRecordDone, error) {
+			z, err := zoneRef(ctx, in.Zone)
+			if err != nil {
+				return nil, dnsRecordDone{}, err
+			}
+			rs, err := s.deps.CF.ListRecords(ctx, z.ID)
+			if err != nil {
+				return nil, dnsRecordDone{}, err
+			}
+			v, name := url.Values{}, in.Name
+			for _, fr := range rs {
+				if fr.ID != in.ID {
+					continue
+				}
+				row := recordRowOf(fr, nil)
+				name = fr.Name
+				v = url.Values{"type": {fr.Type}, "name": {fr.Name}, "content": {fr.Content}, "comment": {fr.Comment}}
+				if fr.TTL > 1 {
+					v.Set("ttl", strconv.Itoa(fr.TTL))
+				}
+				if fr.Proxied {
+					v.Set("proxied", "on")
+				}
+				if fr.Priority != 0 {
+					v.Set("priority", strconv.Itoa(fr.Priority))
+				}
+				if row.SRVPri != "" {
+					v.Set("srv_priority", row.SRVPri)
+					v.Set("srv_weight", row.SRVWeight)
+					v.Set("srv_port", row.SRVPort)
+					v.Set("srv_target", row.SRVTarget)
+				}
+				if row.CAATag != "" {
+					v.Set("caa_flags", row.CAAFlags)
+					v.Set("caa_tag", row.CAATag)
+					v.Set("caa_value", row.CAAValue)
+				}
+			}
+			if v.Get("type") == "" {
+				return nil, dnsRecordDone{}, fmt.Errorf("no DNS record %q in zone %s", in.ID, z.Name)
+			}
+			overlay := dnsRecordForm(in)
+			overlay.Del("type") // a record's type is fixed; change means delete + create
+			for k := range overlay {
+				v.Set(k, overlay.Get(k))
+			}
+			_, err = s.mcpRunPath(ctx, ip, s.dnsRecordUpdate, "PUT", "/dns/zones/"+z.ID+"/records/"+in.ID, [][2]string{{"zid", z.ID}, {"rid", in.ID}}, v)
+			return nil, dnsRecordDone{Zone: z.Name, Type: in.Type, Name: name}, err
+		})
+
+	mcp.AddTool(srv, &mcp.Tool{Name: "delete_dns_record", Description: "Delete one DNS record by id (list_dns_records). A managed record re-appears at the next site save or startup."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in dnsRecordArgs) (*mcp.CallToolResult, dnsRecordDone, error) {
+			z, err := zoneRef(ctx, in.Zone)
+			if err != nil {
+				return nil, dnsRecordDone{}, err
+			}
+			_, err = s.mcpRunPath(ctx, ip, s.dnsRecordDelete, "DELETE", "/dns/zones/"+z.ID+"/records/"+in.ID, [][2]string{{"zid", z.ID}, {"rid", in.ID}}, nil)
+			return nil, dnsRecordDone{Zone: z.Name}, err
+		})
 
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_snippets", Description: "Caddyfile snippets sites can attach (update_site snippets): name, directives and the sites using each.", Annotations: ro},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, struct {

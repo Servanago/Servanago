@@ -534,3 +534,114 @@ func TestMCPExtraRoutes(t *testing.T) {
 		t.Fatalf("routes not cleared: %q", got)
 	}
 }
+
+// The DNS record tools are the /dns pages over MCP: zone-relative names, every writable type,
+// updates that leave unmentioned fields alone, deletes that confirm nothing.
+func TestMCPDNSRecordTools(t *testing.T) {
+	cf := &cfFake{zones: dnsZonesBody}
+	s := cfgServer(t, cf, config.Config{})
+	s.deps.Cfg.MCPToken = mcpToken
+	sess := mcpSession(t, s, mcpToken)
+
+	var zones struct {
+		Zones []struct {
+			ID, Name, Status string
+		} `json:"zones"`
+	}
+	if err := call(t, sess, "list_dns_zones", nil, &zones); err != nil || len(zones.Zones) != 2 || zones.Zones[0].Name != "beta.example.com" {
+		t.Fatalf("list_dns_zones: %+v %v", zones, err)
+	}
+	if zones.Zones[0].Status != "pending" {
+		t.Errorf("zone status missing: %+v", zones.Zones)
+	}
+
+	if err := call(t, sess, "create_dns_record", map[string]any{
+		"zone": "example.com", "type": "MX", "name": "@", "content": "mail.example.com",
+		"priority": 10, "ttl": 3600, "comment": "mail",
+	}, nil); err != nil {
+		t.Fatalf("create_dns_record: %v", err)
+	}
+	recs := cf.dns.Records()
+	if len(recs) != 1 || recs[0].Name != "example.com" || recs[0].Content != "mail.example.com" || recs[0].Priority != 10 || recs[0].TTL != 3600 || recs[0].Comment != "mail" {
+		t.Fatalf("created MX: %+v", recs)
+	}
+
+	var list struct {
+		Records []struct {
+			ID, Name, Type, Content, Comment string
+			TTL, Priority                    int
+			Proxied                          bool
+		} `json:"records"`
+	}
+	callList := func() {
+		if err := call(t, sess, "list_dns_records", map[string]any{"zone": "example.com"}, &list); err != nil || len(list.Records) != len(cf.dns.Records()) {
+			t.Fatalf("list_dns_records: %+v %v", list, err)
+		}
+	}
+	callList()
+	id := list.Records[0].ID
+	if list.Records[0].Priority != 10 || !strings.Contains(list.Records[0].Name, "example.com") {
+		t.Fatalf("listed record: %+v", list.Records)
+	}
+	_ = id
+
+	// update changes only the passed field: priority to 20, content and comment stay
+	if err := call(t, sess, "update_dns_record", map[string]any{"zone": "example.com", "id": id, "priority": 20}, nil); err != nil {
+		t.Fatalf("update_dns_record: %v", err)
+	}
+	recs = cf.dns.Records()
+	if len(recs) != 1 || recs[0].Priority != 20 || recs[0].Content != "mail.example.com" || recs[0].Comment != "mail" || recs[0].TTL != 3600 {
+		t.Fatalf("updated record: %+v", recs)
+	}
+	// an SRV created and updated keeps its composed content line in both directions
+	if err := call(t, sess, "create_dns_record", map[string]any{
+		"zone": "z1", "type": "SRV", "name": "_s._tcp",
+		"srv": map[string]any{"priority": 10, "weight": 5, "port": 8080, "target": "sip.example.com"},
+	}, nil); err != nil {
+		t.Fatalf("create SRV: %v", err)
+	}
+	callList()
+	srvID := ""
+	for _, r := range list.Records {
+		if r.Type == "SRV" {
+			srvID = r.ID
+			if r.Content != "10 5 8080 sip.example.com" {
+				t.Fatalf("SRV content line: %q", r.Content)
+			}
+		}
+	}
+	if srvID == "" {
+		t.Fatal("SRV record missing from the listing")
+	}
+	if err := call(t, sess, "update_dns_record", map[string]any{
+		"zone": "z1", "id": srvID,
+		"srv": map[string]any{"priority": 20, "weight": 1, "port": 8081, "target": "b.example.com"},
+	}, nil); err != nil {
+		t.Fatalf("update SRV: %v", err)
+	}
+	for _, r := range cf.dns.Records() {
+		if r.Type == "SRV" && (r.Data["target"] != "b.example.com" || r.Data["port"] != float64(8081) || r.Data["priority"] != float64(20)) {
+			t.Fatalf("SRV after update: %+v", r)
+		}
+	}
+
+	if err := call(t, sess, "delete_dns_record", map[string]any{"zone": "example.com", "id": id}, nil); err != nil {
+		t.Fatalf("delete_dns_record: %v", err)
+	}
+	if n := len(cf.dns.Records()); n != 1 {
+		t.Fatalf("wrong record count after delete: %d", n)
+	}
+
+	// refusals: each must say why
+	callBad := func(name string, args map[string]any, want string) {
+		t.Helper()
+		err := call(t, sess, name, args, nil)
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("%s: got %v, want %q", name, err, want)
+		}
+	}
+	mx := map[string]any{"zone": "example.com", "type": "TLSA", "name": "@", "content": "x"}
+	callBad("create_dns_record", mx, "read-only")
+	callBad("list_dns_records", map[string]any{"zone": "nope.example"}, "no zone")
+	callBad("update_dns_record", map[string]any{"zone": "example.com", "id": "gone", "comment": "x"}, "no DNS record")
+}
