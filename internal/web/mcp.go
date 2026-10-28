@@ -80,6 +80,7 @@ type siteArgs struct {
 	RecordIPv6    string    `json:"record_ip6,omitempty"`
 	TLSSkipVerify *bool     `json:"tls_skip_verify,omitempty" jsonschema:"proxy: skip verifying a self-signed https upstream"`
 	Snippets      *[]string `json:"snippets,omitempty" jsonschema:"names of the snippets to attach (see list_snippets); [] detaches all, leaving it out keeps the stored ones"`
+	ExtraRoutes   *string   `json:"extra_routes,omitempty" jsonschema:"paths sent to another app, one per line as path=dial (dial = host:port or absolute socket path), e.g. /api=127.0.0.1:3303; \"\" clears them, leaving it out keeps the stored ones"`
 	Notes         *string   `json:"notes,omitempty" jsonschema:"admin notes shown on the Reference page, plain text, at most 10,000 characters; \"\" clears them, leaving it out keeps the stored ones"`
 }
 
@@ -126,6 +127,9 @@ func (a siteArgs) overlay(v url.Values) {
 	if a.Snippets != nil {
 		v["snippets"] = *a.Snippets
 	}
+	if a.ExtraRoutes != nil {
+		v.Set("extra_routes", *a.ExtraRoutes)
+	}
 	if a.Notes != nil {
 		v.Set("notes", *a.Notes)
 	}
@@ -149,6 +153,7 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v["snippets"] = cur.Snippets
 	v.Set("php_health_path", cur.PHPHealthPath)
 	v.Set("notes", cur.Notes)
+	v.Set("extra_routes", cur.ExtraRoutes)
 	v.Set("allowlist", cur.Allowlist)
 	v.Set("gate_mode", cur.GateMode)
 	v.Set("gate_provider", cur.GateProvider) // the sealed secret is never read back; blank keeps it
@@ -216,6 +221,7 @@ type siteView struct {
 	BasicAuth    bool      `json:"basic_auth"`
 	Snippets     []string  `json:"snippets,omitempty"`
 	Notes        string    `json:"notes,omitempty"`
+	ExtraRoutes  string    `json:"extra_routes,omitempty"`
 	RecordIP     string    `json:"record_ip,omitempty"`
 	RecordIPv6   string    `json:"record_ip6,omitempty"`
 	DNS          []dnsView `json:"dns,omitempty"`
@@ -238,7 +244,7 @@ func dnsViewOf(x store.DNSRecord) dnsView {
 // viewOf drops every secret: the basic-auth hash never leaves the process.
 func viewOf(x store.Site) siteView {
 	v := siteView{ID: x.ID, Slug: x.Slug, Kind: x.Kind, Hostnames: x.Hostnames, Enabled: x.Enabled, StaticRoot: x.StaticRoot,
-		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, RecordIP: x.RecordIP, RecordIPv6: x.RecordIP6, UpdatedAt: x.UpdatedAt}
+		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, ExtraRoutes: x.ExtraRoutes, RecordIP: x.RecordIP, RecordIPv6: x.RecordIP6, UpdatedAt: x.UpdatedAt}
 	switch {
 	case x.UpstreamPort != 0:
 		v.Upstream = net.JoinHostPort(x.UpstreamHost, strconv.Itoa(x.UpstreamPort))

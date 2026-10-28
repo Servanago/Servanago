@@ -31,7 +31,7 @@ A hostname's DNS record points at `record_ip`/`record_ip6` if the site sets one,
 | `fastcgi` | `static_root`, `fcgi_addr`: absolute socket path or host:port |
 | `cgi` | `static_root` (socket-activated fcgiwrap) |
 
-Common optional fields: `allowlist` (CIDRs or IPs, one per line), `enabled` (default true), `record_ip` / `record_ip6` (DNS record for this site), `snippets` (names), `notes` (plain text, at most 10,000 characters; since 0.6.0).
+Common optional fields: `allowlist` (CIDRs or IPs, one per line), `enabled` (default true), `record_ip` / `record_ip6` (DNS record for this site), `snippets` (names), `extra_routes` (since 0.11.0; paths sent to another app, one `path=dial` per line, e.g. `/api=127.0.0.1:3303`; dial is host:port or an absolute socket path), `notes` (plain text, at most 10,000 characters; since 0.6.0).
 
 Check `runtime_report` first: Node, php-fpm, frankenphp and fcgiwrap are detected, never installed by ServanaGo. Hostnames must be real FQDNs: `.local`, `.internal`, `.home.arpa`, IP literals and the panel's own hostname are rejected.
 
@@ -40,6 +40,7 @@ Check `runtime_report` first: Node, php-fpm, frankenphp and fcgiwrap are detecte
 `update_site {id, ...}` changes only the fields you pass. Everything else keeps its stored value, including access controls: the magic-link gate, basic auth and upload limit are UI-only and are never touched or settable over MCP.
 
 - `snippets`: `[]` detaches all; leaving it out keeps the stored ones.
+- `extra_routes`: `""` clears; leaving it out keeps them. `get_site` returns them.
 - `notes`: `""` clears; leaving it out keeps them.
 - `allowlist`: empty keeps the stored list.
 

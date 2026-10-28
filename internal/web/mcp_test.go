@@ -504,3 +504,33 @@ func TestMCPAllowlistLimitsPublicCallers(t *testing.T) {
 		t.Errorf("local relay refused: %d", c)
 	}
 }
+
+// extra_routes: an update_site that does not mention them keeps them (formOf), get_site shows them, "" clears.
+func TestMCPExtraRoutes(t *testing.T) {
+	s, _ := runtimeServer(t)
+	s.deps.Cfg.MCPToken = mcpToken
+	sess := mcpSession(t, s, mcpToken)
+
+	var made changed
+	if err := call(t, sess, "create_site", map[string]any{"kind": "static", "static_root": t.TempDir(), "hostnames": []string{"r.example.com"}, "extra_routes": "/api=127.0.0.1:3303"}, &made); err != nil {
+		t.Fatalf("create_site: %v", err)
+	}
+	if got := getSite(t, sess, made.ID).ExtraRoutes; got != "/api=127.0.0.1:3303" {
+		t.Fatalf("created routes = %q", got)
+	}
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "notes": "x"}, nil); err != nil {
+		t.Fatalf("update_site: %v", err)
+	}
+	if got := getSite(t, sess, made.ID).ExtraRoutes; got != "/api=127.0.0.1:3303" {
+		t.Fatalf("update_site without extra_routes changed them: %q", got)
+	}
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "extra_routes": "nonsense"}, nil); err == nil {
+		t.Fatal("bad route accepted")
+	}
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "extra_routes": ""}, nil); err != nil {
+		t.Fatalf("clear: %v", err)
+	}
+	if got := getSite(t, sess, made.ID).ExtraRoutes; got != "" {
+		t.Fatalf("routes not cleared: %q", got)
+	}
+}
