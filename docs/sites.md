@@ -32,6 +32,7 @@ A site can run as a login-less user named after the site (such as `luckyedward.c
 - CIDR allowlist, basic auth, streaming and upload limits, admin notes.
 - Magic-link gate ([Security](security.md#magic-link-site-access)).
 - Snippets: attach named Caddyfile snippets (below).
+- Extra routes: send certain paths of the site to a different app, one `path=dial` per line (for example `/cryptpad_websocket=127.0.0.1:3303`; dial is `host:port` or an absolute socket path). A path matches itself and everything below it. Any access control still applies first. Also settable over MCP (`extra_routes` on `create_site` and `update_site`).
 
 A site can't use the hostname of `SERVANAGO_HOST`, since the UI route always wins in Caddy.
 

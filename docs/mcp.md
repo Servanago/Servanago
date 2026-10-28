@@ -8,6 +8,7 @@ Clients that only speak stdio run `servanago mcp`, which relays to the local end
 
 - Read tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `list_snippets`, `backup_status`, `list_backups`, `plan_restore`.
 - Write tools: `create_site`, `update_site`, `set_site_enabled`, `delete_site`, `resync_dns`, `take_dns`, `create_domain`, `update_domain`, `create_snippet`, `update_snippet`, `delete_snippet`, `run_backup`, `restore_site`.
+- `update_site` changes only the fields passed; the rest, including snippets, extra routes, notes and the access controls, keep their stored values. `get_site` returns snippets, extra routes, notes and the DNS rows.
 - Writes run the UI's own handlers, so validation, the apply path, DNS and audit are the same. The audit actor is `mcp token`.
 
 **One token, read and write, no scopes and no per-person audit.** A leaked token can create, change and delete sites: treat it like an administrator password. Gate credentials, basic-auth passwords and upload limits are UI-only. The panel is never restored over MCP.
