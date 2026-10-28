@@ -1,6 +1,6 @@
 # Requirements: startup self-heals hand-edit-era schema gaps
 
-Status: settled 2026-10-27 (brainstorm). Design not started.
+Status: settled 2026-10-27 (brainstorm); amended 2026-10-27 after the design review (gate, CHECK limit, callers). Design: `design_migration_selfheal.md`.
 
 ## Problem
 
@@ -38,9 +38,10 @@ known gap set itself, after a consistent DB backup — no operator step, same sp
      `sites_site_user` (001:63)
    The definitions used must be the current `001_init.sql` ones. New schema changes never
    enter this list; they are `NNN_*.sql` migrations only.
-3. **Vintage gate.** Repair applies only when the DB is at least 0.1.0 vintage
-   (`sites.fpm_version` present — 0.1.0's 001 had it). An older DB (no `fpm_version`) is
-   unsupported: `Open` refuses with a descriptive error naming the vintage, never partially
+3. **Vintage gate.** Repair applies only when the DB already has what ALTER cannot add:
+   `sites.fpm_version`, `sites.extra_routes`, and a kind CHECK that allows `cgi` (all present in the
+   0.2.0-era schema; the first 0.1.0 package lacked them). An older DB is
+   unsupported: `Open` refuses with a descriptive error naming the missing piece, never partially
    repairs. (Covers the repo fossil DB: refuse, do not half-fix.)
 4. **Backup before any ALTER.** Before creating the first object, take a consistent snapshot
    (`VACUUM INTO` or `sqlite3 .backup` path is a design choice), named like the existing
@@ -49,8 +50,11 @@ known gap set itself, after a consistent DB backup — no operator step, same sp
 5. **Repair evidence.** One journal line per created object plus one system audit event
    (actor `system`) for the repair as a whole, following `config.bootstrapped` precedent.
 6. **Every entry point covered.** Because repair lives in the `store.Open` path, server
-   start, CLI (`user add`, `2fa-reset`), helper DB use and the php job all get it — no
-   caller may see "no such column" after a successful `Open`.
+   start, CLI (`user add`, `2fa-reset`, `import`, `reset`) get it — no
+   caller may see "no such column" after a successful `Open`. The backup job's snapshot copy
+   (`OpenSnapshot`) is exempt. The helper and the php job do not open the DB.
+9. **Known limit.** Table-level CHECKs on the added columns cannot be added by ALTER; a repaired
+   DB lacks them (application validation remains). Documented, not repaired.
 7. **Idempotent.** On a complete DB the whole pass is pure reads (v1 unaffected). On a
    repaired DB, the second start creates nothing and logs nothing.
 8. **Failure mode.** If an ALTER fails, `Open` returns a descriptive error (fail fast, with
@@ -70,8 +74,8 @@ known gap set itself, after a consistent DB backup — no operator step, same sp
 2. **Idempotence.** Opening the fixture twice: second run performs no ALTERs/creates.
 3. **Healthy DB.** Current-001 fixture: verification is a no-op, no snapshot written, no
    audit row.
-4. **Pre-0.1.0 vintage.** Fixture without `fpm_version`: `Open` errors, message names the
-   vintage, nothing modified.
+4. **Below the vintage gate.** Fixture without `fpm_version`, without `extra_routes`, or with a
+   kind CHECK lacking `cgi`: `Open` errors, message names the missing piece, nothing modified.
 5. **Repair failure.** Snapshot failure (e.g. unwritable dir): `Open` errors, DB unchanged.
 
 Bee deployment acceptance: upgrade bee with a build containing this code, start once,
