@@ -89,7 +89,7 @@ func openJob(dir, envFile string) (*job, func(), error) {
 		cleanup()
 		return nil, nil, fmt.Errorf("read the panel database: %w", err)
 	}
-	st, err := store.Open(snap)
+	st, err := store.OpenSnapshot(snap)
 	if err != nil {
 		cleanup()
 		return nil, nil, err

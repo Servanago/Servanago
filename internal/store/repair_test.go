@@ -26,6 +26,7 @@ func legacyDB(t *testing.T, schema string) string {
 		t.Fatal(err)
 	}
 	for _, q := range []string{
+		`PRAGMA journal_mode = WAL`, // as on a real host: Open must not rewrite the header of a refused file
 		schema,
 		`INSERT INTO users (username, password_hash, webauthn_id) VALUES ('admin', 'x', x'01')`,
 		`INSERT INTO sites (slug, kind, static_root) VALUES ('site1', 'static', '/srv/site1')`,
@@ -240,5 +241,21 @@ func TestOpenSnapshotDoesNotRepair(t *testing.T) {
 	}
 	if _, err := os.Stat(path + ".pre-repair"); err == nil {
 		t.Error("OpenSnapshot wrote a .pre-repair")
+	}
+}
+
+// A snapshot that cannot be written aborts the repair before any ALTER.
+func TestRepairSnapshotFailureAborts(t *testing.T) {
+	path := legacyDB(t, old001)
+	if err := os.MkdirAll(filepath.Join(path+".pre-repair", "squatter"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(path)
+	if _, err := Open(path); err == nil || !strings.Contains(err.Error(), "snapshot") {
+		t.Fatalf("Open = %v, want a snapshot error", err)
+	}
+	after, _ := os.ReadFile(path)
+	if !bytes.Equal(before, after) {
+		t.Error("a failed snapshot still modified the database")
 	}
 }

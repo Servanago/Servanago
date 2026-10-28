@@ -7,9 +7,11 @@ import (
 	"embed"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	_ "modernc.org/sqlite"
 )
@@ -29,8 +31,15 @@ type Store struct {
 	tx bool
 }
 
-// Open opens (creating if needed) the database and applies pending migrations. ":memory:" is for tests.
-func Open(path string) (*Store, error) {
+// Open opens (creating if needed) the database, repairs the schema gaps of pre-0.5.0 databases (repair.go) and
+// applies pending migrations. ":memory:" is for tests.
+func Open(path string) (*Store, error) { return openDB(path, true) }
+
+// OpenSnapshot opens a copy of the database (the backup job's) without repairing it: a repair belongs to the
+// live database, not to a scratch copy.
+func OpenSnapshot(path string) (*Store, error) { return openDB(path, false) }
+
+func openDB(path string, repair bool) (*Store, error) {
 	dsn := "file:" + path + "?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)"
 	if path == ":memory:" {
 		dsn = "file::memory:?_pragma=foreign_keys(1)"
@@ -44,11 +53,26 @@ func Open(path string) (*Store, error) {
 	if path == ":memory:" {
 		db.SetMaxOpenConns(1) // each in-memory connection is a separate database
 	}
+	var repaired bool
+	if repair {
+		var err error
+		if repaired, err = repairLegacy(db, path); err != nil {
+			db.Close()
+			return nil, err
+		}
+	}
 	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, err
 	}
-	return &Store{db: db, q: db}, nil
+	st := &Store{db: db, q: db}
+	if repaired {
+		e := AuditEntry{At: time.Now().UTC().Format(time.RFC3339), Actor: "system", Action: "schema.repaired", Target: "database"}
+		if err := st.AddAudit(context.Background(), e); err != nil {
+			slog.Error("audit schema.repaired", "error", err)
+		}
+	}
+	return st, nil
 }
 
 func (s *Store) Close() error { return s.db.Close() }
