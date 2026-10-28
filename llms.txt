@@ -65,6 +65,8 @@ Read tools:
 - `audit_tail {limit?}`: newest audit rows (default 20, at most 100).
 - `list_snippets`: snippet names, directives, sites using each.
 - `backup_status`, `list_backups {scope?}`, `plan_restore {id, archive}`: backup settings and latest results, archives, what a restore would do.
+- `list_dns_zones`: every Cloudflare zone the token sees: id, name, status.
+- `list_dns_records {zone}`: a zone's records of every type; `managed` marks the ones ServanaGo writes for sites.
 
 Write tools:
 - `create_site`: needs `kind` (proxy | static | node | php | frankenphp | fastcgi | cgi), `hostnames` and the kind's fields (`static_root`, `scheme`, `upstream_host`, `upstream_port`, `port`, `start_command`, `install_command`, `build_command`, `fpm_version`, `fcgi_addr`, `allowlist`, `enabled`, `record_ip`, `record_ip6`, `tls_skip_verify`, `snippets`, `extra_routes`, `notes`).
@@ -72,6 +74,7 @@ Write tools:
 - `set_site_enabled {id, enabled}`, `delete_site {id, delete_dns?}` (files are never touched; the DNS record is kept unless `delete_dns`).
 - `resync_dns {id}`, `take_dns {id}`: sync or take over the site's DNS records (overwrite a conflicting record and mark it managed), like the dashboard's Retry and Take over buttons. Idempotent on synced records; both return the refreshed DNS rows.
 - `create_domain {name, default_ip, default_ip6?, cert_mode?}`, `update_domain {id, ...}`: manage a zone's default record IPs and certificate mode; `update_domain` touches no existing records — run `resync_dns` on each site to converge.
+- `create_dns_record {zone, type, name, content?, srv?, caa?, priority?, ttl?, proxied?, comment?}`, `update_dns_record {zone, id, ...}` (only the passed fields change), `delete_dns_record {zone, id}`: full record CRUD in any token-visible zone (types A, AAAA, CNAME, TXT, MX, SRV, CAA, NS; rarer types read-only). Names post zone-relative (`www`, `_dmarc`, `*.static`, `@` = the apex). A managed record may be written back or re-added by the next save of its site or startup.
 - `create_snippet {name, body}`, `update_snippet {name, body}`, `delete_snippet {name}` (only if no site uses it). Body is Caddyfile directives: named matchers with respond, error, redir, header, request_header, request_body, encode.
 - `run_backup {scope}` (`all`, `panel` or a site's short name), `restore_site {id, archive, files?, dumps?, volumes?, confirm}`: overwrites data after taking a backup of the current state; `confirm` must be the site's exact short name; run `plan_restore` first. The panel is never restored over MCP.
 

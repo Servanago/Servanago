@@ -66,6 +66,10 @@ Cloudflare records ServanaGo creates are marked `managed by servanago` and are t
 
 Dashboard and Logs show upstream health, certificate expiry, DNS state and a live Caddy/ACME log. The Audit page lists every sign-in and change, including MCP actions.
 
+## The DNS pages
+
+The DNS page is a full independent record view of every Cloudflare zone the token can see — not just managed domains: create, edit and delete records in the browser (types A, AAAA, CNAME, TXT, MX, SRV, CAA, NS), with the same rules for rarer types, name input and the managed badge as the MCP record tools (see [MCP](mcp.md)).
+
 ## Built-in help
 
 A hint under every field, a live preview of what *Add site* will create, plain-language explanations of errors and status words, a getting-started checklist and a Help page.

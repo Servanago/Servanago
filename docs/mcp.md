@@ -6,8 +6,9 @@ Off unless `SERVANAGO_MCP_TOKEN` is set (see [Configuration](configuration.md#mc
 
 Clients that only speak stdio run `servanago mcp`, which relays to the local endpoint and needs `SERVANAGO_MCP_TOKEN` in its environment (`SERVANAGO_MCP_URL` overrides the endpoint).
 
-- Read tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `list_snippets`, `backup_status`, `list_backups`, `plan_restore`.
-- Write tools: `create_site`, `update_site`, `set_site_enabled`, `delete_site`, `resync_dns`, `take_dns`, `create_domain`, `update_domain`, `create_snippet`, `update_snippet`, `delete_snippet`, `run_backup`, `restore_site`.
+- Read tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `list_snippets`, `backup_status`, `list_backups`, `plan_restore`, `list_dns_zones`, `list_dns_records`.
+- Write tools: `create_site`, `update_site`, `set_site_enabled`, `delete_site`, `resync_dns`, `take_dns`, `create_domain`, `update_domain`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, `create_snippet`, `update_snippet`, `delete_snippet`, `run_backup`, `restore_site`.
+- DNS records (0.12.0): the record tools are the [/dns pages](sites.md) for any zone the token sees, independent of the site model. `list_dns_records` marks rows `managed` that ServanaGo writes for sites; editing or deleting one works, and the next save of its site (or a startup) may write the site's value back. Writable types: A, AAAA, CNAME, TXT, MX, SRV, CAA, NS; rarer types are listed but refused (`type TLSA is read-only in ServanaGo`). Names post zone-relative (`www`, `_dmarc`, `*.static`, `@` = the apex).
 - `update_site` changes only the fields passed; the rest, including snippets, extra routes, notes and the access controls, keep their stored values. `get_site` returns snippets, extra routes, notes and the DNS rows.
 - Writes run the UI's own handlers, so validation, the apply path, DNS and audit are the same. The audit actor is `mcp token`.
 
