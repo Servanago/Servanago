@@ -54,12 +54,27 @@ func (c Client) wait(ctx context.Context, conn net.Conn) bool {
 	return conn.SetDeadline(deadline) == nil
 }
 
+// readLine reads one clamd reply: the daemon terminates its lines with NUL (a newline is
+// accepted too, and a bare unterminated reply still counts once the stream ends).
 func readLine(conn net.Conn) (string, error) {
-	line, err := bufio.NewReader(conn).ReadString('\n')
-	if err != nil {
-		return "", err
+	r := bufio.NewReader(conn)
+	var b strings.Builder
+	buf := make([]byte, 1)
+	for {
+		n, err := r.Read(buf)
+		if n == 1 {
+			if buf[0] == 0 || buf[0] == '\n' {
+				return strings.TrimSpace(b.String()), nil
+			}
+			b.WriteByte(buf[0])
+		}
+		if err != nil {
+			if b.Len() > 0 {
+				return strings.TrimSpace(b.String()), nil
+			}
+			return "", err
+		}
 	}
-	return strings.TrimSpace(line), nil
 }
 
 // Ping is the health check the scan page and settings save call.
@@ -145,7 +160,7 @@ func dial(ctx context.Context, socket string) (net.Conn, error) {
 
 func verdictOf(reply string) Verdict {
 	switch {
-	case reply == "OK":
+	case reply == "OK" || reply == "stream: OK": // the real daemon prefixes the verdict
 		return Verdict{Clean: true}
 	case strings.HasPrefix(reply, "stream: ") && strings.HasSuffix(reply, " FOUND"):
 		return Verdict{Virus: strings.TrimSuffix(strings.TrimPrefix(reply, "stream: "), " FOUND")}

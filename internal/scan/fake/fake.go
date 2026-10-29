@@ -50,7 +50,7 @@ func serveClamd(c net.Conn, failWith string, n *atomic.Int64) {
 	}
 	switch cmd := strings.TrimSuffix(line, "\x00"); {
 	case cmd == "zPING":
-		_, _ = c.Write([]byte("PONG\n"))
+		_, _ = c.Write([]byte("PONG\x00"))
 	case cmd == "zINSTREAM":
 		var body []byte
 		var lenBytes [4]byte
@@ -70,14 +70,14 @@ func serveClamd(c net.Conn, failWith string, n *atomic.Int64) {
 		n.Add(1)
 		switch {
 		case failWith != "":
-			_, _ = c.Write([]byte(failWith + "\n"))
+			_, _ = c.Write([]byte(failWith + "\x00"))
 		case strings.Contains(string(body), "EICAR-STANDARD-ANTIVIRUS-TEST-FILE"):
-			_, _ = c.Write([]byte("stream: Eicar-Test-Signature FOUND\n"))
+			_, _ = c.Write([]byte("stream: Eicar-Test-Signature FOUND\x00"))
 		default:
-			_, _ = c.Write([]byte("OK\n"))
+			_, _ = c.Write([]byte("stream: OK\x00")) // the real daemon prefixes its verdicts
 		}
 	default:
-		_, _ = c.Write([]byte("UNKNOWN COMMAND\n"))
+		_, _ = c.Write([]byte("UNKNOWN COMMAND\x00"))
 	}
 }
 
@@ -93,13 +93,14 @@ func readFull(r *bufio.Reader, p []byte) (int, error) {
 	return total, nil
 }
 
-// Infected writes a file whose content carries the test signature at root/name, creating the dir.
+// Infected writes the exact EICAR test string at path (real clamd detects only the standalone
+// string, not one embedded in other text; creating the dir happens first).
 func Infected(t testing.TB, path string) {
 	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, []byte("header\n"+eicarPrefix+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(path, []byte(eicarPrefix), 0o644); err != nil {
 		t.Fatal(err)
 	}
 }

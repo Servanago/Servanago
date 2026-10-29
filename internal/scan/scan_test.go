@@ -195,3 +195,40 @@ func TestQuarantineFallsBackToCopy(t *testing.T) {
 		t.Fatalf("copied mode: %v vs %v %v", info.Mode(), srcInfo.Mode(), err)
 	}
 }
+
+// TestLiveClamd exercises the real daemon when the host has one (bee and v1 do): the verdict
+// lines must parse exactly. Skipped everywhere else (the fake covers the protocol shape).
+func TestLiveClamd(t *testing.T) {
+	const socket = "/run/clamav/clamd.ctl"
+	if _, err := os.Stat(socket); err != nil {
+		t.Skip("no clamd on this host:", err)
+	}
+	c := New(socket)
+	ctx := context.Background()
+	if err := c.Ping(ctx); err != nil {
+		t.Fatal("PING:", err)
+	}
+	root := t.TempDir()
+	clean := filepath.Join(root, "clean.txt")
+	if err := os.WriteFile(clean, []byte("plain text\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	v, err := c.ScanFile(ctx, clean)
+	if err != nil || !v.Clean || v.Virus != "" {
+		t.Fatalf("clean verdict: %+v %v", v, err)
+	}
+	fake.Infected(t, filepath.Join(root, "bad.php")) // the EICAR test string, harmless by construction
+	v, err = c.ScanFile(ctx, filepath.Join(root, "bad.php"))
+	if err != nil || v.Clean || v.Virus != "Eicar-Test-Signature" {
+		t.Fatalf("hit verdict: %+v %v", v, err)
+	}
+	res, err := c.ScanTree(ctx, root, func(path, virus string) error {
+		if virus != "Eicar-Test-Signature" {
+			t.Errorf("hit callback: %q %q", path, virus)
+		}
+		return nil
+	})
+	if err != nil || res.Files != 2 || res.Skipped != 0 || len(res.Errs) != 0 {
+		t.Fatalf("tree: %+v %v", res, err)
+	}
+}
