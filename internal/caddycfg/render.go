@@ -206,7 +206,11 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 			"headers": m{"Content-Type": []string{"text/plain; charset=utf-8"}, "Retry-After": []string{"3600"}}}, nil
 	}
 	if host == r.MLHost() {
-		return m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}, nil
+		gate := m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}
+		if geo := geoRouteOf(r); geo != nil { // a blocked country never reaches the gate's form
+			return m{"handler": "subroute", "routes": []any{m{"handle": []any{geo, gate}}}}, nil
+		}
+		return gate, nil
 	}
 	var extras []any
 	if r.ExtraRoutes != "" {
@@ -271,11 +275,14 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 			handlers = []any{m{"handler": "subroute", "routes": routes}}
 		}
 	}
-	if r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(snip) == 0 && len(handlers) == 1 {
+	if r.CountryMode == "" && r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(snip) == 0 && len(handlers) == 1 {
 		return handlers[0], nil
 	}
 
 	var sub []any
+	if geo := geoRouteOf(r); geo != nil { // the country rule leads: a blocked country is 403 before the gate or the site
+		sub = append(sub, m{"handle": []any{geo}})
+	}
 	cidrs := strings.Fields(r.Allowlist)
 	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
 		gate := m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}}}
@@ -310,6 +317,14 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 // dotfile404 answers any dotfile or dot-directory path (.env, .git) with 404; the upstream never sees it.
 func dotfile404() m {
 	return m{"match": []any{m{"path_regexp": m{"pattern": `(^|/)\.`}}}, "handle": []any{m{"handler": "static_response", "status_code": "404"}}, "terminal": true}
+}
+
+// geoRouteOf is the site's country rule as a handler config, or nil when the site has none.
+func geoRouteOf(r store.Site) any {
+	if r.CountryMode == "" {
+		return nil
+	}
+	return m{"handler": "servanago_geoip", "mode": r.CountryMode, "countries": strings.Fields(r.Countries)}
 }
 
 // extraRoutes renders the site's extra routes (admin-entered, config.ParseExtraRoutes): each becomes

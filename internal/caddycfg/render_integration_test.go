@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	_ "github.com/servanago/servanago/internal/caddygeoip"
 	"github.com/servanago/servanago/internal/caddytest"
 	"github.com/servanago/servanago/internal/store"
 )
@@ -123,4 +124,33 @@ func encodingOf(t *testing.T, httpsPort int, host, path string) string {
 	}
 	defer resp.Body.Close()
 	return resp.Header.Get("Content-Encoding")
+}
+
+// TestGeoRouteLoads proves the rendered country rule is a JSON Caddy loads (the module comes
+// with the caddygeoip import) and that local traffic still reaches the site: the rules only
+// judge public addresses, so the blocking logic itself lives in caddygeoip's own tests.
+func TestGeoRouteLoads(t *testing.T) {
+	storage := caddytest.TempDir(t)
+	caddytest.Cleanup(t)
+	t.Cleanup(func() { _ = caddy.Stop() })
+	upstream := caddytest.Upstream(t, "geo")
+	_, port, _ := net.SplitHostPort(upstream)
+	n, _ := strconv.Atoi(port)
+	site := store.Site{ID: 2, Hostnames: []string{"geo.test"}, Scheme: "http", UpstreamHost: "127.0.0.1",
+		UpstreamPort: n, Enabled: true, CountryMode: "deny", Countries: "DE FR"}
+	o := opts()
+	o.Issuer = Internal
+	o.HTTPPort, o.HTTPSPort = caddytest.FreePort(t), caddytest.FreePort(t)
+	o.StoragePath = storage
+	b, err := Render(State{[]store.Domain{}, []store.Site{site}}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caddy.Load(b, false); err != nil {
+		t.Fatalf("caddy rejected the geo config: %v", err)
+	}
+	// the site answers its upstream for a local client (the geo rule judges public addresses only)
+	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "geo.test", "/"); status != 200 {
+		t.Errorf("local GET: %d", status)
+	}
 }

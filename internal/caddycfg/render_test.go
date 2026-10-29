@@ -443,3 +443,64 @@ func TestDisabledSiteServesMaintenance(t *testing.T) {
 		}
 	}
 }
+
+// The country rule leads the site's chain (and the ml host's): a blocked country is 403 before
+// the gate, the basic-auth prompt or the site can answer.
+func TestGeoLeadsTheChain(t *testing.T) {
+	st := with(site, func(r *store.Site) {
+		r.GateMode, r.Allowlist, r.BasicUser = "acl", "", "gateuser"
+		r.CountryMode, r.Countries = "deny", "DE FR"
+	})
+	got, err := Render(State{[]store.Domain{dom}, []store.Site{st}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	// walk to the site's subroute: its first handle carries servanago_geoip, the second the gate
+	var walk func(v any) bool
+	walk = func(v any) bool {
+		switch x := v.(type) {
+		case map[string]any:
+			if routes, ok := x["routes"].([]any); ok && len(routes) >= 2 {
+				first, _ := routes[0].(map[string]any)
+				h0, _ := first["handle"].([]any)
+				if len(h0) == 1 && strings.Contains(fmt.Sprint(h0[0]), "servanago_geoip") &&
+					strings.Contains(fmt.Sprint(first["handle"]), `mode:deny`) {
+					second, _ := routes[1].(map[string]any)
+					return strings.Contains(fmt.Sprint(second), "servanago_gate")
+				}
+			}
+			for _, c := range x {
+				if walk(c) {
+					return true
+				}
+			}
+		case []any:
+			for _, c := range x {
+				if walk(c) {
+					return true
+				}
+			}
+		}
+		return false
+	}
+	var cfg any
+	if err := json.Unmarshal(got, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if !walk(cfg) {
+		t.Errorf("the country rule must precede the gate:\n%s", got)
+	}
+	// the ml host: geo, then the gate's form handler, in that order
+	ml := with(st, func(r *store.Site) { r.Hostnames = append(r.Hostnames, r.MLHost()) })
+	mlgot, err := Render(State{[]store.Domain{dom}, []store.Site{ml}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mlCfg any
+	if err := json.Unmarshal(mlgot, &mlCfg); err != nil {
+		t.Fatal(err)
+	}
+	if !walk(mlCfg) {
+		t.Errorf("the ml host needs the geo rule ahead of its gate:\n%s", mlgot)
+	}
+}
