@@ -47,6 +47,9 @@ func domainServer(t *testing.T, cf *cfFake) *Server { return cfgServer(t, cf, co
 // cfgServer is domainServer with an arbitrary config (the gate tests need SMTP + secret set).
 func cfgServer(t *testing.T, cf *cfFake, cfg config.Config) *Server {
 	t.Helper()
+	if cfg.DataDir == "" {
+		cfg.DataDir = t.TempDir() // tests must never write outside their temp dirs (quarantine lives here)
+	}
 	cf.dns = cftest.New(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		cf.calls.Add(1)

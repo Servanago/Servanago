@@ -350,6 +350,16 @@ details.feature[open] > summary { color: var(--sg-text); border-bottom: 1px soli
   .sidebar a:not(.brand), .sidebar .signout { width: auto; }
 }
 
+/* Scan runs: on a phone the numeric columns (files, skipped) hide — the run's report carries them. */
+.scanruns td, .scanruns th { overflow-wrap: normal; }
+.scanruns td:nth-child(1), .scanruns th:nth-child(1) { white-space: nowrap; }
+.scanruns td:nth-child(2), .scanruns th:nth-child(2) { white-space: nowrap; }
+@media (max-width: 640px) {
+  .scanruns th:nth-child(5), .scanruns td:nth-child(5),
+  .scanruns th:nth-child(6), .scanruns td:nth-child(6) { display: none; }
+  .scanruns td:nth-child(7), .scanruns th:nth-child(7) { display: none; } /* hits are on the report */
+}
+
 /* ---- Shared page system: every page inside main.content --------------------------------------------- */
 main.content > h1 { margin: 0 0 0.35rem; font-size: 1.75rem; line-height: 1.2; letter-spacing: -0.02em; }
 main.content > h1 + p { max-width: 70ch; margin: 0 0 1.5rem; color: var(--sg-text-secondary); }

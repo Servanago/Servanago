@@ -1,0 +1,29 @@
+{{define "content"}}
+<h1>Virus scanning</h1>
+<p>Site folders are checked against ClamAV's <strong>clamd</strong>, which must run on this server: ServanaGo never installs or updates it. Found files are quarantined under the data directory; ntfy and email alerts go out once per scan that finds hits.</p>
+{{if not .Data.On}}<div class="empty">Scanning is off. Set the clamd socket path on <a href="/settings">Settings</a>; the daemon itself comes from <code>apt install clamav-daemon</code>. {{helplink "scan"}}</div>
+{{else if .Data.PingErr}}<div class="banner warn" role="alert"><strong>clamd is not answering on {{.Data.Socket}}.</strong> {{.Data.PingErr}}</div>
+{{end}}
+{{if .Data.On}}
+<form method="get" action="/scan" class="ref-controls"><label>Filter <input type="search" name="name" value="{{.Data.Filter}}" placeholder="example.com"></label><button type="submit">Filter</button></form>
+{{if .Data.Rows}}
+<article>
+<table class="scanruns">
+<thead><tr><th>When</th><th>Site</th><th>Trigger</th><th>State</th><th>Files</th><th>Skipped</th><th>Hits</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Rows}}
+<tr>
+<td><small>{{unixts .StartedAt}}</small></td>
+<td><a href="/scan/runs/{{.ID}}">{{if .SiteName}}{{.SiteName}}{{else}}site {{.SiteID}}{{end}}</a></td>
+<td><span class="tune">{{.Trigger}}</span></td>
+<td>{{scanstate .State}}</td>
+<td>{{.Files}}</td><td>{{.Skipped}}</td>
+<td>{{len .Hits}}</td>
+<td><a href="/scan/runs/{{.ID}}">{{if .Running}}Running{{else}}Report{{end}}</a></td>
+</tr>
+{{end}}
+</tbody></table>
+</article>
+{{else}}<div class="empty">No scans have run yet. {{helplink "scan"}} Use <strong>Scan now</strong> on a site's row.</div>{{end}}
+{{end}}<p id="msg" role="alert"></p>
+{{end}}

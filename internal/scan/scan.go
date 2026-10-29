@@ -187,21 +187,20 @@ func (c *Client) ScanTree(ctx context.Context, root string, hit func(path, virus
 			note(&res, p+" over "+sizeText(maxStream))
 			return nil
 		}
-		res.Files++
 		v, err := c.ScanFile(ctx, p)
 		switch {
 		case err != nil:
 			return err
 		case v.Clean:
+			res.Files++
 			return nil
 		case v.TooBig:
-			res.Files--
 			res.Skipped++
 			return nil
 		case v.Virus != "":
+			res.Files++
 			return hit(p, v.Virus)
 		default:
-			res.Files--
 			note(&res, p+": "+v.Err)
 			return nil
 		}

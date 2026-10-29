@@ -90,7 +90,7 @@ func (s *Server) takeFlashes() []string {
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "siteedit", "snippets", "logs", "help", "php", "reference", "backups"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "scan", "scanrun", "siteedit", "snippets", "logs", "help", "php", "reference", "backups"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -193,6 +193,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /help", s.protected(s.helpPage))
 	mux.Handle("GET /settings", s.protected(s.settingsPage))
 	mux.Handle("POST /settings/smtp", s.protected(s.saveSMTP))
+	mux.Handle("POST /settings/scan", s.protected(s.saveScan))
+	mux.Handle("GET /scan", s.protected(s.scanPage))
+	mux.Handle("GET /scan/runs/{id}", s.protected(s.scanRunPage))
+	mux.Handle("POST /scan/sites/{id}", s.protected(s.startScanSite))
+	mux.Handle("POST /sites/{id}/scan", s.protected(s.startScanSite))
+	mux.Handle("POST /scan/hits/{hid}/{do}", s.protected(s.scanHitAction))
 	mux.Handle("GET /backups", s.protected(s.backupsPage))
 	mux.Handle("POST /backups/settings", s.protected(s.saveBackupSettings))
 	mux.Handle("POST /backups/run", s.protected(s.runBackup))

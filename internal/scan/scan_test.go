@@ -8,10 +8,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/servanago/servanago/internal/scan/fake"
 )
 
 func TestPingAgainstFakeClamd(t *testing.T) {
-	sock, _ := fakeClamd(t, "")
+	sock, _ := fake.Clamd(t, "")
 	if err := New(sock).Ping(context.Background()); err != nil {
 		t.Fatalf("PING: %v", err)
 	}
@@ -21,7 +23,7 @@ func TestPingAgainstFakeClamd(t *testing.T) {
 }
 
 func TestScanFileVerdicts(t *testing.T) {
-	sock, _ := fakeClamd(t, "")
+	sock, _ := fake.Clamd(t, "")
 	c := New(sock)
 	ctx := context.Background()
 	root := t.TempDir()
@@ -35,7 +37,7 @@ func TestScanFileVerdicts(t *testing.T) {
 		t.Fatalf("clean verdict: %+v %v", v, err)
 	}
 	bad := filepath.Join(root, "bad.php")
-	infected(t, bad)
+	fake.Infected(t, bad)
 	v, err = c.ScanFile(ctx, bad)
 	if err != nil || v.Clean || v.Virus != "Eicar-Test-Signature" {
 		t.Fatalf("hit verdict: %+v %v", v, err)
@@ -46,7 +48,7 @@ func TestScanFileVerdicts(t *testing.T) {
 }
 
 func TestScanTreeReportsHitsAndSkips(t *testing.T) {
-	sock, calls := fakeClamd(t, "")
+	sock, calls := fake.Clamd(t, "")
 	c := New(sock)
 	ctx := context.Background()
 	root := t.TempDir()
@@ -60,7 +62,7 @@ func TestScanTreeReportsHitsAndSkips(t *testing.T) {
 	} else {
 		f.Close()
 	}
-	infected(t, filepath.Join(root, "eicar.php"))
+	fake.Infected(t, filepath.Join(root, "eicar.php"))
 	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -86,13 +88,13 @@ func TestScanTreeReportsHitsAndSkips(t *testing.T) {
 	if res.Files != 2 || res.Skipped != 3 || len(hits) != 1 || hits[0] != "eicar.php=Eicar-Test-Signature" {
 		t.Fatalf("result %+v hits %v", res, hits)
 	}
-	if *calls != 2 {
-		t.Errorf("streams sent: %d", *calls)
+	if calls() != 2 {
+		t.Errorf("streams sent: %d", calls())
 	}
 }
 
 func TestScanTreeCarriesClamdFailure(t *testing.T) {
-	sock, _ := fakeClamd(t, "ERROR: engine overloaded")
+	sock, _ := fake.Clamd(t, "ERROR: engine overloaded")
 	c := New(sock)
 	root := t.TempDir()
 	if err := os.WriteFile(filepath.Join(root, "a.txt"), []byte("x"), 0o644); err != nil {
@@ -110,9 +112,10 @@ func TestScanTreeCarriesClamdFailure(t *testing.T) {
 }
 
 func TestScanTreeHitCallbackAborts(t *testing.T) {
-	c := New(func() string { s, _ := fakeClamd(t, ""); return s }())
+	sock, _ := fake.Clamd(t, "")
+	c := New(sock)
 	root := t.TempDir()
-	infected(t, filepath.Join(root, "eicar.php"))
+	fake.Infected(t, filepath.Join(root, "eicar.php"))
 	var got int
 	if _, err := c.ScanTree(context.Background(), root, func(string, string) error { got++; return errors.New("quarantine refused") }); err == nil || got != 1 || !strings.Contains(err.Error(), "quarantine refused") {
 		t.Fatalf("callback error not fatal: %d %v", got, err)
@@ -126,7 +129,7 @@ func TestQuarantineAndRestoreRoundTrip(t *testing.T) {
 	if err := os.Mkdir(filepath.Dir(src), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	infected(t, src)
+	fake.Infected(t, src)
 	to, err := Quarantine(src, dir)
 	if err != nil || !strings.HasPrefix(to, dir+string(os.PathSeparator)) || !strings.HasSuffix(to, "-eicar.php") {
 		t.Fatalf("quarantine: %q %v", to, err)
@@ -151,7 +154,7 @@ func TestQuarantineAndRestoreRoundTrip(t *testing.T) {
 	if err := Restore(to, src); err == nil {
 		t.Error("restore from a path that no longer exists was accepted")
 	}
-	infected(t, filepath.Join(dir, "x.php"))
+	fake.Infected(t, filepath.Join(dir, "x.php"))
 	if err := Restore(filepath.Join(dir, "x.php"), src); err == nil || !strings.Contains(err.Error(), "exists again") {
 		t.Fatalf("restore over an existing path was accepted: %v", err)
 	}

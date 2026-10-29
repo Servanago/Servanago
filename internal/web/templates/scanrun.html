@@ -1,0 +1,28 @@
+{{define "content"}}
+<div class="crumb"><a href="/scan">Virus scanning</a> / {{if .Data.Run.SiteName}}{{.Data.Run.SiteName}}{{else}}site {{.Data.Run.SiteID}}{{end}}</div>
+<h1>Scan report</h1>
+<p>{{unixts .Data.Run.StartedAt}} · trigger <span class="tune">{{.Data.Run.Trigger}}</span> · state {{scanstate .Data.Run.State}} · {{.Data.Run.Files}} file{{if ne .Data.Run.Files 1}}s{{end}} checked{{if ne .Data.Run.Skipped 0}}, {{.Data.Run.Skipped}} skipped (symlinks, oversized){{end}}{{if .Data.Run.Error}}<br><small>{{errhtml .Data.Run.Error}}</small>{{end}}{{hint "scan_hits"}}</p>
+{{if .Data.Run.Hits}}
+<article>
+<table>
+<thead><tr><th>File</th><th>Found</th><th>State</th><th></th></tr></thead>
+<tbody>
+{{range .Data.Run.Hits}}
+<tr>
+<td><code>{{.Path}}</code></td>
+<td><code>{{.Virus}}</code></td>
+<td>{{hitstate .Action}}</td>
+<td class="actions">
+{{if eq .Action "quarantined"}}<button class="mini warn" hx-post="/scan/hits/{{.ID}}/restore" hx-target="#msg" hx-confirm="Move {{.Path}} back into the site folder? Visitors can reach it again.">Restore</button>
+<button class="mini" hx-post="/scan/hits/{{.ID}}/ignore" hx-target="#msg" hx-confirm="Stop warning about {{.Virus}} in {{.Path}}? The file stays in the quarantine.">Ignore</button>
+{{else if eq .Action "live"}}<button class="mini danger" hx-post="/scan/hits/{{.ID}}/quarantine" hx-target="#msg" hx-confirm="Move {{.Path}} into the quarantine now?">Quarantine</button>
+{{else if eq .Action "error"}}<button class="mini danger" hx-post="/scan/hits/{{.ID}}/quarantine" hx-target="#msg" hx-confirm="Move {{.Path}} into the quarantine now?">Quarantine</button>{{end}}
+</td>
+</tr>
+{{end}}
+</tbody>
+</table>
+</article>
+{{else}}<div class="empty">Nothing infected was found in this run.</div>{{end}}
+<p id="msg" role="alert"></p>
+{{end}}

@@ -21,6 +21,12 @@ type smtpData struct {
 	From      string
 	PassSet   bool // a sealed password exists
 	MailReady bool // host and sender set: the gate can send
+	// The virus-scanning section.
+	ScanOn   bool   // a clamd socket is set
+	Socket   string // the configured path
+	Hour     string
+	NtfySet  bool
+	TokenSet bool
 }
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -31,7 +37,9 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	s.render(w, "settings", http.StatusOK, page{Title: "Settings", Data: smtpData{
 		Host: st.SMTPHost, Port: strconv.Itoa(st.SMTPPort), User: st.SMTPUser, From: st.MailFrom,
-		PassSet: st.SMTPPass != nil, MailReady: st.MailReady()}})
+		PassSet: st.SMTPPass != nil, MailReady: st.MailReady(),
+		ScanOn: st.ScanSocket != "", Socket: st.ScanSocket, Hour: strconv.Itoa(st.ScanHour),
+		NtfySet: st.ScanNtfy != nil, TokenSet: st.ScanNtfyToken != nil}})
 }
 
 // saveSMTP replaces the email delivery settings wholesale; a blank password keeps the stored one.
@@ -85,7 +93,10 @@ func (s *Server) saveSMTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if err := s.deps.Store.SaveSettings(r.Context(), store.Settings{
 		SMTPHost: host, SMTPPort: port, SMTPUser: user, SMTPPass: pass, MailFrom: from,
-		UpdatedAt: time.Now().UTC().Format(time.RFC3339)}); err != nil {
+		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
+		// the scanner panel below owns its own columns: carry them over untouched
+		ScanSocket: cur.ScanSocket, ScanHour: cur.ScanHour, ScanNtfy: cur.ScanNtfy, ScanNtfyToken: cur.ScanNtfyToken,
+	}); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}

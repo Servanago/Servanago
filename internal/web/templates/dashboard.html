@@ -16,6 +16,7 @@
 <span class="host">{{.Host}}{{range .Aliases}}<small class="alias">{{.}}</small>{{end}}</span>
 <span class="target">{{.Target}}</span>
 <span class="chip">{{.KindLabel}}</span>
+{{if .ScanOn}}{{if ne .Scan.StartedAt 0}}<span class="chip" title="Newest scan run{{if .Scan.FinishedAt}} ({{unixts .Scan.FinishedAt}}){{end}}">{{if .ScanHits}}{{printf "%d hit" .ScanHits}}{{if ne .ScanHits 1}}s{{end}}{{else if eq .Scan.State "running"}}scan running{{else if eq .Scan.State "error"}}scan error{{else if .Scan.FinishedAt}}scan clean{{end}}</span>{{end}}{{end}}
 <span class="state state-{{$h.Level}}">{{$h.Label}}</span>
 </summary>
 <div class="srow-body">
@@ -45,6 +46,8 @@
 {{if .DNSOn}}{{if eq .DNSState "conflict"}}<button class="mini warn" hx-post="/sites/{{.ID}}/dns/takeover" hx-target="#msg" hx-confirm="Overwrite the existing DNS record(s) for {{.Host}}? The current record(s) will be replaced.">{{icon "takeover"}}Take over DNS</button>
 {{else if eq .DNSState "error"}}<button class="mini" hx-post="/sites/{{.ID}}/dns/resync" hx-target="#msg">{{icon "refresh"}}Retry DNS</button>
 {{else}}<button class="mini" hx-post="/sites/{{.ID}}/dns/resync" hx-target="#msg" title="Check the record in Cloudflare again">{{icon "refresh"}}Resync</button>{{end}}{{end}}
+{{if and .ScanOn .Scanable}}{{if eq .Scan.State "running"}}<button class="mini" disabled title="A scan is already running">{{icon "refresh"}}Scanning…</button>
+{{else}}<button class="mini" hx-post="/sites/{{.ID}}/scan" hx-target="#msg" title="Check this site's folder against clamd now">{{icon "shield"}}Scan now</button>{{end}}{{end}}
 <button class="mini danger delete-site" data-id="{{.ID}}" data-host="{{.Host}}" data-dns-ip="{{.OwnedSummary}}" title="Delete this site">{{icon "trash"}}Delete</button>
 </div>
 </div>

@@ -40,18 +40,12 @@ func TestScanRunsAndHitsLifeCycle(t *testing.T) {
 		t.Fatalf("hits: %+v %v", hits, err)
 	}
 
-	// the dedupe: an unresolved quarantined hit suppresses re-alarm, a resolved one does not
-	if ok, err := s.UnresolvedHitPath(ctx, stID, "/srv/x/eicar.php", "Win.Test.EICAR"); err != nil || !ok {
-		t.Fatalf("unresolved = %v %v", ok, err)
-	}
+	// actions resolve a hit: quarantined stays until restored
 	if err := s.SetScanHitAction(ctx, hit, "restored", ""); err != nil {
 		t.Fatal(err)
 	}
 	if h, err := s.GetScanHit(ctx, hit); err != nil || h.Action != "restored" || h.QuarantinedTo != "" || h.UpdatedAt == 0 {
 		t.Fatalf("hit after restore: %+v %v", h, err)
-	}
-	if ok, _ := s.UnresolvedHitPath(ctx, stID, "/srv/x/eicar.php", "Win.Test.EICAR"); ok {
-		t.Error("a restored hit still suppresses the alarm")
 	}
 
 	// listing filters by site and orders newest first

@@ -18,4 +18,22 @@
 </form>
 <p id="smtp-msg" role="alert"></p>
 </article>
+<article>
+<h2>Virus scanning</h2>
+{{if .Data.ScanOn}}<p>On. Site folders are checked against clamd on this server; hit alerts also reach ntfy{{if .Data.NtfySet}} (set){{else}} when its topic is set{{end}} and email{{if .Data.MailReady}} (set){{else}} when email delivery is set above{{end}}.</p>
+{{else}}<p>Off. Set the clamd socket path to turn scanning on — the daemon itself comes from <code>apt install clamav-daemon</code>; ServanaGo never installs or updates it.</p>{{end}}
+<form hx-post="/settings/scan" hx-target="#scan-msg">
+<label>clamd socket <input name="scan_socket" value="{{.Data.Socket}}" placeholder="/run/clamav/clamd.ctl" autocomplete="off"></label>
+{{hint "scan_socket"}}
+<label>Sweep hour (0-23) <input name="scan_hour" value="{{.Data.Hour}}" placeholder="3" inputmode="numeric"></label>
+{{hint "scan_hour"}}
+<label>ntfy topic URL {{if .Data.NtfySet}}(set; leave blank to keep){{end}} <input name="scan_ntfy" placeholder="https://ntfy.example.com/servanago" autocomplete="off"></label>
+{{hint "scan_ntfy"}}
+<label>ntfy access token {{if .Data.TokenSet}}(set; leave blank to keep){{end}} <input type="password" name="scan_ntfy_token" autocomplete="new-password" placeholder="{{if .Data.TokenSet}}leave blank to keep{{end}}"></label>
+{{hint "scan_ntfy_token"}}
+<button type="submit">Save</button>
+<button type="button" class="outline" hx-post="/settings/scan" hx-target="#scan-msg" hx-vals='{"clear_ntfy":"1"}' hx-confirm="Forget the ntfy topic and its access token?">Forget ntfy</button>
+</form>
+<p id="scan-msg" role="alert"></p>
+</article>
 {{end}}

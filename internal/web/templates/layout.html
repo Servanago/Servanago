@@ -35,6 +35,7 @@
 <div class="nav-group"><h6>Operations</h6>
 <a href="/logs"{{if eq .Nav "logs"}} aria-current="page"{{end}}>{{icon "list"}}Logs</a>
 <a href="/backups"{{if eq .Nav "backups"}} aria-current="page"{{end}}>{{icon "archive"}}Backups</a>
+<a href="/scan"{{if eq .Nav "scan"}} aria-current="page"{{end}}>{{icon "shield"}}Scan</a>
 {{if .LoggedIn}}<a href="/audit"{{if eq .Nav "audit"}} aria-current="page"{{end}}>{{icon "clock"}}Audit trail</a>{{end}}
 </div>
 </nav>

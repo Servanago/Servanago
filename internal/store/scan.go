@@ -146,8 +146,36 @@ func (s *Store) AddScanHit(ctx context.Context, h ScanHit) (int64, error) {
 	return id, nil
 }
 
+// ListScanHits returns the hits of one run.
 func (s *Store) ListScanHits(ctx context.Context, runID int64) ([]ScanHit, error) {
 	return s.listScanHitsWhere(ctx, "run_id=?", runID)
+}
+
+// CountRunsHits counts the hits of each run id (the dashboard badge).
+func (s *Store) CountRunsHits(ctx context.Context, runIDs []int64) (map[int64]int, error) {
+	out := map[int64]int{}
+	if len(runIDs) == 0 {
+		return out, nil
+	}
+	args := make([]any, len(runIDs))
+	for i, id := range runIDs {
+		args[i] = id
+	}
+	rows, err := s.q.QueryContext(ctx,
+		`SELECT run_id, COUNT(*) FROM scan_hits WHERE run_id IN (`+strings.TrimSuffix(strings.Repeat("?,", len(runIDs)), ",")+`) GROUP BY run_id`, args...)
+	if err != nil {
+		return nil, fmt.Errorf("count scan hits: %w", err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var id int64
+		var n int
+		if err := rows.Scan(&id, &n); err != nil {
+			return nil, err
+		}
+		out[id] = n
+	}
+	return out, rows.Err()
 }
 
 // ListRunsHits returns the hits of several runs keyed by run id (the scan page's newest-runs view).
@@ -193,19 +221,6 @@ func (s *Store) listScanHitsWhere(ctx context.Context, where string, arg any) ([
 		out = append(out, h)
 	}
 	return out, rows.Err()
-}
-
-// UnresolvedHitPath is true when the site already has a hit row for path+virus that is still
-// quarantined or ignored: re-finding it must not alarm again.
-func (s *Store) UnresolvedHitPath(ctx context.Context, siteID int64, path, virus string) (bool, error) {
-	var n int
-	err := s.q.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM scan_hits h WHERE h.site_id=? AND h.path=? AND h.virus=? AND h.action IN ('quarantined','ignored')`,
-		siteID, path, virus).Scan(&n)
-	if err != nil {
-		return false, fmt.Errorf("check hit %s: %w", path, err)
-	}
-	return n > 0, nil
 }
 
 // GetScanHit loads one hit, or a not-found error the caller turns into 404.

@@ -18,6 +18,11 @@ type siteRow struct {
 	Host  string
 	DNS   []store.DNSRecord // the site's A and AAAA rows that exist, A first
 	DNSOn bool              // Cloudflare is configured; otherwise the DNS column and actions are hidden
+	// Virus scanning: ScanOn only gates the badge/button display; Scan is the newest run (any
+	// state), ScanHits its hit count.
+	ScanOn   bool
+	Scan     store.ScanRun
+	ScanHits int
 	// Probed is false for disabled routes: nothing is served, so nothing is checked.
 	Probed   bool
 	Upstream string // up | down
@@ -44,6 +49,9 @@ func (r siteRow) OwnedSummary() string { return recordSummary(ownedRecords(r.DNS
 // Aliases are the hostnames after the primary one.
 func (r siteRow) Aliases() []string { return r.Hostnames[1:] }
 
+// scanable is true when this site has a folder to walk (kinds without one are skipped).
+func (r siteRow) Scanable() bool { return servedRootOf(r.Site) != "" }
+
 func (s *Server) siteRows(r *http.Request) ([]siteRow, error) {
 	rs, err := s.deps.Store.ListSites(r.Context())
 	if err != nil {
@@ -52,7 +60,7 @@ func (s *Server) siteRows(r *http.Request) ([]siteRow, error) {
 	return s.buildRows(r, rs)
 }
 
-// buildRows adds DNS state and live probes (upstream, certificate) to the given sites.
+// buildRows adds DNS state, live probes (upstream, certificate) and the newest scan to the given sites.
 func (s *Server) buildRows(r *http.Request, rs []store.Site) ([]siteRow, error) {
 	dns, err := s.deps.Store.ListDNS(r.Context())
 	if err != nil {
@@ -62,10 +70,39 @@ func (s *Server) buildRows(r *http.Request, rs []store.Site) ([]siteRow, error) 
 	for _, d := range dns {
 		bySite[d.SiteID] = append(bySite[d.SiteID], d)
 	}
+	st, serr := s.deps.Store.GetSettings(r.Context())
+	runIDs := map[int64]store.ScanRun{} // newest run per site
+	if serr == nil && st.ScanSocket != "" {
+		if runs, err := s.deps.Store.ListScanRuns(r.Context(), 0, 500); err == nil {
+			seen := map[int64]bool{}
+			for _, run := range runs { // DESC: the first hit per site is its newest
+				if !seen[run.SiteID] {
+					seen[run.SiteID] = true
+					runIDs[run.SiteID] = run
+				}
+			}
+		}
+	}
 	rows := make([]siteRow, len(rs))
 	for i, x := range rs {
-		rows[i] = siteRow{Site: x, Host: x.Hostnames[0], DNS: bySite[x.ID], DNSOn: s.dnsOn()}
-		rows[i].Probed = x.Enabled && s.deps.Probe != nil
+		rows[i] = siteRow{Site: x, Host: x.Hostnames[0], DNS: bySite[x.ID], DNSOn: s.dnsOn(),
+			ScanOn: st.ScanSocket != "", Scan: runIDs[x.ID]}
+	}
+	var (
+		hitIDs []int64
+		hitBy  map[int64]int
+	)
+	for _, row := range rows {
+		if row.Scan.ID != 0 {
+			hitIDs = append(hitIDs, row.Scan.ID)
+		}
+	}
+	if hitBy, err = s.deps.Store.CountRunsHits(r.Context(), hitIDs); err != nil {
+		return nil, err
+	}
+	for i := range rows {
+		rows[i].ScanHits = hitBy[rows[i].Scan.ID]
+		rows[i].Probed = rows[i].Enabled && s.deps.Probe != nil
 	}
 	s.attachContainers(r.Context(), rows)
 	// Probes wait on the network, so run them side by side; each goroutine writes only its own row.

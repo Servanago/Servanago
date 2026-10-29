@@ -49,6 +49,11 @@ var hints = map[string]string{
 	"dns_zones":            "The Cloudflare token decides which zones appear here; production tokens are account-owned, so every zone of the account shows up. ServanaGo only reads: changes land on Cloudflare, and rows it writes for sites are marked managed inside a zone.",
 	"dns_records":          "Record names are relative to the zone: cdn, _dmarc, *.static; @ is the zone itself. The common types are editable (A, AAAA, CNAME, TXT, MX, SRV, CAA, NS); rarer types such as TLSA or SVCB show but cannot be edited here.",
 	"dns_managed":          "A managed row is one ServanaGo writes for a site. Editing or deleting it works, but the next save of that site (or a startup) may write the site's value back or re-add the row.",
+	"scan_socket":          "The unix socket clamd listens on, such as the Debian default /run/clamav/clamd.ctl (check `grep LocalSocket /etc/clamav/clamd.conf`). Empty turns scanning off. ServanaGo never installs clamd: `apt install clamav-daemon` does, and the daemon keeps its own signatures fresh.",
+	"scan_hour":            "The hour of day (0-23) a background sweep checks every enabled site's served folder. A manual Scan now works any time.",
+	"scan_ntfy":            "Optional: an ntfy topic URL where every scan with hits posts an urgent message, such as https://ntfy.example.com/servanago. Hits also email the MAIL FROM mailbox when email delivery above is set up.",
+	"scan_ntfy_token":      "Only if your ntfy asks for one: the topic's access token. Sealed with SERVANAGO_SECRET_KEY.",
+	"scan_hits":            "A hit is one file and the signature it matched. ServanaGo streams every regular file of the site's served folder, skipping symlinks and files over the daemon's size limit, and moves what it finds into DATA_DIR/quarantine/. While a file sits in the quarantine it does not re-alert; a file back at the original path does.",
 	"notes":                "Your own notes about this site (owner, purpose, things to remember), up to 10,000 characters. Plain text. Shown on the Reference page; nothing here changes how the site is served.",
 	"backup_overview":      "A job running as root copies each opted-in site's folder, its database dumps and chosen container volumes into one encrypted archive per run; the panel's own database, certificates and secret key go into the panel archive. Archives stay on this server until you download them: copy them off the machine, because a disk failure takes both.",
 	"backup_dir":           "An absolute folder on this server, such as /var/backups/servanago. It is created with access for root and the servanago group only. It needs free space for the archives you keep; a run that would not fit is skipped and reported.",
@@ -199,6 +204,10 @@ var helpSections = []helpSection{
 <p><strong>Wildcard</strong> (the default) gets one certificate for <code>*.example.com</code> that covers every site under the domain. New sites are instant, and the names of your sites stay out of public certificate logs.</p>
 <p><strong>Per host</strong> gets a separate certificate for each site, which is slower for each new site. A wildcard covers one level only: <code>oc.example.com</code> yes, <code>a.oc.example.com</code> no.</p>`},
 	{"statuses", "What the status words mean", ``}, // table is generated from statusHelp
+	{"scan", "Virus scanning", `
+<p>ServanaGo streams the files of a site's served folder to ClamAV's <strong>clamd</strong> daemon, which must run on this server and keep its own signature database fresh; ServanaGo never installs or updates it. Install the daemon with <code>apt install clamav-daemon</code> and enter its socket on Settings (the Debian default is <code>/run/clamav/clamd.ctl</code>).</p>
+<p>A <strong>scan</strong> reads every regular file, skipping symlinks and files over the daemon's size limit. Anything found is <strong>quarantined</strong> straight away: the file is moved to <code>DATA_DIR/quarantine/</code> under the data directory, so it can no longer be served, and one message goes to the ntfy topic (if set) and one email to the MAIL FROM mailbox (if email delivery is set up). Nothing is ever deleted outright.</p>
+<p>Every scan, however it started (a <strong>Scan now</strong> button, the daily <strong>sweep</strong>, a site backup), is one report row on the Scan page with its hits. A hit can be <strong>restored</strong> (the file moves back into the site folder) or <strong>ignored</strong> (it stays in the quarantine and stops alarming). Restores are refused when something else already sits at the original path.</p>`},
 	{"token", "The Cloudflare token (optional)", `
 <p>Cloudflare is optional: without a token ServanaGo uses HTTP-01 certificates and manages no DNS. With a token it also creates the DNS records and can use wildcard certificates. The token needs two permissions on your zones: <strong>Zone &rarr; Zone &rarr; Read</strong> and <strong>Zone &rarr; DNS &rarr; Edit</strong>. Create it under My Profile, API Tokens. It is set as <code>CLOUDFLARE_API_TOKEN</code> in the environment file and is never stored in the database or shown here. After changing the file, restart ServanaGo.</p>`},
 	{"addresses", "Which addresses can be used", `
@@ -273,6 +282,47 @@ var helpFuncs = template.FuncMap{
 	},
 	"helplink": func(anchor string) template.HTML {
 		return template.HTML(`<a class="help-link" href="/help#` + html.EscapeString(anchor) + `" title="Open help" aria-label="Open help">?</a>`)
+	},
+	// unixts renders an INTEGER unix-seconds column the way the audit page renders its RFC3339 strings.
+	"unixts": func(n int64) string {
+		if n == 0 {
+			return ""
+		}
+		return time.Unix(n, 0).UTC().Format(time.RFC3339)
+	},
+	// scanstate and hitstate wear the shared status-pill styles: red where the file can still
+	// serve, neutral elsewhere.
+	"scanstate": func(state string) template.HTML {
+		words := map[string]struct{ Word, Class string }{
+			"running": {"running", "cert-pending"},
+			"ok":      {"clean", "cert-issued"},
+			"error":   {"error", "cert-error"},
+		}
+		w, ok := words[state]
+		if !ok {
+			w = struct{ Word, Class string }{state, ""}
+		}
+		if w.Class == "" {
+			return template.HTML(html.EscapeString(w.Word)) // #nosec: escaped above
+		}
+		return template.HTML(`<span class="` + w.Class + `" title="Scan run state">` + html.EscapeString(w.Word) + `</span>`) // #nosec: fixed table + escaped word
+	},
+	"hitstate": func(state string) template.HTML {
+		words := map[string]struct{ Word, Class string }{
+			"live":        {"still in the site", "cert-error"},
+			"error":       {"move failed", "cert-error"},
+			"quarantined": {"quarantined", ""},
+			"ignored":     {"ignored", ""},
+			"restored":    {"restored", ""},
+		}
+		w, ok := words[state]
+		if !ok {
+			w = struct{ Word, Class string }{state, ""}
+		}
+		if w.Class == "" {
+			return template.HTML(`<span class="tune" title="Quarantine state">` + html.EscapeString(w.Word) + `</span>`) // #nosec: fixed table + escaped word
+		}
+		return template.HTML(`<span class="` + w.Class + `" title="Quarantine state">` + html.EscapeString(w.Word) + `</span>`) // #nosec: fixed table + escaped word
 	},
 	"size":           config.FormatSize,
 	"icon":           icon,
