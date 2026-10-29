@@ -118,8 +118,8 @@ func TestRepairAddsMissingLegacyObjects(t *testing.T) {
 	if users != 1 || sites != 1 {
 		t.Errorf("rows lost: users %d sites %d", users, sites)
 	}
-	if ver != 5 {
-		t.Errorf("user_version = %d, want migrations 002..005 applied", ver)
+	if ver != 6 {
+		t.Errorf("user_version = %d, want migrations 002..006 applied", ver)
 	}
 
 	fi, err := os.Stat(path + ".pre-repair")
