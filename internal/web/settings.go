@@ -103,6 +103,7 @@ func (s *Server) saveSMTP(w http.ResponseWriter, r *http.Request) {
 		// the scanner and geo panels below own their own columns: carry them over untouched
 		ScanSocket: cur.ScanSocket, ScanHour: cur.ScanHour, ScanNtfy: cur.ScanNtfy, ScanNtfyToken: cur.ScanNtfyToken,
 		GeoDB: cur.GeoDB, WebUIMode: cur.WebUIMode, WebUICountries: cur.WebUICountries,
+		MailToken: cur.MailToken, MailLMTP: cur.MailLMTP, MailTLS: cur.MailTLS, MailUser: cur.MailUser, MailPass: cur.MailPass,
 	}); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
