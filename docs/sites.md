@@ -70,6 +70,10 @@ Dashboard and Logs show upstream health, certificate expiry, DNS state and a liv
 
 The DNS page is a full independent record view of every Cloudflare zone the token can see — not just managed domains: create, edit and delete records in the browser (types A, AAAA, CNAME, TXT, MX, SRV, CAA, NS), with the same rules for rarer types, name input and the managed badge as the MCP record tools (see [MCP](mcp.md)).
 
+## Country filter
+
+A site's Country filter (the access area of its editor) answers whole countries with a plain 403: **Deny these countries** keeps the listed ones out, **Allow only these countries** keeps everyone else out. Codes are ISO 3166-1 two-letter codes (DE, US), space or comma separated. Everything from the machine itself, a home network or a tailnet (private addresses) is never judged, and the `/.well-known/` paths always stay open so certificates keep renewing. A record proxied through Cloudflare is judged by the address Cloudflare names in `CF-Connecting-IP` (a header Cloudflare sets itself); otherwise the visiting address is. The database is MaxMind's GeoLite2-Country, read from Settings' path — ServanaGo never installs it: `apt install geoipupdate` keeps the file current with your license key in `/etc/GeoIP.conf`. A rule that cannot read the database lets everyone in.
+
 ## Virus scanning
 
 The Scan page shows the runs and their hits. ServanaGo streams each site's served folder through ClamAV's clamd (its socket lives on Settings; the daemon, installed with `apt install clamav-daemon`, keeps its own signatures fresh), quarantines every hit into `DATA_DIR/quarantine/`, alerts ntfy and email once per scan, and offers restore or ignore per hit. The daily sweep runs at the hour Settings names; Scan now runs any time; a site backup streams its files through the same scan and skips infected ones from the archive.
