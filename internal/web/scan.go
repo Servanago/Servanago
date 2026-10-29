@@ -8,11 +8,13 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/scan"
 	"github.com/servanago/servanago/internal/secretbox"
 	"github.com/servanago/servanago/internal/store"
@@ -395,6 +397,8 @@ func (s *Server) saveScan(w http.ResponseWriter, r *http.Request) {
 		ScanHour:      hour,
 		ScanNtfy:      ntfyURL,
 		ScanNtfyToken: ntfyToken,
+		// the geo panel owns its own columns: carry them over untouched
+		GeoDB: cur.GeoDB, WebUIMode: cur.WebUIMode, WebUICountries: cur.WebUICountries,
 	}
 	if err := s.deps.Store.SaveSettings(r.Context(), st); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
@@ -481,4 +485,54 @@ func (s *Server) finishHit(ctx context.Context, r *http.Request, h store.ScanHit
 	s.audit(r, action, h.Virus+" "+h.Path)
 	w.Header().Set("HX-Redirect", "/scan/runs/"+strconv.FormatInt(h.RunID, 10))
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// saveGeo stores the country-filter section: the mmdb path and the panel's own rule. The file is
+// geoipupdate's business; ServanaGo only reads it.
+func (s *Server) saveGeo(w http.ResponseWriter, r *http.Request) {
+	if err := r.ParseForm(); err != nil {
+		fail(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	db := strings.TrimSpace(r.PostFormValue("geo_db"))
+	if db != "" && !filepath.IsAbs(db) {
+		fail(w, http.StatusUnprocessableEntity, "The MaxMind database path must be absolute, such as /var/lib/GeoIP/GeoLite2-Country.mmdb.")
+		return
+	}
+	if db != "" {
+		if _, err := os.Stat(db); os.IsNotExist(err) {
+			s.flash("Saved, but no MaxMind database exists at " + db + " yet — installing geoipupdate fills it (apt install geoipupdate; the license key goes into /etc/GeoIP.conf).")
+		}
+	}
+	cur, err := s.deps.Store.GetSettings(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	mode := r.PostFormValue("webui_mode")
+	countries := ""
+	if mode != "" {
+		if mode != "deny" && mode != "allow" {
+			fail(w, http.StatusUnprocessableEntity, "The panel's country mode must be deny, allow or empty (off).")
+			return
+		}
+		codes, err := config.ValidateCountryList(r.PostFormValue("webui_countries"))
+		if err != nil {
+			fail(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		countries = strings.Join(codes, " ")
+	}
+	if err := s.deps.Store.SaveSettings(r.Context(), store.Settings{
+		SMTPHost: cur.SMTPHost, SMTPPort: cur.SMTPPort, SMTPUser: cur.SMTPUser, SMTPPass: cur.SMTPPass, MailFrom: cur.MailFrom,
+		UpdatedAt:  time.Now().UTC().Format(time.RFC3339),
+		ScanSocket: cur.ScanSocket, ScanHour: cur.ScanHour, ScanNtfy: cur.ScanNtfy, ScanNtfyToken: cur.ScanNtfyToken,
+		GeoDB: db, WebUIMode: mode, WebUICountries: countries,
+	}); err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.geo.Use(db)
+	s.audit(r, "settings.geoip", "db="+db)
+	hxRedirect(w, "/settings")
 }

@@ -20,16 +20,22 @@ type Settings struct {
 	ScanHour      int
 	ScanNtfy      []byte
 	ScanNtfyToken []byte
+	// Country blocking for the panel: the mmdb file (geoipupdate keeps it fresh, empty = geo off)
+	// and the panel's own country rule.
+	GeoDB          string
+	WebUIMode      string // "" | deny | allow
+	WebUICountries string
 }
 
-const settingsCols = "smtp_host, smtp_port, smtp_user, smtp_pass, mail_from, updated_at, scan_socket, scan_hour, scan_ntfy, scan_ntfy_token"
+const settingsCols = "smtp_host, smtp_port, smtp_user, smtp_pass, mail_from, updated_at, scan_socket, scan_hour, scan_ntfy, scan_ntfy_token, geo_db, webui_mode, webui_countries"
 
 func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 	var st Settings
 	err := s.q.QueryRowContext(ctx,
 		`SELECT `+settingsCols+` FROM settings WHERE id=1`).
 		Scan(&st.SMTPHost, &st.SMTPPort, &st.SMTPUser, &st.SMTPPass, &st.MailFrom, &st.UpdatedAt,
-			&st.ScanSocket, &st.ScanHour, &st.ScanNtfy, &st.ScanNtfyToken)
+			&st.ScanSocket, &st.ScanHour, &st.ScanNtfy, &st.ScanNtfyToken,
+			&st.GeoDB, &st.WebUIMode, &st.WebUICountries)
 	if err != nil {
 		return st, fmt.Errorf("read settings: %w", err)
 	}
@@ -38,9 +44,10 @@ func (s *Store) GetSettings(ctx context.Context) (Settings, error) {
 
 func (s *Store) SaveSettings(ctx context.Context, st Settings) error {
 	if _, err := s.q.ExecContext(ctx,
-		`UPDATE settings SET smtp_host=?, smtp_port=?, smtp_user=?, smtp_pass=?, mail_from=?, updated_at=?, scan_socket=?, scan_hour=?, scan_ntfy=?, scan_ntfy_token=? WHERE id=1`,
+		`UPDATE settings SET smtp_host=?, smtp_port=?, smtp_user=?, smtp_pass=?, mail_from=?, updated_at=?, scan_socket=?, scan_hour=?, scan_ntfy=?, scan_ntfy_token=?, geo_db=?, webui_mode=?, webui_countries=? WHERE id=1`,
 		st.SMTPHost, st.SMTPPort, st.SMTPUser, st.SMTPPass, st.MailFrom, st.UpdatedAt,
-		st.ScanSocket, st.ScanHour, st.ScanNtfy, st.ScanNtfyToken); err != nil {
+		st.ScanSocket, st.ScanHour, st.ScanNtfy, st.ScanNtfyToken,
+		st.GeoDB, st.WebUIMode, st.WebUICountries); err != nil {
 		return fmt.Errorf("save settings: %w", err)
 	}
 	return nil

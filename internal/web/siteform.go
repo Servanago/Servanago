@@ -255,6 +255,15 @@ func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (st
 	if r.ExtraRoutes, err = extraRoutesText(v.Get("extra_routes")); err != nil {
 		return r, err
 	}
+	if r.CountryMode = v.Get("country_mode"); r.CountryMode == "deny" || r.CountryMode == "allow" {
+		codes, cerr := config.ValidateCountryList(v.Get("countries"))
+		if cerr != nil {
+			return r, cerr
+		}
+		r.Countries = strings.Join(codes, " ")
+	} else if r.CountryMode != "" {
+		return r, fmt.Errorf("country mode %q must be deny, allow or empty (off)", r.CountryMode)
+	}
 	r.Snippets = v["snippets"] // the store rejects a name that does not exist
 	r.Notes = strings.ReplaceAll(strings.TrimSpace(v.Get("notes")), "\r\n", "\n")
 	if utf8.RuneCountInString(r.Notes) > maxNotes {

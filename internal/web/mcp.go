@@ -82,6 +82,8 @@ type siteArgs struct {
 	TLSSkipVerify *bool     `json:"tls_skip_verify,omitempty" jsonschema:"proxy: skip verifying a self-signed https upstream"`
 	Snippets      *[]string `json:"snippets,omitempty" jsonschema:"names of the snippets to attach (see list_snippets); [] detaches all, leaving it out keeps the stored ones"`
 	ExtraRoutes   *string   `json:"extra_routes,omitempty" jsonschema:"paths sent to another app, one per line as path=dial (dial = host:port or absolute socket path), e.g. /api=127.0.0.1:3303; \"\" clears them, leaving it out keeps the stored ones"`
+	CountryMode   *string   `json:"country_mode,omitempty" jsonschema:"deny | allow (country filter): which addresses the site serves; \"\" turns it off, leaving it out keeps the stored one"`
+	Countries     *string   `json:"countries,omitempty" jsonschema:"space- or comma-separated ISO 3166-1 alpha-2 codes (DE, US); required when country_mode is set"`
 	Notes         *string   `json:"notes,omitempty" jsonschema:"admin notes shown on the Reference page, plain text, at most 10,000 characters; \"\" clears them, leaving it out keeps the stored ones"`
 }
 
@@ -131,6 +133,14 @@ func (a siteArgs) overlay(v url.Values) {
 	if a.ExtraRoutes != nil {
 		v.Set("extra_routes", *a.ExtraRoutes)
 	}
+	if a.CountryMode != nil { // "" = the rule off: both fields clear together
+		v.Set("country_mode", *a.CountryMode)
+		if a.Countries != nil {
+			v.Set("countries", *a.Countries)
+		}
+	} else if a.Countries != nil {
+		v.Set("countries", *a.Countries)
+	}
 	if a.Notes != nil {
 		v.Set("notes", *a.Notes)
 	}
@@ -156,6 +166,8 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v.Set("notes", cur.Notes)
 	v.Set("extra_routes", cur.ExtraRoutes)
 	v.Set("allowlist", cur.Allowlist)
+	v.Set("country_mode", cur.CountryMode) // the site's country rule; both fields change together or not at all
+	v.Set("countries", cur.Countries)
 	v.Set("gate_mode", cur.GateMode)
 	v.Set("gate_provider", cur.GateProvider) // the sealed secret is never read back; blank keeps it
 	v.Set("gate_from", cur.GateFrom)
@@ -237,6 +249,8 @@ type siteView struct {
 	StartCommand string    `json:"start_command,omitempty"`
 	FPMVersion   string    `json:"fpm_version,omitempty"`
 	Allowlist    string    `json:"allowlist,omitempty"`
+	CountryMode  string    `json:"country_mode,omitempty"`
+	Countries    string    `json:"countries,omitempty"`
 	GateMode     string    `json:"gate_mode,omitempty"`
 	BasicAuth    bool      `json:"basic_auth"`
 	Snippets     []string  `json:"snippets,omitempty"`
@@ -264,7 +278,8 @@ func dnsViewOf(x store.DNSRecord) dnsView {
 // viewOf drops every secret: the basic-auth hash never leaves the process.
 func viewOf(x store.Site) siteView {
 	v := siteView{ID: x.ID, Slug: x.Slug, Kind: x.Kind, Hostnames: x.Hostnames, Enabled: x.Enabled, StaticRoot: x.StaticRoot,
-		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, ExtraRoutes: x.ExtraRoutes, RecordIP: x.RecordIP, RecordIPv6: x.RecordIP6, UpdatedAt: x.UpdatedAt}
+		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, ExtraRoutes: x.ExtraRoutes, RecordIP: x.RecordIP, RecordIPv6: x.RecordIP6, UpdatedAt: x.UpdatedAt,
+		CountryMode: x.CountryMode, Countries: x.Countries}
 	switch {
 	case x.UpstreamPort != 0:
 		v.Upstream = net.JoinHostPort(x.UpstreamHost, strconv.Itoa(x.UpstreamPort))

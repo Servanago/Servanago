@@ -20,6 +20,7 @@ import (
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/geoip"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/runtimes"
 	"github.com/servanago/servanago/internal/store"
@@ -56,6 +57,7 @@ type Server struct {
 	auth       *authn
 	startupErr func() error
 	cfErr      atomic.Value // string; set by VerifyToken
+	geo        *geoip.DB    // country-rules data source; nil-safe via geoOn() when unused
 
 	backupWarn atomic.Value // string; stale or failed backups for the banner (backups.go)
 	downloads  sync.Map     // one-use archive download links: token -> downloadGrant
@@ -88,7 +90,7 @@ func (s *Server) takeFlashes() []string {
 }
 
 func New(d Deps) *Server {
-	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second}
+	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second, geo: geoip.New()}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
 	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "scan", "scanrun", "siteedit", "snippets", "logs", "help", "php", "reference", "backups"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
@@ -194,6 +196,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /settings", s.protected(s.settingsPage))
 	mux.Handle("POST /settings/smtp", s.protected(s.saveSMTP))
 	mux.Handle("POST /settings/scan", s.protected(s.saveScan))
+	mux.Handle("POST /settings/geo", s.protected(s.saveGeo))
 	mux.Handle("GET /scan", s.protected(s.scanPage))
 	mux.Handle("GET /scan/runs/{id}", s.protected(s.scanRunPage))
 	mux.Handle("POST /scan/sites/{id}", s.protected(s.startScanSite))

@@ -38,7 +38,7 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 	mustDomain(t, s, "example.com")
 	var v int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != LatestVersion() || v != 6 {
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != LatestVersion() || v != 7 {
 		t.Fatalf("user_version %d %v", v, err)
 	}
 	s.Close()

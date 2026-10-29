@@ -116,3 +116,27 @@ func TestScanRetentionAndInterruption(t *testing.T) {
 		t.Fatalf("stuck run: %+v %v", r, err)
 	}
 }
+
+func TestCountryRuleRoundTrip(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	r := site("geo.example.com")
+	r.CountryMode, r.Countries = "deny", "DE US"
+	created, err := s.CreateSite(ctx, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetSite(ctx, created.ID)
+	if err != nil || got.CountryMode != "deny" || got.Countries != "DE US" {
+		t.Fatalf("geo rule: %+v (%v)", got, err)
+	}
+	// the list survives a save that does not mention it (UpdateSite writes every field; the web
+	// layer always renders both from the stored site)
+	got.Notes = "changed"
+	if err := s.UpdateSite(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetSite(ctx, created.ID); got.CountryMode != "deny" || got.Countries != "DE US" {
+		t.Errorf("rule lost across a save: %+v", got)
+	}
+}
