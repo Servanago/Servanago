@@ -742,6 +742,102 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 			return nil, dnsRecordDone{Zone: z.Name}, err
 		})
 
+	// The scan tools are the /scan pages over MCP: start a site scan (it runs detached) and read
+	// the runs and hits, whose quarantine actions are the same buttons the pages show.
+	type scanHitView struct {
+		ID     int64  `json:"id"`
+		Path   string `json:"path"`
+		Virus  string `json:"virus"`
+		Action string `json:"action"`
+	}
+	type scanRunView struct {
+		ID         int64         `json:"id"`
+		SiteID     int64         `json:"site_id"`
+		Site       string        `json:"site"`
+		Trigger    string        `json:"trigger"`
+		State      string        `json:"state"`
+		StartedAt  int64         `json:"started_at"`
+		FinishedAt int64         `json:"finished_at,omitempty"`
+		Files      int           `json:"files"`
+		Skipped    int           `json:"skipped"`
+		Error      string        `json:"error,omitempty"`
+		Hits       []scanHitView `json:"hits,omitempty"`
+	}
+	mcp.AddTool(srv, &mcp.Tool{Name: "run_scan", Description: "Start a virus scan of a site's served folder against clamd. It runs in the background; list_scan reports it. Audited as 'mcp token'."},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in idArgs) (*mcp.CallToolResult, struct {
+			Site string `json:"site"`
+		}, error) {
+			x, err := site(ctx, in.ID)
+			if err != nil {
+				return nil, struct {
+					Site string `json:"site"`
+				}{}, err
+			}
+			if _, err := s.mcpRun(ctx, ip, s.startScanSite, "POST", "/scan/sites/"+strconv.FormatInt(in.ID, 10), in.ID, nil); err != nil {
+				return nil, struct {
+					Site string `json:"site"`
+				}{}, err
+			}
+			return nil, struct {
+				Site string `json:"site"`
+			}{x.Hostnames[0]}, nil
+		})
+	mcp.AddTool(srv, &mcp.Tool{Name: "list_scan", Description: "Virus-scan runs, newest first (default 20; site: a site's, empty: every site's), each with its hits. Hit actions: quarantine_hit, restore_hit, ignore_hit.", Annotations: ro},
+		func(ctx context.Context, _ *mcp.CallToolRequest, in struct {
+			Site  int64 `json:"site,omitempty"`
+			Limit int   `json:"limit,omitempty"`
+		}) (*mcp.CallToolResult, struct {
+			Runs []scanRunView `json:"runs"`
+		}, error) {
+			var out struct {
+				Runs []scanRunView `json:"runs"`
+			}
+			if in.Limit <= 0 || in.Limit > 100 {
+				in.Limit = 20
+			}
+			rs, err := s.deps.Store.ListScanRuns(ctx, in.Site, in.Limit)
+			if err != nil {
+				return nil, out, err
+			}
+			ids := make([]int64, len(rs))
+			for i, r := range rs {
+				ids[i] = r.ID
+			}
+			hitsMap, _ := s.deps.Store.ListRunsHits(ctx, ids)
+			names := map[int64]string{}
+			if st, err := s.deps.Store.ListSites(ctx); err == nil {
+				for _, x := range st {
+					names[x.ID] = x.Hostnames[0]
+				}
+			}
+			for _, r := range rs {
+				v := scanRunView{ID: r.ID, SiteID: r.SiteID, Site: names[r.SiteID], Trigger: r.Trigger, State: r.State,
+					StartedAt: r.StartedAt, FinishedAt: r.FinishedAt, Files: r.Files, Skipped: r.Skipped, Error: r.Error}
+				for _, h := range hitsMap[r.ID] {
+					v.Hits = append(v.Hits, scanHitView{ID: h.ID, Path: h.Path, Virus: h.Virus, Action: h.Action})
+				}
+				out.Runs = append(out.Runs, v)
+			}
+			return nil, out, nil
+		})
+	hitTool := func(name, verb, desc string) {
+		mcp.AddTool(srv, &mcp.Tool{Name: name, Description: desc},
+			func(ctx context.Context, _ *mcp.CallToolRequest, in idArgs) (*mcp.CallToolResult, scanHitView, error) {
+				if _, err := s.mcpRunPath(ctx, ip, s.scanHitAction, "POST", "/scan/hits/"+strconv.FormatInt(in.ID, 10)+"/"+verb,
+					[][2]string{{"hid", strconv.FormatInt(in.ID, 10)}, {"do", verb}}, nil); err != nil {
+					return nil, scanHitView{}, err
+				}
+				h, err := s.deps.Store.GetScanHit(ctx, in.ID)
+				return nil, scanHitView{ID: h.ID, Path: h.Path, Virus: h.Virus, Action: h.Action}, err
+			})
+	}
+	hitTool("quarantine_hit", "quarantine",
+		"Move a hit's file into the quarantine (the scan page's Quarantine button). Only a file still in the site can move.")
+	hitTool("restore_hit", "restore",
+		"Move a quarantined file back to its site folder. Refused when the original path is occupied again.")
+	hitTool("ignore_hit", "ignore",
+		"Stop alarming about a quarantined file: it stays in the quarantine and future scans do not list it again as a decision to make.")
+
 	mcp.AddTool(srv, &mcp.Tool{Name: "list_snippets", Description: "Caddyfile snippets sites can attach (update_site snippets): name, directives and the sites using each.", Annotations: ro},
 		func(ctx context.Context, _ *mcp.CallToolRequest, _ noArgs) (*mcp.CallToolResult, struct {
 			Snippets []snippetView `json:"snippets"`

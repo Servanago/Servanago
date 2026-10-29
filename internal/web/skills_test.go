@@ -12,7 +12,7 @@ import (
 
 var (
 	skillName   = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	toolLike    = regexp.MustCompile("`((?:list|get|create|update|delete|set|run|plan|restore|backup|audit|runtime|unit|take|resync)_[a-z_]+)`")
+	toolLike    = regexp.MustCompile("`((?:list|get|create|update|delete|set|run|plan|restore|backup|audit|runtime|unit|take|resync|scan|quarantine|ignore)_[a-z_]+)`")
 	skillNeeds  = regexp.MustCompile(`(?m)^Requires ServanaGo (\d+\.\d+\.\d+) or newer\.$`)
 	versionLine = regexp.MustCompile(`(?m)^Version: (\S+)$`)
 )

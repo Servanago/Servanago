@@ -7,7 +7,7 @@ description: Create, inspect, update, disable and delete ServanaGo sites (proxy,
 
 Requires ServanaGo 0.2.0 or newer.
 
-Tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `create_site`, `update_site`, `set_site_enabled`, `delete_site`, and since 0.10.0 the DNS tools `resync_dns` and `take_dns` plus the domain tools `create_domain` and `update_domain`, and since 0.12.0 the record tools `list_dns_zones`, `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`. Connection and safety rules are in `servanago-mcp`.
+Tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `create_site`, `update_site`, `set_site_enabled`, `delete_site`, and since 0.10.0 the DNS tools `resync_dns` and `take_dns` plus the domain tools `create_domain` and `update_domain`, since 0.12.0 the record tools `list_dns_zones`, `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, and since 0.13.0 the scan tools `run_scan`, `list_scan`, `quarantine_hit`, `restore_hit`, `ignore_hit`. Connection and safety rules are in `servanago-mcp`.
 
 ## Domains and DNS records
 

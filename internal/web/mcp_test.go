@@ -6,12 +6,16 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/scan/fake"
 	"github.com/servanago/servanago/internal/store"
 )
 
@@ -644,4 +648,82 @@ func TestMCPDNSRecordTools(t *testing.T) {
 	callBad("create_dns_record", mx, "read-only")
 	callBad("list_dns_records", map[string]any{"zone": "nope.example"}, "no zone")
 	callBad("update_dns_record", map[string]any{"zone": "example.com", "id": "gone", "comment": "x"}, "no DNS record")
+}
+
+// The scan tools are the /scan pages over MCP: a started detaches, list_scan reads, and the hit
+// tools move the file out of the site for real (quarantine), back in (restore) or silence it.
+func TestMCPScanTools(t *testing.T) {
+	s, x := scanTestServer(t)
+	s.deps.Cfg.MCPToken = mcpToken
+	sess := mcpSession(t, s, mcpToken)
+	fake.Infected(t, filepath.Join(x.StaticRoot, "evil.php"))
+
+	var started struct{ Site string }
+	if err := call(t, sess, "run_scan", map[string]any{"id": x.ID}, &started); err != nil || started.Site != "scanned.example.com" {
+		t.Fatalf("run_scan: %+v %v", started, err)
+	}
+	var listed struct {
+		Runs []struct {
+			ID      int64
+			Site    string
+			Trigger string
+			State   string
+			Hits    []struct {
+				ID     int64
+				Path   string
+				Virus  string
+				Action string
+			}
+		} `json:"runs"`
+	}
+	waitScan(t, s, x.ID)
+	if err := call(t, sess, "list_scan", nil, &listed); err != nil || len(listed.Runs) != 1 ||
+		listed.Runs[0].Site != "scanned.example.com" || listed.Runs[0].Trigger != "manual" ||
+		listed.Runs[0].State != "ok" || len(listed.Runs[0].Hits) != 1 ||
+		listed.Runs[0].Hits[0].Virus != "Eicar-Test-Signature" || listed.Runs[0].Hits[0].Action != "quarantined" {
+		t.Fatalf("list_scan: %+v %v", listed, err)
+	}
+	hit := listed.Runs[0].Hits[0]
+	if _, err := os.Stat(hit.Path); !os.IsNotExist(err) {
+		t.Fatal("the scan left the infected file in place")
+	}
+	var moved struct {
+		ID     int64
+		Action string
+	}
+	if err := call(t, sess, "restore_hit", map[string]any{"id": hit.ID}, &moved); err != nil || moved.Action != "restored" {
+		t.Fatalf("restore_hit: %+v %v", moved, err)
+	}
+	if _, err := os.Stat(hit.Path); err != nil {
+		t.Fatalf("file not back in the site: %v", err)
+	}
+	if err := call(t, sess, "quarantine_hit", map[string]any{"id": hit.ID}, &moved); err != nil || moved.Action != "quarantined" {
+		t.Fatalf("quarantine_hit again: %+v %v", moved, err)
+	}
+	if _, err := os.Stat(hit.Path); !os.IsNotExist(err) {
+		t.Fatal("quarantine left the file in place")
+	}
+	if err := call(t, sess, "ignore_hit", map[string]any{"id": hit.ID}, &moved); err != nil || moved.Action != "ignored" {
+		t.Fatalf("ignore_hit: %+v %v", moved, err)
+	}
+	// refusals name why
+	if err := call(t, sess, "run_scan", map[string]any{"id": 999}, nil); err == nil {
+		t.Error("run_scan accepted an unknown site")
+	}
+	if err := call(t, sess, "restore_hit", map[string]any{"id": 123456}, nil); err == nil {
+		t.Error("restore_hit accepted an unknown hit")
+	}
+}
+
+// waitScan spins until the site's newest scan run is no longer running (the started scan detaches).
+func waitScan(t *testing.T, s *Server, siteID int64) {
+	t.Helper()
+	for range 2000 {
+		rs, _ := s.deps.Store.ListScanRuns(context.Background(), siteID, 1)
+		if len(rs) > 0 && rs[0].State != "running" {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("the scan did not finish")
 }

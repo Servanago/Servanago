@@ -24,13 +24,14 @@ One server-wide token, read and write, no scopes. A holder can create, change an
 ## Tools
 
 Read (safe, no side effects):
-- `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `list_snippets`, `backup_status`, `list_backups`, `plan_restore`, and since 0.12.0 `list_dns_zones`, `list_dns_records`.
+- `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `list_snippets`, `backup_status`, `list_backups`, `plan_restore`, and since 0.12.0 `list_dns_zones`, `list_dns_records`, and since 0.13.0 `list_scan`.
 
 Write (each runs the UI's own handlers: same validation, apply path, DNS, runtime setup, audit):
 - Sites: `create_site`, `update_site`, `set_site_enabled`, `delete_site` (see `servanago-sites`).
 - Site DNS: `resync_dns {id}`, `take_dns {id}` (since 0.10.0): refresh or take over the DNS records; see `servanago-sites`.
 - Domains: `create_domain`, `update_domain` (since 0.10.0) — the zone with its default record IPs; see `servanago-sites`.
 - DNS records (since 0.12.0): `create_dns_record`, `update_dns_record`, `delete_dns_record` — full CRUD on any token-visible zone's records, independent of the sites; see `servanago-sites`.
+- Virus scanning (since 0.13.0): `run_scan {id}` starts a site scan in the background; `quarantine_hit {id}`, `restore_hit {id}`, `ignore_hit {id}` act on one hit (see `servanago-sites`).
 - Snippets: `create_snippet`, `update_snippet`, `delete_snippet` (see `servanago-snippets`).
 - Backups: `run_backup`, `restore_site` (see `servanago-backups`).
 
