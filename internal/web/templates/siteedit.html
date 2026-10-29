@@ -198,6 +198,18 @@
 {{hintid "basic_auth"}}
 </div>
 </details>
+<details class="feature"{{if .Site.CountryMode}} open{{end}}>
+<summary>Country filter <span class="feature-state">{{if .Site.CountryMode}}{{if eq .Site.CountryMode "deny"}}denying {{.Site.Countries}}{{else}}allowing {{.Site.Countries}}{{end}}{{else}}off{{end}}</span> {{helplink "geoip"}}</summary>
+<div class="feature-body">
+<label>Rule <select name="country_mode" aria-describedby="hint-country_mode">
+<option value=""{{if not .Site.CountryMode}} selected{{end}}>Off (every country)</option>
+<option value="deny"{{if eq .Site.CountryMode "deny"}} selected{{end}}>Deny these countries</option>
+<option value="allow"{{if eq .Site.CountryMode "allow"}} selected{{end}}>Allow only these countries</option>
+</select></label>
+<label>Countries (ISO codes, space or comma separated) <input name="countries" value="{{.Site.Countries}}" placeholder="RU CN" autocomplete="off" aria-describedby="hint-country_codes"></label>
+{{hintid "country_mode"}}{{hintid "country_codes"}}
+</div>
+</details>
 </section>
 <section class="sect" id="sec-behaviour">
 <h2>Behaviour</h2>

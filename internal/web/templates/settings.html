@@ -36,4 +36,23 @@
 </form>
 <p id="scan-msg" role="alert"></p>
 </article>
+<article>
+<h2>Country filter</h2>
+{{if .Data.GeoOn}}<p>On. The MaxMind GeoLite2 file is read from {{.Data.GeoDB}} by geoipupdate{{if .Data.WebUIMode}}; the panel {{if eq .Data.WebUIMode "allow"}}only serves {{.Data.WebUICountries}}{{else}}refuses {{.Data.WebUICountries}}{{end}} (local and private addresses are never judged){{end}}.</p>
+{{else}}<p>Off. Point ServanaGo at a GeoLite2-Country file; geoipupdate (installed separately) keeps it fresh: <code>apt install geoipupdate</code>, license key into <code>/etc/GeoIP.conf</code>.</p>{{end}}
+<form hx-post="/settings/geo" hx-target="#geo-msg">
+<label>GeoLite2-Country file <input name="geo_db" value="{{.Data.GeoDB}}" placeholder="/var/lib/GeoIP/GeoLite2-Country.mmdb" autocomplete="off"></label>
+{{hint "geo_db"}}
+<label>Panel rule <select name="webui_mode">
+<option value=""{{if not .Data.WebUIMode}} selected{{end}}>Off (every country may reach the panel)</option>
+<option value="deny"{{if eq .Data.WebUIMode "deny"}} selected{{end}}>Deny these countries</option>
+<option value="allow"{{if eq .Data.WebUIMode "allow"}} selected{{end}}>Allow only these countries</option>
+</select></label>
+<label>Countries <input name="webui_countries" value="{{.Data.WebUICountries}}" placeholder="RU CN" autocomplete="off" aria-describedby="hint-country_codes"></label>
+{{hintid "country_codes"}}
+{{hint "webui_mode"}}
+<button type="submit">Save</button>
+</form>
+<p id="geo-msg" role="alert"></p>
+</article>
 {{end}}

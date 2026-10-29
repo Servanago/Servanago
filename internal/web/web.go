@@ -58,6 +58,7 @@ type Server struct {
 	startupErr func() error
 	cfErr      atomic.Value // string; set by VerifyToken
 	geo        *geoip.DB    // country-rules data source; nil-safe via geoOn() when unused
+	geoRule    atomic.Value // geoRule (geoguard.go); set at start and by the settings save
 
 	backupWarn atomic.Value // string; stale or failed backups for the banner (backups.go)
 	downloads  sync.Map     // one-use archive download links: token -> downloadGrant
@@ -255,8 +256,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sites/{id}/dns/takeover", s.protected(s.takeOverDNS))
 	// /mcp authenticates with its own bearer token and carries no cookie, so the cookie-era CSRF check does not apply.
 	top := http.NewServeMux()
-	top.Handle("/mcp", s.mcpHandler())
-	top.Handle("/", s.csrf(mux))
+	top.Handle("/mcp", s.geoGuard(s.mcpHandler()))
+	top.Handle("/", s.geoGuard(s.csrf(mux)))
 	return top
 }
 

@@ -727,3 +727,39 @@ func waitScan(t *testing.T, s *Server, siteID int64) {
 	}
 	t.Fatal("the scan did not finish")
 }
+
+// The country rule is a site form field: update_site must overlay it exactly like the UI form
+// (leaving it out keeps the stored rule, "" turns it off, codes normalize).
+func TestMCPGeoFields(t *testing.T) {
+	s, _ := runtimeServer(t)
+	s.deps.Cfg.MCPToken = mcpToken
+	sess := mcpSession(t, s, mcpToken)
+	root := t.TempDir()
+
+	var made changed
+	if err := call(t, sess, "create_site", map[string]any{"kind": "static", "static_root": root,
+		"hostnames": []string{"geo2.example.com"}, "country_mode": "deny", "countries": "ru, cn"}, &made); err != nil {
+		t.Fatalf("create_site: %v", err)
+	}
+	if got := getSite(t, sess, made.ID); got.CountryMode != "deny" || got.Countries != "RU CN" {
+		t.Fatalf("created rule: %+v", got)
+	}
+	// an update that does not mention geo keeps it
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "notes": "x"}, nil); err != nil {
+		t.Fatalf("update_site: %v", err)
+	}
+	if got := getSite(t, sess, made.ID); got.CountryMode != "deny" || got.Countries != "RU CN" {
+		t.Fatalf("update_site cleared the rule: %+v", got)
+	}
+	// "" on country_mode turns it off
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "country_mode": "", "countries": ""}, nil); err != nil {
+		t.Fatalf("update_site: %v", err)
+	}
+	if got := getSite(t, sess, made.ID); got.CountryMode != "" || got.Countries != "" {
+		t.Fatalf("rule not cleared: %+v", got)
+	}
+	// a mode without codes is refused
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "country_mode": "allow", "countries": ""}, nil); err == nil {
+		t.Error("an allow rule without codes was accepted")
+	}
+}

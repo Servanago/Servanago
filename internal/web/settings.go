@@ -27,6 +27,11 @@ type smtpData struct {
 	Hour     string
 	NtfySet  bool
 	TokenSet bool
+	// The country-filter section.
+	GeoOn          bool
+	GeoDB          string
+	WebUIMode      string
+	WebUICountries string
 }
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -39,7 +44,8 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Host: st.SMTPHost, Port: strconv.Itoa(st.SMTPPort), User: st.SMTPUser, From: st.MailFrom,
 		PassSet: st.SMTPPass != nil, MailReady: st.MailReady(),
 		ScanOn: st.ScanSocket != "", Socket: st.ScanSocket, Hour: strconv.Itoa(st.ScanHour),
-		NtfySet: st.ScanNtfy != nil, TokenSet: st.ScanNtfyToken != nil}})
+		NtfySet: st.ScanNtfy != nil, TokenSet: st.ScanNtfyToken != nil,
+		GeoOn: st.GeoDB != "", GeoDB: st.GeoDB, WebUIMode: st.WebUIMode, WebUICountries: st.WebUICountries}})
 }
 
 // saveSMTP replaces the email delivery settings wholesale; a blank password keeps the stored one.
@@ -94,8 +100,9 @@ func (s *Server) saveSMTP(w http.ResponseWriter, r *http.Request) {
 	if err := s.deps.Store.SaveSettings(r.Context(), store.Settings{
 		SMTPHost: host, SMTPPort: port, SMTPUser: user, SMTPPass: pass, MailFrom: from,
 		UpdatedAt: time.Now().UTC().Format(time.RFC3339),
-		// the scanner panel below owns its own columns: carry them over untouched
+		// the scanner and geo panels below own their own columns: carry them over untouched
 		ScanSocket: cur.ScanSocket, ScanHour: cur.ScanHour, ScanNtfy: cur.ScanNtfy, ScanNtfyToken: cur.ScanNtfyToken,
+		GeoDB: cur.GeoDB, WebUIMode: cur.WebUIMode, WebUICountries: cur.WebUICountries,
 	}); err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return

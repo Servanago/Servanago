@@ -407,6 +407,7 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	base.TLSSkipVerify, base.Enabled, base.RecordIP, base.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
 	base.FPMVersion, base.PHPExtensions, base.PHPHealthPath = in.FPMVersion, in.PHPExtensions, in.PHPHealthPath
 	base.ExtraRoutes, base.Snippets = in.ExtraRoutes, in.Snippets
+	base.CountryMode, base.Countries = in.CountryMode, in.Countries
 	base.SiteUser, base.PublicDir, base.Notes = in.SiteUser, in.PublicDir, in.Notes
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}

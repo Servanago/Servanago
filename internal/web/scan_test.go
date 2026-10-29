@@ -242,3 +242,67 @@ func TestSweepDueRunsOncePerDay(t *testing.T) {
 		t.Fatalf("a sweep already done today ran again: %+v", again)
 	}
 }
+
+func TestGeoGuardAndSettings(t *testing.T) {
+	s, _ := scanTestServer(t)
+	// the guard with nothing configured: pass
+	if w := s.do(req{path: "/"}); w.Code != 200 {
+		t.Fatalf("no rule: %d", w.Code)
+	}
+	if w := s.do(req{method: "POST", path: "/settings/geo", hdr: htmxPost,
+		body: form("geo_db", "/var/lib/GeoIP/GeoLite2-Country.mmdb", "webui_mode", "deny", "webui_countries", "RU, CN").Encode()}); w.Code != 204 {
+		t.Fatalf("geo settings save: %d %s", w.Code, w.Body.String())
+	}
+	if gr, ok := s.geoRule.Load().(geoRule); !ok || gr.mode != "deny" || gr.countries != "RU CN" {
+		t.Fatalf("cached rule: %+v", gr)
+	}
+	// the save refreshed the reader as well: the missing file reports through the reader only
+	if _, err := s.deps.Store.GetSettings(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	st, _ := s.deps.Store.GetSettings(context.Background())
+	if st.GeoDB != "/var/lib/GeoIP/GeoLite2-Country.mmdb" || st.WebUICountries != "RU CN" {
+		t.Fatalf("stored settings: %+v", st)
+	}
+	// loopback clients: never judged; a public XFF client: the geo rule passes it (US is not in
+	// RU CN; the failing branch of a missing file is the fail-open rule) and the open panel's own
+	// peer-gate answers — its message proves the request reached the mux rather than being blocked
+	if w := s.do(req{path: "/"}); w.Code != 200 {
+		t.Fatalf("loopback blocked: %d", w.Code)
+	}
+	w := s.do(req{path: "/", hdr: map[string]string{"X-Forwarded-For": "8.8.4.4"}, peer: "127.0.0.1:5555"})
+	if w.Code != 403 || !strings.Contains(w.Body.String(), "No administrator") {
+		t.Fatalf("open mode: the public client should pass the geo rule and meet the peer gate: %d %q", w.Code, w.Body.String())
+	}
+	// an unusable mode is refused and changes nothing
+	if w := s.do(req{method: "POST", path: "/settings/geo", hdr: htmxPost, body: form("geo_db", "/x", "webui_mode", "block", "webui_countries", "RU").Encode()}); w.Code != 422 {
+		t.Errorf("bad mode accepted: %d", w.Code)
+	}
+	if w := s.do(req{method: "POST", path: "/settings/geo", hdr: htmxPost, body: form("geo_db", "/x", "webui_mode", "deny", "webui_countries", "").Encode()}); w.Code != 422 {
+		t.Errorf("rule without codes accepted: %d", w.Code)
+	}
+}
+
+// TestGeoGuardBlocksPublicClients points the guard at the LIVE mmdb when the host keeps one:
+// 8.8.4.4 (US) is 403, the loopback peer without XFF is not judged at all.
+func TestGeoGuardBlocksPublicClients(t *testing.T) {
+	const installed = "/var/lib/GeoIP/GeoLite2-Country.mmdb"
+	if _, err := os.Stat(installed); err != nil {
+		t.Skip("no GeoLite2 database on this host:", err)
+	}
+	s, _ := scanTestServer(t)
+	st, _ := s.deps.Store.GetSettings(context.Background())
+	st.GeoDB = installed
+	if err := s.deps.Store.SaveSettings(context.Background(), st); err != nil {
+		t.Fatal(err)
+	}
+	s.geo.Use(installed)
+	s.geoRule.Store(geoRule{db: installed, mode: "deny", countries: "US"})
+	w := s.do(req{path: "/", hdr: map[string]string{"X-Forwarded-For": "8.8.4.4"}, peer: "127.0.0.1:5555"})
+	if w.Code != 403 || !strings.Contains(w.Body.String(), "not allowed") {
+		t.Fatalf("8.8.4.4 under a US deny: %d %q", w.Code, w.Body.String())
+	}
+	if w := s.do(req{path: "/"}); w.Code != 200 {
+		t.Fatalf("loopback got judged: %d", w.Code)
+	}
+}

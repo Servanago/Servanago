@@ -24,10 +24,12 @@ import (
 	"github.com/servanago/servanago/internal/apply"
 	"github.com/servanago/servanago/internal/caddycfg"
 	"github.com/servanago/servanago/internal/caddygate"
+	"github.com/servanago/servanago/internal/caddygeoip"
 	"github.com/servanago/servanago/internal/caddylog"
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/dnssync"
+	"github.com/servanago/servanago/internal/geoip"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/store"
 	"github.com/servanago/servanago/internal/web"
@@ -109,6 +111,15 @@ func run() error {
 		PropagationDelay: cfg.PropagationDelay, PropagationTimeout: cfg.PropagationTimeout, Resolvers: cfg.Resolvers,
 		Issuer: issuer, HTTP01: !cfg.DNSEnabled(),
 	})
+	// The country-rule module shares the panel's GeoLite2 reader; the path comes from the settings
+	// row (geoipupdate's business) and stays empty until the admin sets it on Settings.
+	settings, err := st.GetSettings(context.Background())
+	if err != nil {
+		return err
+	}
+	gdb := geoip.New()
+	gdb.Use(settings.GeoDB)
+	caddygeoip.Install(&caddygeoip.Service{Lookup: gdb.Lookup})
 	if err := svc.Start(context.Background()); err != nil {
 		return err
 	}
@@ -144,6 +155,7 @@ func run() error {
 		slog.Info("MCP is local only: https://" + cfg.Host + "/mcp answers 404; set SERVANAGO_MCP_PUBLIC=true to allow remote clients (the stdio relay `servanago mcp` works without it)")
 	}
 	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dns, Probe: mon, Logs: caddylog.Sink})
+	ui.ShareGeo(gdb, settings) // the panel guard reuses the same reader and starts with the row's rule
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		defer cancel()

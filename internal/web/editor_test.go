@@ -16,8 +16,8 @@ func TestSiteEditorIsSectionedWithFeaturesClosedUntilUsed(t *testing.T) {
 			t.Errorf("new-site editor lacks %q", want)
 		}
 	}
-	if n := strings.Count(body, `<details class="feature">`); n != 3 {
-		t.Errorf("want 3 closed access features, got %d", n)
+	if n := strings.Count(body, `<details class="feature">`); n != 4 {
+		t.Errorf("want 4 closed access features (gate, allowlist, basic auth, country filter), got %d", n)
 	}
 	if strings.Contains(body, `id="sec-danger"`) {
 		t.Error("a new site has nothing to delete")

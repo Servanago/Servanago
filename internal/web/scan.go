@@ -533,6 +533,7 @@ func (s *Server) saveGeo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.geo.Use(db)
-	s.audit(r, "settings.geoip", "db="+db)
+	s.geoRule.Store(geoRule{db: db, mode: mode, countries: countries})
+	s.audit(r, "settings.geoip", "db="+db+" mode="+mode)
 	hxRedirect(w, "/settings")
 }
