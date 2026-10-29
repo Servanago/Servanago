@@ -41,6 +41,9 @@ type Env struct {
 	Chgrp              func(path string) error
 	Chown              func(path string, h *tar.Header) error
 	Free               func(path string) (uint64, error)
+	// Scan streams each site file through clamd before it is archived: a returned virus name
+	// keeps the file out of the archive (nil = no scanning; scan failures never fail a backup).
+	Scan func(path string) (virus string, err error)
 
 	// Volume restore: the containers that mount a volume, and the calls that stop and start them.
 	Users       func(volume string) ([]Container, error)
@@ -61,6 +64,14 @@ type Result struct {
 	Error    string `json:"error,omitempty"`
 	Started  int64  `json:"started"`
 	Finished int64  `json:"finished"`
+	// Virus scan pass: Scanned counts the site files streamed to clamd; Infected lists the ones
+	// quarantined (and skipped from the archive), To being where the file waits.
+	Scanned  int         `json:"scanned,omitempty"`
+	Infected []ResultHit `json:"infected,omitempty"`
+}
+
+type ResultHit struct {
+	Path, Virus, To string
 }
 
 func newRunID() string {
@@ -101,11 +112,16 @@ func RunScope(ctx context.Context, e Env, p Plan, trigger string) Result {
 		m.Profiles = append(m.Profiles, pr.Name)
 	}
 	m.Volumes = p.Volumes
-	name, n, err := Create(CreateOpts{Dir: e.Dir, Scratch: e.Scratch, Pass: e.Pass, Chgrp: e.Chgrp}, m, func(b *Builder) error {
+	name, n, m, err := Create(CreateOpts{Dir: e.Dir, Scratch: e.Scratch, Pass: e.Pass, Chgrp: e.Chgrp, Scan: e.Scan}, m, func(b *Builder) error {
 		return fill(ctx, e, b, p, root)
 	})
 	if err != nil {
 		return finish("failed", err)
+	}
+	r.Scanned = m.Scanned
+	for _, inf := range m.Infected { // manifest names are archive-relative ("files/x — virus"); the result carries the host path
+		nm, virus, _ := strings.Cut(inf, " — ")
+		r.Infected = append(r.Infected, ResultHit{Path: filepath.Join(root, strings.TrimPrefix(filepath.ToSlash(nm), "files/")), Virus: virus})
 	}
 	r.Archive, r.Bytes = name, n
 	if _, err := PruneScope(e.Dir, p.Scope, p.Keep, p.KeepWeekly); err != nil {

@@ -46,6 +46,9 @@ type Manifest struct {
 	Volumes    []string  `json:"volumes,omitempty"`
 	Parts      []Part    `json:"parts,omitempty"`
 	ArchiveSHA string    `json:"archive_sha256,omitempty"`
+	Scanned    int       `json:"scanned,omitempty"`  // files the virus scan streamed (0 = no scan ran)
+	ScanBad    int       `json:"scan_bad,omitempty"` // scanned files whose check could not run
+	Infected   []string  `json:"infected,omitempty"` // "path — virus": skipped from the archive
 }
 
 const (
@@ -64,10 +67,15 @@ func ArchiveName(scope string, at time.Time) string {
 }
 
 // Builder adds parts to an archive being written.
+// Builder accumulates the archive and the scan verdicts the seam collected.
 type Builder struct {
-	tw      *tar.Writer
-	scratch string
-	Parts   []Part
+	tw       *tar.Writer
+	scratch  string
+	Scan     func(path string) (virus string, err error)
+	Scanned  int      // files a scan saw (0 without a seam)
+	ScanBad  int      // scan calls that could not run (daemon down): the file is archived anyway
+	Infected []string // "path — virus": skipped from the archive, listed in the manifest
+	Parts    []Part
 }
 
 func (b *Builder) addBytes(name string, data []byte, mode int64) error {
@@ -170,6 +178,17 @@ func (b *Builder) AddTree(prefix, kind, root string) error {
 		case !fi.IsDir() && !fi.Mode().IsRegular():
 			return nil
 		}
+		// the scan runs before any tar bytes: a verdicted hit skips header AND body
+		if fi.Mode().IsRegular() && b.Scan != nil {
+			virus, serr := b.Scan(path)
+			if serr != nil {
+				b.ScanBad++ // best effort at backup time: the file is archived, the count says so
+			} else if virus != "" {
+				b.Infected = append(b.Infected, name+" — "+virus)
+				return nil
+			}
+			b.Scanned++
+		}
 		h, err := tar.FileInfoHeader(fi, link)
 		if err != nil {
 			return err
@@ -212,30 +231,32 @@ type CreateOpts struct {
 	Scratch string // temp directory for spooled parts
 	Pass    string
 	Chgrp   func(path string) error // gives the files to the service group; nil = leave as is
+	Scan    func(path string) (virus string, err error)
 }
 
 // Create writes an encrypted archive and its sidecar atomically: the archive is renamed into place last, so a listed
-// archive is always complete. m's Parts, Finished and ArchiveSHA are filled in. On any error nothing is left behind.
-func Create(o CreateOpts, m Manifest, fill func(*Builder) error) (name string, written int64, err error) {
+// archive is always complete. m's Parts, Finished, ArchiveSHA and scan results are filled in. On any error nothing is left behind.
+// The finished manifest returns so the caller can carry the scan counts into its Result.
+func Create(o CreateOpts, m Manifest, fill func(*Builder) error) (name string, written int64, mf Manifest, err error) {
 	dir := filepath.Join(o.Dir, m.Scope)
 	if err := os.MkdirAll(dir, 0o750); err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	if o.Chgrp != nil {
 		for _, d := range []string{o.Dir, dir} {
 			if err := o.Chgrp(d); err != nil {
-				return "", 0, err
+				return "", 0, Manifest{}, err
 			}
 		}
 	}
 	name = ArchiveName(m.Scope, m.Started)
 	final, side := filepath.Join(dir, name), filepath.Join(dir, name+".json")
 	if _, serr := os.Lstat(final); serr == nil { // a rename would silently replace it
-		return "", 0, fmt.Errorf("%s already exists", name)
+		return "", 0, Manifest{}, fmt.Errorf("%s already exists", name)
 	}
 	f, err := os.OpenFile(final+".part", os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o640)
 	if err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	defer func() {
 		if err != nil {
@@ -246,58 +267,59 @@ func Create(o CreateOpts, m Manifest, fill func(*Builder) error) (name string, w
 	}()
 	rec, err := age.NewScryptRecipient(o.Pass)
 	if err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	sum := sha256.New()
 	cw := &countWriter{w: io.MultiWriter(f, sum)}
 	aw, err := age.Encrypt(cw, rec)
 	if err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	zw, err := zstd.NewWriter(aw)
 	if err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	tw := tar.NewWriter(zw)
-	b := &Builder{tw: tw, scratch: o.Scratch}
+	b := &Builder{tw: tw, scratch: o.Scratch, Scan: o.Scan}
 	head := m
 	head.Parts, head.ArchiveSHA, head.Finished = nil, "", time.Time{}
 	hb, _ := json.Marshal(head)
 	if err = b.addBytes("manifest.json", hb, 0o600); err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	if err = fill(b); err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	for _, c := range []io.Closer{tw, zw, aw} {
 		if err = c.Close(); err != nil {
-			return "", 0, err
+			return "", 0, Manifest{}, err
 		}
 	}
 	if err = f.Sync(); err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	if err = f.Close(); err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	m.Parts, m.ArchiveSHA, m.Finished = b.Parts, hex.EncodeToString(sum.Sum(nil)), time.Now().UTC()
+	m.Scanned, m.ScanBad, m.Infected = b.Scanned, b.ScanBad, b.Infected
 	sb, _ := json.MarshalIndent(m, "", "  ")
 	if err = os.WriteFile(side+".part", sb, 0o640); err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	if o.Chgrp != nil {
 		if err = errors.Join(o.Chgrp(final+".part"), o.Chgrp(side+".part")); err != nil {
-			return "", 0, err
+			return "", 0, Manifest{}, err
 		}
 	}
 	if err = os.Rename(side+".part", side); err != nil {
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
 	if err = os.Rename(final+".part", final); err != nil {
 		os.Remove(side)
-		return "", 0, err
+		return "", 0, Manifest{}, err
 	}
-	return name, cw.n, nil
+	return name, cw.n, m, nil
 }
 
 type countWriter struct {

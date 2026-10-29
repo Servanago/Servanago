@@ -22,7 +22,9 @@ import (
 
 	"github.com/servanago/servanago/internal/backup"
 	"github.com/servanago/servanago/internal/helper"
+	"github.com/servanago/servanago/internal/scan"
 	"github.com/servanago/servanago/internal/secretbox"
+	"github.com/servanago/servanago/internal/smtpx"
 	"github.com/servanago/servanago/internal/store"
 )
 
@@ -56,6 +58,8 @@ type job struct {
 	env     backup.Env
 	dataDir string
 	envFile string
+	// scanClient is a clamd client when the panel's settings set a socket; nil = no scanning.
+	scanClient *scan.Client
 }
 
 // secretKey is SERVANAGO_SECRET_KEY from the environment, else read from the environment file.
@@ -102,6 +106,9 @@ func openJob(dir, envFile string) (*job, func(), error) {
 	}
 	j := &job{set: set, st: st, key: secretKey(envFile), dataDir: dir, envFile: envFile}
 	host, _ := os.Hostname()
+	if sets, err := st.GetSettings(context.Background()); err == nil && sets.ScanSocket != "" {
+		j.scanClient = scan.New(sets.ScanSocket)
+	}
 	j.env = backup.Env{
 		Dir: set.Dir, Scratch: scratch, Host: host, Version: "dev", Schema: store.LatestVersion(),
 		Now: time.Now, Exec: backup.OsExec, Volume: backup.DockerVolume, Running: backup.DockerRunning,
@@ -257,9 +264,84 @@ func (j *job) runPlan(ctx context.Context, p jobPlan, trigger, actor string) bac
 		now := time.Now().Unix()
 		return backup.Result{RunID: "empty-" + p.Scope + "-" + strconv.FormatInt(now, 10), Scope: p.Scope, Trigger: trigger, Status: "skipped", Error: "nothing to back up: add a dump profile or a volume, or use a kind with files", Started: now, Finished: now, Actor: actor}
 	}
+	if j.scanClient != nil && p.Plan.Scope != "panel" {
+		res := j.runScannedPlan(ctx, p, trigger)
+		res.Actor = actor
+		return res
+	}
 	res := backup.RunScope(ctx, j.env, p.Plan, trigger)
 	res.Actor = actor
 	return res
+}
+
+// runScannedPlan runs a site scope with the virus-scan seam on: every site file streams through
+// clamd before the archiver sees it; an infected file is skipped from the archive (RunScope
+// carries it in the Result), quarantined here after the run, and notified.
+func (j *job) runScannedPlan(ctx context.Context, p jobPlan, trigger string) (res backup.Result) {
+	client := *j.scanClient
+	prev := j.env.Scan
+	j.env.Scan = func(path string) (string, error) {
+		v, err := client.ScanFile(ctx, path)
+		if err != nil {
+			return "", err
+		}
+		if v.Err != "" { // the daemon itself refused: best effort, the file is archived
+			return "", errors.New(v.Err)
+		}
+		return v.Virus, nil
+	}
+	defer func() { j.env.Scan = prev }()
+	res = backup.RunScope(ctx, j.env, p.Plan, trigger)
+	dir := filepath.Join(j.dataDir, "quarantine", p.Plan.Scope)
+	anyMoved := false
+	for i, h := range res.Infected {
+		to, err := scan.Quarantine(h.Path, dir)
+		if err != nil {
+			slog.Error("quarantine move failed", "path", h.Path, "error", err)
+		}
+		res.Infected[i].To = to
+		anyMoved = anyMoved || to != ""
+	}
+	if anyMoved {
+		j.notifyScan(ctx, p.Plan.Scope, res)
+	}
+	return res
+}
+
+// notifyScan posts the ntfy topic and mails the MAIL FROM mailbox about a backup's found infections.
+func (j *job) notifyScan(ctx context.Context, scope string, res backup.Result) {
+	var lines []string
+	for _, h := range res.Infected {
+		lines = append(lines, fmt.Sprintf("%s — %s (quarantined: %s)", h.Path, h.Virus, h.To))
+	}
+	body := fmt.Sprintf("The backup of %s skipped %d infected file(s) and quarantined them:\n%s", scope, len(res.Infected), strings.Join(lines, "\n"))
+	if set, err := j.st.GetSettings(ctx); err == nil {
+		if set.ScanNtfy != nil {
+			if u, err := j.unseal(set.ScanNtfy); err == nil {
+				tok := ""
+				if set.ScanNtfyToken != nil {
+					if b, err := j.unseal(set.ScanNtfyToken); err == nil {
+						tok = string(b)
+					}
+				}
+				if err := scan.Notify(ctx, string(u), tok, "ServanaGo: virus found in "+scope, body); err != nil {
+					slog.Error("scan ntfy", "error", err)
+				}
+			}
+		}
+		if set.MailReady() {
+			pass := ""
+			if set.SMTPPass != nil {
+				if b, err := j.unseal(set.SMTPPass); err == nil {
+					pass = string(b)
+				}
+			}
+			d := smtpx.Dialer{Host: set.SMTPHost, Port: set.SMTPPort, User: set.SMTPUser, Pass: pass}
+			if err := d.Send(set.MailFrom, set.MailFrom, "ServanaGo: virus found in "+scope, body+"\n"); err != nil {
+				slog.Error("scan mail", "error", err)
+			}
+		}
+	}
 }
 
 // due returns the plans whose schedule says now, skipping a scope that failed within failBackoff.

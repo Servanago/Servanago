@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -416,5 +417,62 @@ func TestTwoRunsInOneSecondKeepBothArchives(t *testing.T) {
 	}
 	if ins, _ := List(e.Dir, "shop"); len(ins) != 2 {
 		t.Errorf("want both archives, got %d", len(ins))
+	}
+}
+
+// A scan seam skips infected files from the archive, lists them in the manifest, and never lets
+// a scan failure fail the backup. The job, not the seam, moves an infected file afterwards.
+func TestScanSeamSkipsInfectedAndSurvivesFailure(t *testing.T) {
+	e := testEnv(t)
+	root := mkdir(t, t.TempDir(), "site")
+	write(t, filepath.Join(root, "index.html"), "hello")
+	write(t, filepath.Join(root, "evil.php"), "payload")
+	write(t, filepath.Join(root, "sub", "a.txt"), "a")
+	e.Scan = func(path string) (string, error) {
+		switch filepath.Base(path) {
+		case "evil.php":
+			return "Win.Test.EICAR", nil
+		case "a.txt":
+			return "", errors.New("clamd overloaded") // daemon trouble: the file is archived anyway
+		}
+		return "", nil
+	}
+	p := Plan{Scope: "shop", Root: root, Keep: 3, KeepWeekly: 1}
+	res := RunScope(context.Background(), e, p, "manual")
+	if res.Status != "ok" || res.Scanned != 2 || len(res.Infected) != 1 || res.Infected[0].Virus != "Win.Test.EICAR" || res.Infected[0].To != "" {
+		t.Fatalf("run: %+v", res)
+	}
+	if _, err := os.Stat(filepath.Join(root, "evil.php")); err != nil {
+		t.Fatalf("the seam must not move the file (the job does that after the run): %v", err)
+	}
+	ins, err := List(e.Dir, "shop")
+	if err != nil || len(ins) != 1 {
+		t.Fatalf("list: %+v %v", ins, err)
+	}
+	m := ins[0].Manifest
+	if m.Scanned != 2 || len(m.Infected) != 1 || !strings.Contains(m.Infected[0], "files/evil.php") || !strings.Contains(m.Infected[0], "Win.Test.EICAR") {
+		t.Fatalf("manifest: scanned=%d infected=%v", m.Scanned, m.Infected)
+	}
+	// the missing scan verdict (a.txt) was archived; walk the members and expect it present, the hit absent
+	tr, done, err := Open(filepath.Join(e.Dir, "shop", res.Archive), e.Pass)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = done() }()
+	var members []string
+	for {
+		h, err := tr.Next()
+		if err != nil {
+			break
+		}
+		members = append(members, h.Name)
+	}
+	for _, want := range []string{"manifest.json", "files/index.html", "files/sub/a.txt"} {
+		if !slices.Contains(members, want) {
+			t.Errorf("archive lacks %s: %v", want, members)
+		}
+	}
+	if slices.Contains(members, "files/evil.php") {
+		t.Errorf("the infected file was archived: %v", members)
 	}
 }

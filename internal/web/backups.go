@@ -688,10 +688,52 @@ func (s *Server) ingestBackups(ctx context.Context) {
 			}
 			if fresh {
 				s.auditBackupResult(ctx, res)
+				s.ingestScanOf(ctx, res)
 			}
 		}
 	}
 	s.refreshBackupWarn(ctx)
+}
+
+// ingestScanOf turns a backup scope's scan pass into Scan page rows: one run row (trigger
+// backup) and its quarantined hits. Scopes without a scan pass add nothing.
+func (s *Server) ingestScanOf(ctx context.Context, res backup.Result) {
+	if res.Scanned == 0 && len(res.Infected) == 0 {
+		return
+	}
+	var siteID int64
+	if sites, err := s.deps.Store.ListSites(ctx); err == nil {
+		for _, x := range sites {
+			if x.Slug == res.Scope {
+				siteID = x.ID
+			}
+		}
+	}
+	if siteID == 0 {
+		slog.Warn("backup scan rows", "scope", res.Scope, "error", "no site with this slug; the hits stay in the result and the manifest")
+		return
+	}
+	runID, err := s.deps.Store.InsertScanRun(ctx, siteID, "backup", res.Started)
+	if err != nil {
+		slog.Error("backup scan rows", "scope", res.Scope, "error", err)
+		return
+	}
+	for _, h := range res.Infected {
+		if _, err := s.deps.Store.AddScanHit(ctx, store.ScanHit{RunID: runID, SiteID: siteID, Path: h.Path, Virus: h.Virus,
+			Action: map[bool]string{true: "quarantined", false: "live"}[h.To != ""], QuarantinedTo: h.To, UpdatedAt: res.Finished}); err != nil {
+			slog.Error("backup scan hit row", "path", h.Path, "error", err)
+		}
+	}
+	state := "ok"
+	if res.Status != "ok" {
+		state = "error"
+	}
+	if err := s.deps.Store.FinishScanRun(ctx, runID, state, res.Scanned, 0, res.Error); err != nil {
+		slog.Error("backup scan run finish", "error", err)
+	}
+	if err := s.deps.Store.PruneScanRuns(ctx, 50); err != nil {
+		slog.Error("scan prune", "error", err)
+	}
 }
 
 func (s *Server) auditBackupResult(ctx context.Context, r backup.Result) {
