@@ -43,7 +43,8 @@ Server-rendered htmx UI. There is no REST API; agents use MCP.
 - Snippets (`/snippets`): named Caddyfile snippets sites attach; handlers that serve, proxy or authenticate are refused.
 - PHP (`/php`): ServanaGo downloads php.net releases (sha256 + GPG checked), compiles them in a sandboxed unit into `/opt/servanago/php`, per-site branch (`8.4`) or exact build, per-site extensions, per-user CLI defaults, weekly release check.
 - Backups (`/backups`): scheduled passphrase-encrypted archives (tar, zstd, age) of the panel and opted-in sites (files, database dumps, container volumes), retention, restore of a site from the UI. Panel restore is CLI only.
-- Also: Dashboard `/` (upstream health, certificate expiry, DNS state, UI host record), `/logs`, `/domains`, `/users`, `/audit`, `/security`, `/settings`, `/reference`, `/help`.
+- Virus scanning (`/scan`): site folders stream to ClamAV's clamd (socket on Settings; never installed or updated by ServanaGo); found files are quarantined under `DATA_DIR/quarantine/`, ntfy+email alerts go out per scan with hits, hits are restorable or ignorable. Backups scan each site file before archiving and skip infected ones from the archive.
+- Also: Dashboard `/` (upstream health, certificate expiry, DNS state, UI host record, newest scan per site), `/logs`, `/domains`, `/dns` (full record CRUD for every token-visible zone), `/users`, `/audit`, `/security`, `/settings`, `/reference`, `/help`.
 - Runtimes (Node, php-fpm, frankenphp, fcgiwrap) are detected and the install command shown; ServanaGo never installs them (it compiles its own PHP). ServanaGo never chowns or chmods site files: grant `sg-<slug>` access yourself.
 
 ## MCP
@@ -67,6 +68,7 @@ Read tools:
 - `backup_status`, `list_backups {scope?}`, `plan_restore {id, archive}`: backup settings and latest results, archives, what a restore would do.
 - `list_dns_zones`: every Cloudflare zone the token sees: id, name, status.
 - `list_dns_records {zone}`: a zone's records of every type; `managed` marks the ones ServanaGo writes for sites.
+- `list_scan {site?, limit?}`: virus-scan runs newest first, each with its hits (file, signature, quarantine state).
 
 Write tools:
 - `create_site`: needs `kind` (proxy | static | node | php | frankenphp | fastcgi | cgi), `hostnames` and the kind's fields (`static_root`, `scheme`, `upstream_host`, `upstream_port`, `port`, `start_command`, `install_command`, `build_command`, `fpm_version`, `fcgi_addr`, `allowlist`, `enabled`, `record_ip`, `record_ip6`, `tls_skip_verify`, `snippets`, `extra_routes`, `notes`).
@@ -75,6 +77,7 @@ Write tools:
 - `resync_dns {id}`, `take_dns {id}`: sync or take over the site's DNS records (overwrite a conflicting record and mark it managed), like the dashboard's Retry and Take over buttons. Idempotent on synced records; both return the refreshed DNS rows.
 - `create_domain {name, default_ip, default_ip6?, cert_mode?}`, `update_domain {id, ...}`: manage a zone's default record IPs and certificate mode; `update_domain` touches no existing records — run `resync_dns` on each site to converge.
 - `create_dns_record {zone, type, name, content?, srv?, caa?, priority?, ttl?, proxied?, comment?}`, `update_dns_record {zone, id, ...}` (only the passed fields change), `delete_dns_record {zone, id}`: full record CRUD in any token-visible zone (types A, AAAA, CNAME, TXT, MX, SRV, CAA, NS; rarer types read-only). Names post zone-relative (`www`, `_dmarc`, `*.static`, `@` = the apex). A managed record may be written back or re-added by the next save of its site or startup.
+- `run_scan {id}` starts a virus scan of the site's served folder (background; `list_scan` reports). `quarantine_hit {id}`, `restore_hit {id}`, `ignore_hit {id}` act on one hit.
 - `create_snippet {name, body}`, `update_snippet {name, body}`, `delete_snippet {name}` (only if no site uses it). Body is Caddyfile directives: named matchers with respond, error, redir, header, request_header, request_body, encode.
 - `run_backup {scope}` (`all`, `panel` or a site's short name), `restore_site {id, archive, files?, dumps?, volumes?, confirm}`: overwrites data after taking a backup of the current state; `confirm` must be the site's exact short name; run `plan_restore` first. The panel is never restored over MCP.
 

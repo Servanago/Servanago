@@ -13,6 +13,7 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 - **Sites** of seven kinds: reverse proxy, static, Node.js, PHP-FPM, FrankenPHP, FastCGI and CGI, each with one or more hostnames and optional per-site user, allowlist, basic auth, magic-link gate, snippets and extra routes. [Sites](docs/sites.md)
 - **Certificates** over HTTP-01 by default, or DNS-01 and automatic A/AAAA records with an optional Cloudflare token. [Install](docs/install.md), [Configuration](docs/configuration.md)
 - **DNS record management** for every Cloudflare zone the token sees: full CRUD in the UI and MCP, independent of the site model. [MCP](docs/mcp.md)
+- **Virus scanning** of site folders through the host's ClamAV daemon: quarantine, restore/ignore, ntfy + email alerts, scanned backups. [MCP](docs/mcp.md)
 - **PHP built from source** when a security release can't wait for your distribution. [PHP](docs/php.md)
 - **Encrypted backups** of sites and the panel, with restore from the UI. [Backups](docs/backups.md)
 - **Multiple administrators** with authenticator app, passkeys and Turnstile; every change is audited. [Security](docs/security.md)
