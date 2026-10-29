@@ -6,7 +6,7 @@ Recorded as given, one at a time. Not settled yet; questions below drive each to
 Settled with Brian 2026-10-28:
 - Scope: each site gets its own optional country rule (site form), plus one global rule covering everything else including the WebUI.
 - Modes: per scope, the admin picks denylist (block these countries) or allowlist (allow only these). Denylist default = feature off, empty list.
-- Geo source: MaxMind GeoLite2-Country via `oschwald/geoip2-golang`. Servanago downloads and refreshes the .mmdb itself: MaxMind account ID + license key stored sealed in Settings (like the SMTP password), atomic swap, stale file keeps serving if a refresh fails.
+- Geo source: MaxMind GeoLite2-Country read from a local `.mmdb` path — **no downloader, no stored MaxMind credentials**: geoipupdate 6.1.0 (`geoipupdate.timer`) runs on bee and comes with the v1 deploy instructions (`apt install geoipupdate`, license key in `/etc/GeoIP.conf`), so ServanaGo only reads the file it keeps fresh. Changed with Brian 2026-10-29, supersedes the planned auto-download + sealed account key.
 - Open design details (I decide during design): blocked response shape (403 default), allowlist semantics for unknown countries (not on the list = blocked), where the GeoIP check sits relative to the gate/allowlist/bypass routes, and how the mmdb reader handles Caddy-embedded traffic.
 
 ## 2. Postmark webhook handler → LMTP, per domain, own UI (optional)
