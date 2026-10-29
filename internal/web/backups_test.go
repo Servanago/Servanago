@@ -298,7 +298,7 @@ func (b *bt) archiveFor(t *testing.T, scope string) string {
 	if dir == "" || dir == "/var/backups/servanago" {
 		dir = b.dir
 	}
-	name, _, err := backup.Create(backup.CreateOpts{Dir: dir, Scratch: t.TempDir(), Pass: goodPass},
+	name, _, _, err := backup.Create(backup.CreateOpts{Dir: dir, Scratch: t.TempDir(), Pass: goodPass},
 		backup.Manifest{Scope: scope, RunID: "r1", Started: time.Now().UTC().Truncate(time.Second)},
 		func(bl *backup.Builder) error {
 			return bl.AddReader("dumps/a.sql", "dump", strings.NewReader("select 1"))
@@ -459,7 +459,8 @@ func TestStaleScopes(t *testing.T) {
 // archiveWithVolumes is an archive whose manifest lists volumes (the restore check reads the manifest, not the tree).
 func (b *bt) archiveWithVolumes(t *testing.T, scope string, vols ...string) string {
 	t.Helper()
-	name, _, err := backup.Create(backup.CreateOpts{Dir: b.dir, Scratch: t.TempDir(), Pass: goodPass},
+	name, _, _, err := backup.Create(
+		backup.CreateOpts{Dir: b.dir, Scratch: t.TempDir(), Pass: goodPass},
 		backup.Manifest{Scope: scope, RunID: "r2", Started: time.Now().UTC().Truncate(time.Second), Volumes: vols},
 		func(bl *backup.Builder) error {
 			return bl.AddReader("dumps/a.sql", "dump", strings.NewReader("select 1"))
