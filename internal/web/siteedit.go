@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/servanago/servanago/internal/helper"
@@ -35,6 +36,9 @@ type siteRow struct {
 	// BackText is the newest backup run's when and result; "" when backups are off or not configured.
 	BackText string
 	BackOK   bool
+	// UnitState is a runtime site's unit as the helper reports it (running | stopped | unknown; ""
+	// for kinds without a unit). One helper call per runtime site per render, asked in parallel.
+	UnitState string
 }
 
 // HasDNS is true once at least one of the site's records has been synced or attempted.
@@ -51,6 +55,84 @@ func (r siteRow) OwnedSummary() string { return recordSummary(ownedRecords(r.DNS
 
 // Aliases are the hostnames after the primary one.
 func (r siteRow) Aliases() []string { return r.Hostnames[1:] }
+
+// pill is one status pill of a site's header or row: Class = ok | warn | bad | info | dim.
+type pill struct{ Class, Text string }
+
+// StatusPills rolls the site's current facts into the header pills, in the order the header shows them.
+func (r siteRow) StatusPills() []pill {
+	var out []pill
+	if !r.Enabled {
+		out = append(out, pill{Class: "bad", Text: "disabled"})
+	}
+	if r.Probed {
+		class := "ok"
+		var text string
+		switch r.Cert.State {
+		case probe.StateIssued:
+			if r.CertSoon {
+				class = "warn"
+			}
+			text = r.Cert.Issuer + ", renews in " + fmt.Sprint(r.CertDays()) + " d"
+		case probe.StatePending:
+			class, text = "warn", "TLS pending"
+		default:
+			class, text = "bad", "TLS error"
+		}
+		out = append(out, pill{Class: class, Text: text})
+	}
+	if r.DNSOn && len(r.DNS) > 0 {
+		st := r.DNSState()
+		class := "ok"
+		switch st {
+		case "error":
+			class = "bad"
+		case "conflict", "pending":
+			class = "warn"
+		}
+		out = append(out, pill{Class: class, Text: "DNS " + st})
+	}
+	if r.GateMode != "" {
+		text := "Magic-link gate on"
+		if r.GateMode == "acl" {
+			text += ", allowlist"
+		} else {
+			text += ", any mail"
+		}
+		out = append(out, pill{Class: "info", Text: text})
+	}
+	if r.ScanOn && r.Scan.ID != 0 {
+		switch {
+		case r.Scan.State == "running":
+			out = append(out, pill{Class: "info", Text: "scan running"})
+		case r.ScanHits > 0:
+			out = append(out, pill{Class: "bad", Text: fmt.Sprintf("%d scan hit%s", r.ScanHits, plural(r.ScanHits))})
+		case r.Scan.FinishedAt != 0 && r.Scan.State == "ok":
+			out = append(out, pill{Class: "ok", Text: "scan clean"})
+		}
+	}
+	if r.BackText != "" {
+		class := "ok"
+		if !r.BackOK {
+			class = "warn"
+		}
+		out = append(out, pill{Class: class, Text: "backup " + r.BackText})
+	}
+	return out
+}
+
+// CertDays is how many days the primary hostname's certificate still has (negative when expired).
+func (r siteRow) CertDays() int { return int(time.Until(r.Cert.NotAfter).Hours() / 24) }
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// Running is true while the unit's active state reads active (or activating).
+func (p unitPanel) Running() bool { return strings.HasPrefix(p.State, "active") }
 
 // scanable is true when this site has a folder to walk (kinds without one are skipped).
 func (r siteRow) Scanable() bool { return servedRootOf(r.Site) != "" }
@@ -137,7 +219,37 @@ func (s *Server) buildRows(r *http.Request, rs []store.Site) ([]siteRow, error) 
 		row.CertSoon = certExpiringSoon(row.Cert, time.Now())
 		row.CertWait = certWait(s.deps.Cfg.PropagationDelay, s.deps.Cfg.PropagationTimeout)
 	})
+	s.unitStates(r, rows)
 	return rows, nil
+}
+
+// unitStates asks the helper for every runtime site's unit state in parallel. Failures read
+// "unknown"; the list must render even when the helper is down.
+func (s *Server) unitStates(r *http.Request, rows []siteRow) {
+	var runtime []int
+	for i := range rows {
+		if rows[i].IsRuntime() {
+			runtime = append(runtime, i)
+		}
+	}
+	if len(runtime) == 0 {
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+	defer cancel()
+	hc := s.helperClient()
+	probe.Parallel(len(runtime), func(j int) {
+		row := &rows[runtime[j]]
+		st, err := hc.Call(ctx, helper.ActionUnitStatus, helper.Spec{Slug: row.Slug})
+		switch {
+		case err != nil || st.Status == nil:
+			row.UnitState = "unknown"
+		case strings.HasPrefix(st.Status.ActiveState, "active"):
+			row.UnitState = "running"
+		default:
+			row.UnitState = "stopped"
+		}
+	})
 }
 
 func (s *Server) deleteSite(w http.ResponseWriter, r *http.Request) {

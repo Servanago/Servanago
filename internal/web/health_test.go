@@ -67,7 +67,7 @@ func TestDashboardListsProblemsAndKeepsRowsOpenAcrossThePoll(t *testing.T) {
 	s, _, d := newDNSServer(t)
 	addRoute(t, s, d) // the fake dial refuses: the upstream is down
 	body := s.do(req{path: "/"}).Body.String()
-	for _, want := range []string{`class="attn"`, "Upstream down", `class="srow"`, "htmx:afterSwap", "1 site · 1 needs attention", ">Add site</a>", "</html>"} {
+	for _, want := range []string{`class="attn"`, "Upstream down", `class="srow"`, "htmx:afterSwap", ">1 site<", ">Add site</a>", "</html>"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("dashboard lacks %q", want)
 		}

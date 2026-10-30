@@ -30,6 +30,7 @@ test('list row delete panel: cancel keeps the site, delete asks about the DNS re
   // The site list refreshes every 10s; an open dialog and its ticked box must survive that.
   await page.waitForResponse((r) => r.url().endsWith('/status') && r.status() === 200, { timeout: 15000 });
   await expect(page.getByRole('dialog').getByLabel('Also delete the DNS record')).toBeChecked();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill('lidarr.delrow.example.net');
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(siteRow(page, 'lidarr.delrow.example.net')).toHaveCount(0);
 });
@@ -56,6 +57,7 @@ test('row actions share one line', async ({ page }) => {
 
   // Shared server: take the site back out so later specs (checklist state) are unaffected.
   await row.getByRole('button', { name: 'Delete', exact: true }).click();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill('readarr.icons.example.net');
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(siteRow(page, 'readarr.icons.example.net')).toHaveCount(0);
 });

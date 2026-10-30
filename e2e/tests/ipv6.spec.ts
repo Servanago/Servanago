@@ -35,6 +35,7 @@ test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA record
   await row.getByRole('button', { name: 'Delete' }).click();
   await expect(page.getByRole('dialog')).toContainText('A 192.168.1.10, AAAA 2001:db8::99');
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill('web.dual.example.net');
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(row).toHaveCount(0);
 });

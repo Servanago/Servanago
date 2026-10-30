@@ -12,8 +12,9 @@ test('Add site asks for hostname and a separate backend port, and creates domain
   await page.getByRole('button', { name: 'Add site' }).click();
 
   const row = siteRow(page, /oc\.sitesflow\.example\.net/);
-  await expect(row.locator('.target')).toHaveText('192.168.25.165:9200');
-  await expect((await openRow(row)).getByText('synced').first()).toBeVisible();
+  await openRow(row); // the target now reads in the opened detail
+  await expect(row.getByText('192.168.25.165:9200')).toBeVisible();
+  await expect(row.getByText('synced').first()).toBeVisible();
 
   await page.goto('/domains');
   await expect(page.getByRole('cell', { name: 'sitesflow.example.net', exact: true })).toBeVisible(); // auto-created

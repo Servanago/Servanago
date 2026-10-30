@@ -347,6 +347,7 @@ var helpFuncs = template.FuncMap{
 	"size":           config.FormatSize,
 	"icon":           icon,
 	"needsAttention": needsAttention,
+	"sitestrip":      siteStrip,
 	"status":         func(kind, state string) statusInfo { return statusHelp[kind+":"+state] },
 	"errhtml": func(msg string) template.HTML {
 		return template.HTML(errorHTML(msg)) // #nosec: errorHTML escapes every piece

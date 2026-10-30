@@ -28,6 +28,7 @@ test('add a site, edit it, delete it', async ({ page }) => {
 
   await (await openRow(row)).getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill('sonarr.routes.example.net');
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(siteRow(page, 'sonarr.routes.example.net')).toHaveCount(0);
 });

@@ -23,6 +23,7 @@ async function removeSite(page: Page, host: string) {
   const row = siteRow(page, new RegExp(host.replace(/\./g, '\\.')));
   await (await openRow(row)).getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill(host);
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(row).toHaveCount(0);
 }

@@ -27,6 +27,7 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
 
   await row.getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill('self.status.example.net');
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(siteRow(page, 'self.status.example.net')).toHaveCount(0);
 });

@@ -72,6 +72,7 @@ test('gated site: magic link in, revoke out', async ({ page }) => {
   const gated = await openRow(siteRow(page, /st\.gate\.example\.test/));
   await expect(gated.getByRole('link', { name: 'Edit' })).toBeVisible();
   await gated.getByRole('button', { name: 'Delete' }).click();
+  await page.locator('#delete-dialog').getByLabel('Type the site name to confirm deletion').fill('st.gate.example.test');
   await page.locator('#delete-dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(siteRow(page, /st\.gate\.example\.test/)).toHaveCount(0);
 

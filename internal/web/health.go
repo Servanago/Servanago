@@ -80,3 +80,38 @@ func needsAttention(rows []siteRow) []siteRow {
 	}
 	return out
 }
+
+// siteStrip rolls the list into the dashboard's summary strip: site and unit counts, then the
+// attention counts that need a look.
+func siteStrip(rows []siteRow) []pill {
+	var out []pill
+	var running, stopped, soon, dnserr int
+	for _, r := range rows {
+		switch r.UnitState {
+		case "running":
+			running++
+		case "stopped":
+			stopped++
+		}
+		if r.Probed && r.CertSoon {
+			soon++
+		}
+		if r.DNSOn && r.DNSState() == "error" {
+			dnserr++
+		}
+	}
+	out = append(out, pill{Class: "dim", Text: fmt.Sprintf("%d site%s", len(rows), plural(len(rows)))})
+	if running+stopped > 0 {
+		out = append(out, pill{Class: "ok", Text: fmt.Sprintf("%d unit%s running", running, plural(running))})
+	}
+	if soon > 0 {
+		out = append(out, pill{Class: "warn", Text: fmt.Sprintf("%d TLS expiring", soon)})
+	}
+	if dnserr > 0 {
+		out = append(out, pill{Class: "bad", Text: fmt.Sprintf("%d DNS error%s", dnserr, plural(dnserr))})
+	}
+	if stopped > 0 {
+		out = append(out, pill{Class: "warn", Text: fmt.Sprintf("%d unit%s stopped", stopped, plural(stopped))})
+	}
+	return out
+}

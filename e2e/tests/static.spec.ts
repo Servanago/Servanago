@@ -44,6 +44,7 @@ test('static site: serve a folder, no dotfiles, no listing', async ({ page }) =>
   // Shared server: remove the site again.
   await page.getByRole('button', { name: 'Delete site' }).click();
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill('files.static.example.test');
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(siteRow(page, /files\.static\.example\.test/)).toHaveCount(0);
 });

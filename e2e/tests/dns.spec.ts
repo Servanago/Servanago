@@ -24,6 +24,7 @@ test('site shows DNS synced; delete asks with the record named', async ({ page }
   await page.getByRole('button', { name: 'Delete site' }).click();
   await expect(page.getByRole('dialog')).toContainText('radarr.dns.example.net');
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill('radarr.dns.example.net');
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(siteRow(page, 'radarr.dns.example.net')).toHaveCount(0);
 });

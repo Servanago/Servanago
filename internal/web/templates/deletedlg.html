@@ -9,15 +9,23 @@
 <form hx-delete="/sites/0" hx-target="find .dlg-msg">
 {{if .}}<label class="dlg-owned" hidden><input type="checkbox" name="delete_dns"> Also delete the DNS record <span class="dlg-record"></span> in Cloudflare</label>
 <p class="dlg-kept" hidden>The DNS record is left in place: ServanaGo did not create it, or there is none.</p>{{end}}
+<p>Deleting cannot be undone. Type the site's name to confirm:</p>
+<label class="dlg-sure-row">Site name <input name="dlg_sure" autocomplete="off" aria-label="Type the site name to confirm deletion"></label>
 <p class="dlg-msg" role="alert"></p>
 <footer>
 <button type="button" class="outline secondary" onclick="document.getElementById('delete-dialog').close()">Cancel</button>
-<button type="submit" class="danger">Delete</button>
+<button type="submit" class="danger" disabled>Delete</button>
 </footer>
 </form>
 </article>
 </dialog>
 <script>
+var sgdlg = document.getElementById('delete-dialog');
+// The confirm check binds once: it compares the typed word to whichever host the dialog currently shows.
+sgdlg.addEventListener('input', function (e) {
+  if (e.target.name !== 'dlg_sure') return;
+  sgdlg.querySelector('button.danger').disabled = e.target.value.trim() !== sgdlg.querySelector('.dlg-host').textContent;
+});
 document.addEventListener('click', function (e) {
   var b = e.target.closest('.delete-site');
   if (!b) return;
@@ -26,6 +34,8 @@ document.addEventListener('click', function (e) {
   htmx.process(f); // htmx captures the URL when it binds the form, so re-bind after changing it
   f.reset();
   d.querySelector('.dlg-host').textContent = b.dataset.host;
+  d.querySelector('button.danger').disabled = true;
+  f.querySelector('input[name=dlg_sure]').setAttribute('placeholder', b.dataset.host);
   {{if .}}d.querySelector('.dlg-record').textContent = b.dataset.host + ' → ' + ip;
   d.querySelector('.dlg-owned').hidden = !ip;
   d.querySelector('.dlg-kept').hidden = !!ip;

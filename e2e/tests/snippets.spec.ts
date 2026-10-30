@@ -67,6 +67,7 @@ test('snippets: add, refuse a bad one, attach to a site, block paths, detach, de
   await (await openRow(siteRow(page, /snip\.static\.example\.test/))).getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();
   await page.getByRole('dialog').getByLabel('Also delete the DNS record').check();
+  await page.getByRole('dialog').getByLabel('Type the site name to confirm deletion').fill('snip.static.example.test');
   await page.getByRole('dialog').getByRole('button', { name: 'Delete', exact: true }).click();
   await expect(siteRow(page, /snip\.static\.example\.test/)).toHaveCount(0);
 });

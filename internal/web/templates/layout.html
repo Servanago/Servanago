@@ -84,3 +84,28 @@ document.addEventListener('htmx:afterSwap', function (e) {
 <a{{if eq $act "routes"}} class="sel"{{end}} href="/sites/{{$id}}/routes">Routes</a>
 <a{{if eq $act "countries"}} class="sel"{{end}} href="/sites/{{$id}}/countries">Countries</a>
 </nav>{{end}}
+
+{{/* sitehead: the identity block of a site's pages — crumb, name, badges, status pills, hostnames,
+  and the link out to the site itself. The data carries Site, Row and Unit. */}}
+{{define "sitehead"}}{{$h := index .Site.Hostnames 0}}{{$id := .Site.ID}}
+<p class="crumb"><a href="/">Sites</a> <span aria-hidden="true">/</span> {{$h}}</p>
+<div class="sitehead">
+<div class="sitehead-main">
+<h1>{{$h}} {{helplink "sites"}}</h1>
+<div class="kindrow">
+<span class="chip">{{if .Site.Kind}}{{.Site.Kind}}{{else}}proxy{{end}}</span>
+{{if .Site.SiteUser}}<span class="chip">runs as {{.Site.SiteUser}}</span>{{end}}
+{{with .Site.MLHost}}<span class="chip">gate host {{.}}</span>{{end}}
+{{if $id}}<span class="chip">unit servanago-{{.Site.Slug}}.service</span>{{end}}
+</div>
+</div>
+{{if $id}}<a class="mini" href="https://{{$h}}" target="_blank" rel="noopener">Open site</a>{{end}}
+</div>
+{{if $id}}<p class="pillsrow">
+{{if .Row}}{{range .Row.StatusPills}}<span class="pill {{.Class}}"><span class="dot"></span>{{.Text}}</span>{{end}}
+{{else if .Site.IsRuntime}}<span class="pill dim"><span class="dot"></span>state unknown</span>{{end}}
+{{with .Unit}}{{if not .Err}}{{if .Running}}<span class="pill ok"><span class="dot"></span>unit running{{else}}<span class="pill warn"><span class="dot"></span>unit stopped{{end}}{{if .PID}} · pid {{.PID}}{{end}}</span>{{end}}{{end}}
+</p>{{end}}
+{{if $id}}<div class="hostchips">{{range .Site.Hostnames}}<span class="chip">{{.}}</span>{{end}}</div>
+{{end}}{{end}}
+

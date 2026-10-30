@@ -436,3 +436,32 @@ form.htmx-request button[type="submit"]::after { content: ""; width: 0.85rem; he
 .siteview-tabs + .sect, .sect.cardish { border: 1px solid var(--sg-border); border-radius: var(--sg-radius-lg); background: var(--sg-surface); padding: 1.1rem 1.3rem; }
 /* Status dots at the topbar brand: keep. Log tail monospace block */
 pre#unit-logs, .logtail { background: var(--sg-bg); border: 1px solid var(--sg-border); border-radius: var(--sg-radius-sm); padding: 0.7rem 0.9rem; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; line-height: 1.65; color: var(--sg-text-secondary); overflow-x: auto; }
+
+/* ---- Site header: identity block on every site page (mock's sitehead) ----------------------------- */
+.sitehead { display: flex; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin: 0.2rem 0 0.4rem; }
+.sitehead-main h1 { margin: 0 0 0.35rem; }
+.sitehead .kindrow { display: flex; gap: 0.4rem; flex-wrap: wrap; }
+.sitehead .mini { margin: 0.35rem 0 0 auto; }
+.sitehead a.mini { color: var(--sg-text-secondary); text-decoration: none; }
+.sitehead a.mini:hover { color: var(--sg-text); background: var(--sg-surface-raised); }
+.pillsrow { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.2rem 0 1.1rem; }
+.pillsrow:empty, .hostchips:empty { display: none; }
+.hostchips { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.2rem 0 1.1rem; }
+.hostchips .chip { cursor: default; }
+.pill { display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.2rem 0.7rem 0.2rem 0.55rem; border-radius: 999px; font-size: 0.83rem; font-weight: 550; white-space: nowrap; }
+.pill .dot { width: 0.45rem; height: 0.45rem; border-radius: 50%; background: currentColor; }
+.pill.ok { background: color-mix(in srgb, var(--sg-success) 12%, transparent); color: var(--sg-success); }
+.pill.warn { background: color-mix(in srgb, var(--sg-warning) 13%, transparent); color: var(--sg-warning); }
+.pill.bad { background: color-mix(in srgb, var(--sg-danger) 12%, transparent); color: var(--sg-danger); }
+.pill.info { background: color-mix(in srgb, var(--sg-info) 13%, transparent); color: var(--sg-info); }
+.pill.dim { background: var(--sg-surface-raised); color: var(--sg-text-muted); }
+/* Tab panels read as cards (the dead 0.16.1 selector fixed: every .sect after the rail). */
+.tabs ~ .sect { border: 1px solid var(--sg-border); border-radius: var(--sg-radius-lg); background: var(--sg-surface); padding: 1.1rem 1.3rem; }
+
+/* Dashboard pills: the strip under the page head; unit chips colour their states. */
+.strip-pills { display: flex; gap: 0.45rem; flex-wrap: wrap; margin: 0.15rem 0 1.1rem; }
+.unit-running { color: var(--sg-success); }
+.unit-stopped { color: var(--sg-danger); }
+.unit-unknown, .chip.dim { color: var(--sg-text-muted); }
+.srow summary .host { color: var(--sg-text); }
+.srow summary .host:hover { color: var(--sg-green-300); }
