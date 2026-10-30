@@ -77,7 +77,7 @@ func boolJSON(b bool) string {
 func mailHarness(t *testing.T, pm *pmStub) (*Server, *cftest.Fake) {
 	t.Helper()
 	cf := &cfFake{zones: dnsZonesBody}
-	s := cfgServer(t, cf, config.Config{Host: "panel.example.test", SecretKey: strings.Repeat("k", 32)})
+	s := cfgServer(t, cf, config.Config{Host: "panel.example.test", SecretKey: strings.Repeat("k", 32), MCPToken: mcpToken})
 	s.pmBase = pm.srv.URL
 	s.applyInline = true
 	s.mailPoll, s.mailTries = time.Millisecond, 3

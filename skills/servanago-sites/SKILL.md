@@ -1,13 +1,13 @@
 ---
 name: servanago-sites
-description: Create, inspect, update, disable and delete ServanaGo sites (proxy, static, Node.js, PHP-FPM, FrankenPHP, FastCGI, CGI) through the ServanaGo MCP tools. Use when asked to add a website, point a hostname at an app, change a site's upstream, folder, allowlist, snippets or notes, check a site's unit status, or remove a site on a ServanaGo host.
+description: Create, inspect, update, disable and delete ServanaGo sites (proxy, static, Node.js, PHP-FPM, FrankenPHP, FastCGI, CGI), manage their DNS records, and work with the Postmark mail bridge, through the ServanaGo MCP tools. Use when asked to add a website, point a hostname at an app, change a site's upstream, folder, allowlist, snippets or notes, check a site's unit status, remove a site, manage a zone's records, or provision or inspect the inbound mail bridge on a ServanaGo host.
 ---
 
 # ServanaGo sites over MCP
 
 Requires ServanaGo 0.2.0 or newer.
 
-Tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `create_site`, `update_site`, `set_site_enabled`, `delete_site`, and since 0.10.0 the DNS tools `resync_dns` and `take_dns` plus the domain tools `create_domain` and `update_domain`, since 0.12.0 the record tools `list_dns_zones`, `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, and since 0.13.0 the scan tools `run_scan`, `list_scan`, `quarantine_hit`, `restore_hit`, `ignore_hit`, and since 0.14.0 the site country filter is a `create_site`/`update_site` field (`country_mode` deny|allow, `countries` ISO codes). Connection and safety rules are in `servanago-mcp`.
+Tools: `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `create_site`, `update_site`, `set_site_enabled`, `delete_site`, and since 0.10.0 the DNS tools `resync_dns` and `take_dns` plus the domain tools `create_domain` and `update_domain`, since 0.12.0 the record tools `list_dns_zones`, `list_dns_records`, `create_dns_record`, `update_dns_record`, `delete_dns_record`, and since 0.13.0 the scan tools `run_scan`, `list_scan`, `quarantine_hit`, `restore_hit`, `ignore_hit`, and since 0.14.0 the site country filter is a `create_site`/`update_site` field (`country_mode` deny|allow, `countries` ISO codes), and since 0.15.0 the mail-bridge tools `list_mail_domains`, `get_mail_domain`, `create_mail_domain`, `update_mail_domain`, `delete_mail_domain` and `list_mail_events`. Connection and safety rules are in `servanago-mcp`.
 
 ## Domains and DNS records
 
@@ -52,6 +52,17 @@ Check `runtime_report` first: Node, php-fpm, frankenphp and fcgiwrap are detecte
 ## Diagnose
 
 `unit_status {id}` returns state and recent journal lines for node, php, frankenphp and cgi sites. `get_site` shows the stored configuration. Runtime units are not re-applied at startup: after restoring a host, update each such site once to recreate its unit.
+
+## Mail bridge (since 0.15.0)
+
+For each provisioned domain, mail arrives at Postmark, Postmark calls the panel's webhook, and ServanaGo delivers the raw message over LMTP to the operator's mail server. ServanaGo stores no mailboxes; it is the bridge plus state.
+
+- `create_mail_domain {domain, adopt?, lmtp_addr?, hook_user?, hook_pass?}`: writes the Postmark server and domain, the webhook configuration and the DNS rows. It stops and names whatever already exists in the Postmark account unless `adopt` is true; only adopt when the user says so.
+- `update_mail_domain {domain, lmtp_addr?}`: re-provision with adopt — re-push the webhook configuration, reconcile the DNS rows, re-verify.
+- The provisioning result carries the webhook credential in `warnings` only when ServanaGo generated it: show it once, never repeat it.
+- DNS, inbound domain and verification are applied in the background: poll `get_mail_domain {name}` for `dns_notes` and the `dkim_state`/`return_path_state` states.
+- `delete_mail_domain {domain}` forgets ServanaGo's state only: the Postmark server, the domain and the DNS records stay. Say so before removing.
+- `list_mail_events {domain?, limit?}`: stored notifications — deliveries, bounces (with the DSN state), spam complaints.
 
 ## Do not
 

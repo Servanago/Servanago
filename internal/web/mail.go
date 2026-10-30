@@ -152,14 +152,35 @@ func (s *Server) mailProvision(w http.ResponseWriter, r *http.Request) {
 
 	// The webhook credential: kept when the row already had one, generated for a new row.
 	user, pass, hash := "", "", ""
+	genPass := ""
 	if cur, gerr := s.deps.Store.GetMailDomain(ctx, name); gerr == nil && cur.HookUser != "" {
 		user, hash = cur.HookUser, cur.HookPassHash
 	} else {
-		user, pass = "mail"+randHex(5), randHex(24)
+		user = "mail" + randHex(5)
+		genPass = randHex(24)
+		pass = genPass
 		if hash, err = bcryptHash(pass); err != nil {
 			failErr(w, userError{http.StatusInternalServerError, err.Error()})
 			return
 		}
+	}
+	// MCP callers may bring their own pair; the UI form never sends these fields. An owned pair
+	// is never echoed: genPass empties so the shown-once flash does not fire.
+	if u := strings.TrimSpace(r.PostFormValue("hook_user")); u != "" {
+		p := strings.TrimSpace(r.PostFormValue("hook_pass"))
+		if len(p) < 24 {
+			failErr(w, userError{http.StatusUnprocessableEntity, "hook_pass, when set, is at least 24 characters (it is the webhook password)."})
+			return
+		}
+		if !validHookUser(u) {
+			failErr(w, userError{http.StatusUnprocessableEntity, "hook_user must be lowercase letters, digits and dashes, 4-24 characters."})
+			return
+		}
+		if hash, err = bcryptHash(p); err != nil {
+			failErr(w, userError{http.StatusInternalServerError, err.Error()})
+			return
+		}
+		user, pass, genPass = u, p, ""
 	}
 	id, _, err := s.deps.Store.UpsertMailDomain(ctx, store.MailDomain{
 		Name: name, PMServerID: srv.ID, PMDomainID: pmDomain.ID,
@@ -193,8 +214,8 @@ func (s *Server) mailProvision(w http.ResponseWriter, r *http.Request) {
 	s.audit(r, "mail.provisioned", name+" server="+strconv.FormatInt(srv.ID, 10))
 
 	lines := []string{"Mail bridge for " + name + " is provisioned."}
-	if pass != "" { // a kept credential is never re-shown
-		lines = append(lines, "Hook user: "+user+" — password (shown once): "+pass)
+	if genPass != "" { // a kept or owned credential is never re-shown
+		lines = append(lines, "Hook user: "+user+" — password (shown once): "+genPass)
 		lines = append(lines, "Webhook URL (shown once): "+fullHook)
 		lines = append(lines, "Events URL (shown once): "+fullEvents)
 	} else {
@@ -567,6 +588,20 @@ func randHex(n int) string {
 		return "unavailable" // crypto/rand only fails on a broken system
 	}
 	return hex.EncodeToString(b)[:n]
+}
+
+// validHookUser is the webhook basic-auth user's shape: lowercase letters, digits, dashes.
+func validHookUser(u string) bool {
+	if len(u) < 4 || len(u) > 24 {
+		return false
+	}
+	for _, r := range u {
+		if r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func bcryptHash(pw string) (string, error) {
