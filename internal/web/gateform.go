@@ -143,7 +143,7 @@ func (s *Server) addGateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "gate.grant.added", rt.Hostnames[0]+" "+rules[0].Value)
-	hxRedirect(w, "/sites/"+strconv.FormatInt(rt.ID, 10))
+	hxRedirect(w, backOf(r, "/sites/"+strconv.FormatInt(rt.ID, 10)))
 }
 
 // removeGateGrant drops one row; identities that no longer qualify anywhere lose their session.
@@ -158,7 +158,7 @@ func (s *Server) removeGateGrant(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "gate.grant.removed", rt.Hostnames[0]+" "+value)
-	hxRedirect(w, "/sites/"+strconv.FormatInt(rt.ID, 10))
+	hxRedirect(w, backOf(r, "/sites/"+strconv.FormatInt(rt.ID, 10)))
 }
 
 // testGateMail sends one message through the site's own provider to the address typed in the form.

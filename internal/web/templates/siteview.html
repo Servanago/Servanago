@@ -1,0 +1,281 @@
+{{define "content"}}
+{{with .Data}}
+{{$h := index .Site.Hostnames 0}}{{$id := .Site.ID}}
+<p class="crumb"><a href="/">Sites</a> <span aria-hidden="true">/</span> {{$h}}</p>
+<h1>{{.Title}} {{helplink "sites"}}</h1>
+{{if .Row}}<p class="chips">
+{{if not .Row.Enabled}}<span class="chip">disabled</span>{{else if .Row.Probed}}
+{{if .Row.Upstream}}<span class="chip up-{{.Row.Upstream}}">backend {{.Row.Upstream}}</span>{{else}}<span class="chip">static files</span>{{end}}
+<span class="chip cert-{{.Row.Cert.State}}">certificate {{.Row.Cert.State}}</span>
+{{if and .DNSOn .Row.DNSState}}<span class="chip dns-{{.Row.DNSState}}">DNS {{.Row.DNSState}}</span>{{end}}
+{{end}}
+</p>{{end}}
+{{template "tabrail" .}}
+
+{{if eq .Active "dns"}}
+<section class="sect" id="panel-dns">
+<h2>DNS records</h2>
+{{if .DNSOn}}
+{{with .Row}}
+{{if .HasDNS}}
+<table>
+<thead><tr><th>Host</th><th>Family</th><th>Content</th><th>State</th></tr></thead>
+<tbody>
+{{range .DNS}}{{$d := status "dns" .State}}
+<tr><td><code>{{.Hostname}}</code></td><td>{{.Family}}</td><td><code>{{.Content}}</code></td>
+<td><span class="dns-{{.State}}" title="{{$d.Meaning}}">{{.State}}</span>{{if and $d.Next (or (ne .State "error") (not .Error))}} <small class="next">{{$d.Next}}</small>{{end}}
+{{if .Error}}<div class="explain">{{errhtml .Error}}</div>{{end}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="empty">This site has no DNS records yet. Save the site once and ServanaGo creates the main record in its zone.</p>{{end}}
+{{end}}
+{{if .Row}}<p id="msg" role="alert"></p>
+<form hx-post="/sites/{{$id}}/dns/resync" hx-target="#msg" class="acts">
+<input type="hidden" name="back" value="/sites/{{$id}}/dns">
+<button type="submit" class="outline">{{icon "refresh"}}Resync now</button></form>
+{{if eq .Row.DNSState "conflict"}}
+<form hx-post="/sites/{{$id}}/dns/takeover" hx-target="#msg" class="acts" hx-confirm="Overwrite the existing DNS record(s) for {{$h}}? The current record(s) will be replaced.">
+<input type="hidden" name="back" value="/sites/{{$id}}/dns">
+<button type="submit" class="outline warn">{{icon "takeover"}}Take over DNS</button></form>
+{{end}}{{end}}
+{{else}}
+<p class="empty">Cloudflare is not connected, so this tab has no records to work with: point {{$h}} at this server in your own DNS. {{helplink "token"}}</p>{{end}}
+</section>
+{{end}}
+
+{{if eq .Active "ssl"}}
+<section class="sect" id="panel-ssl">
+<h2>Certificates</h2>
+<p class="sect-note">Let's Encrypt certificates issued by the embedded Caddy, one per hostname. Renewal is automatic; HTTP-01 names need ports 80 and 443 reachable from the internet.</p>
+{{if .Certs}}
+<table>
+<thead><tr><th>Host</th><th>Issuer</th><th>Valid until</th><th>State</th></tr></thead>
+<tbody>
+{{range .Certs}}{{$c := status "cert" .State}}
+<tr><td><code>{{.Host}}</code></td><td>{{if .Issuer}}{{.Issuer}}{{else}}—{{end}}</td>
+<td>{{if .NotAfter.IsZero}}—{{else}}{{.NotAfter.Format "2006-01-02"}}{{end}}</td>
+<td><span class="cert-{{.State}}" title="{{$c.Meaning}}">{{.State}}</span>{{if $c.Next}} <small class="next">{{$c.Next}}</small>{{end}}{{if .Err}}<div class="explain">{{errhtml .Err}}</div>{{end}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<p class="empty">No certificates are being probed for this site: they are probed while the site is enabled and serving.</p>
+{{end}}
+</section>
+{{end}}
+
+{{if eq .Active "scan"}}
+<section class="sect" id="panel-scan">
+<h2>Virus scanning</h2>
+{{if .ScanOn}}
+<p class="sect-note">Runs walk the served folder{{with .Site.WebRoot}} (<code>{{.}}</code>){{end}} and quarantine what clamd flags. Global settings are on the <a href="/settings">Settings</a> page; every run also appears on the <a href="/scan">Scan page</a>.</p>
+{{if .Row}}{{if .Row.Scanable}}
+<form hx-post="/sites/{{$id}}/scan" hx-target="#msg" class="acts">
+<input type="hidden" name="back" value="/sites/{{$id}}/scan">
+<button type="submit" class="outline">{{icon "play"}}Scan now</button></form>
+{{else}}<p class="empty">{{$h}} is a {{.Site.Kind}} site without a served folder: nothing to scan.</p>{{end}}{{end}}
+{{if .Scans}}
+<h3>Runs</h3>
+<table>
+<thead><tr><th>When</th><th>Trigger</th><th>State</th><th>Files</th><th>Skipped</th><th>Hits</th><th></th></tr></thead>
+<tbody>
+{{range .Scans}}
+<tr><td><small>{{unixts .StartedAt}}</small></td><td><span class="tune">{{.Trigger}}</span></td><td>{{scanstate .State}}</td><td>{{.Files}}</td><td>{{.Skipped}}</td><td>{{len .Hits}}</td><td><a href="/scan/runs/{{.ID}}">{{if .Running}}Running{{else}}Report{{end}}</a></td></tr>
+{{end}}
+</tbody>
+</table>
+{{if .Scans}}{{$runs := .Scans}}{{with index $runs 0}}{{if .Hits}}
+<h3>Findings of the newest run</h3>
+<table>
+<thead><tr><th>File</th><th>Found</th><th>State</th><th></th></tr></thead>
+<tbody>
+{{range .Hits}}
+<tr><td><code>{{.Path}}</code></td><td><code>{{.Virus}}</code></td><td>{{hitstate .Action}}</td>
+<td class="actions">
+{{if eq .Action "quarantined"}}<button class="mini warn" hx-post="/scan/hits/{{.ID}}/restore" hx-target="#msg" hx-confirm="Move {{.Path}} back into the site folder? Visitors can reach it again.">Restore</button>
+<button class="mini" hx-post="/scan/hits/{{.ID}}/ignore" hx-target="#msg" hx-confirm="Stop warning about {{.Virus}} in {{.Path}}? The file stays in the quarantine.">Ignore</button>
+{{else if eq .Action "live"}}<button class="mini danger" hx-post="/scan/hits/{{.ID}}/quarantine" hx-target="#msg" hx-confirm="Move {{.Path}} into the quarantine now?">Quarantine</button>
+{{else if eq .Action "error"}}<button class="mini danger" hx-post="/scan/hits/{{.ID}}/quarantine" hx-target="#msg" hx-confirm="Move {{.Path}} into the quarantine now?">Quarantine</button>{{end}}
+</td></tr>
+{{end}}
+</tbody>
+</table>
+{{end}}{{end}}{{end}}{{end}}
+{{else}}<p class="empty">Scanning is not set up on this host. Point ServanaGo at clamd on the <a href="/settings">Settings</a> page. {{helplink "scan"}}</p>{{end}}
+<p id="msg" role="alert"></p>
+</section>
+{{end}}
+
+{{if eq .Active "backups"}}
+<section class="sect" id="panel-backups">
+<h2>Backups</h2>
+{{if .BackHas}}
+<p class="sect-note">This site's schedule, over the default one ({{if .SetSched}}<code>{{.SetSched}}</code>{{else}}none set{{end}}). Downloads, restore and every scope's archive list live on the <a href="/backups">Backups page</a>.</p>
+<p>Last run: {{.Backup.LastText}}{{if .Backup.LastErr}} <span class="explain">{{.Backup.LastErr}}</span>{{end}}. Last success: {{.Backup.LastOKText}}.</p>
+{{if .Row}}<form hx-post="/backups/run" hx-target="#msg" class="acts">
+<input type="hidden" name="scope" value="site"><input type="hidden" name="site" value="{{$id}}"><input type="hidden" name="back" value="/sites/{{$id}}/backups">
+<button type="submit" class="outline">{{icon "play"}}Back up now</button></form>{{end}}
+<form hx-post="/backups/sites/{{$id}}" hx-target="#msg">
+<label><input type="checkbox" name="on" {{if .Backup.On}}checked{{end}}> Back this site up</label>
+<label>Schedule (blank = default) <input name="sched" value="{{.Backup.Sched}}" placeholder="{{.SetSched}}" autocomplete="off"></label>
+<label>Keep the newest (0 = default) <input name="keep" type="number" min="0" max="365" value="{{.Backup.Keep}}"></label>
+<label>Weekly copies (0 = default) <input name="keep_weekly" type="number" min="0" max="365" value="{{.Backup.KeepWeekly}}"></label>
+{{hint "backup_sched"}}
+<input type="hidden" name="back" value="/sites/{{$id}}/backups">
+<button type="submit">Save</button>
+</form>
+{{if .Backup.Profiles}}
+<h3>Database dumps</h3>
+{{hint "backup_profile"}}
+<ul>{{range .Backup.Profiles}}<li><strong>{{.Name}}</strong> · {{.Engine}} {{.Target}}
+<form class="inline" hx-post="/backups/sites/{{$id}}/profiles/delete" hx-target="#msg"><input type="hidden" name="name" value="{{.Name}}"><input type="hidden" name="back" value="/sites/{{$id}}/backups"><button type="submit" class="outline secondary">Remove</button></form></li>{{end}}</ul>
+{{end}}
+<form hx-post="/backups/sites/{{$id}}/profiles" hx-target="#msg">
+<details class="feature"><summary>Add a database dump</summary>
+<label>Name <input name="name" placeholder="app" autocomplete="off" required></label>
+<label>Kind <select name="engine"><option value="sqlite">SQLite file</option><option value="mariadb">MariaDB or MySQL</option><option value="postgres">PostgreSQL</option></select></label>
+<label>SQLite file, relative to the site folder <input name="path" placeholder="storage/database.sqlite" autocomplete="off"></label>
+<label>Container name (MariaDB, PostgreSQL) <input name="container" placeholder="mydb-1" autocomplete="off"></label>
+<label>Database <input name="db" autocomplete="off"></label>
+<label>Database user <input name="user" autocomplete="off"></label>
+<label>Database password <input type="password" name="secret" autocomplete="new-password"></label>
+<input type="hidden" name="back" value="/sites/{{$id}}/backups">
+<button type="submit">Add dump</button></details>
+</form>
+{{if .Backup.Volumes}}
+<h3>Container volumes</h3>
+{{hint "backup_volume"}}
+{{$vu := .Backup.VolUsers}}
+<ul>{{range .Backup.Volumes}}<li><code>{{.}}</code> <small class="muted">{{index $vu .}}</small>
+<form class="inline" hx-post="/backups/sites/{{$id}}/volumes/delete" hx-target="#msg"><input type="hidden" name="volume" value="{{.}}"><input type="hidden" name="back" value="/sites/{{$id}}/backups"><button type="submit" class="outline secondary">Remove</button></form></li>{{end}}</ul>
+{{end}}
+<form hx-post="/backups/sites/{{$id}}/volumes" hx-target="#msg">
+<details class="feature"><summary>Add a container volume</summary>
+<label>Volume name <input name="volume" placeholder="myapp_data" autocomplete="off" required></label>
+{{hint "backup_volume"}}
+<input type="hidden" name="back" value="/sites/{{$id}}/backups">
+<button type="submit">Add volume</button></details>
+</form>
+{{if .BackRuns}}
+<h3>This site's runs</h3>
+<table>
+<thead><tr><th>When</th><th>Trigger</th><th>Result</th><th>Size</th><th>Detail</th></tr></thead>
+<tbody>{{range .BackRuns}}<tr><td>{{.When}}</td><td>{{.Trigger}}{{if .Actor}} ({{.Actor}}){{end}}</td><td>{{.Status}}</td><td>{{.Size}}</td><td>{{if .Error}}<span class="explain">{{.Error}}</span>{{else}}<code>{{.Archive}}</code>{{end}}</td></tr>{{end}}</tbody>
+</table>{{end}}
+{{else}}
+<p class="empty">Backups are not configured on this host. First set the backup folder on the <a href="/backups">Backups page</a>; this site's schedule then shows here.</p>{{end}}
+<p id="msg" role="alert"></p>
+</section>
+{{end}}
+
+{{if eq .Active "mail"}}
+<section class="sect" id="panel-mail">
+<h2>Magic-link mail</h2>
+{{if .MailOK}}
+<p class="sect-note">Where this site's gate sends sign-in links. The fields themselves are edited in the editor's Access section; sending a test saves nothing.</p>
+<dl class="detail">
+<div><dt>Provider</dt><dd>{{if .Site.GateProvider}}{{.Site.GateProvider}}{{else}}none yet{{end}}</dd></div>
+<div><dt>Sender</dt><dd>{{if .Site.GateFrom}}<code>{{.Site.GateFrom}}</code>{{else}}not set{{end}}</dd></div>
+{{if eq .Site.GateProvider "smtp"}}<div><dt>SMTP</dt><dd>{{.Site.GateSMTPHost}}:{{if .Site.GateSMTPPort}}{{.Site.GateSMTPPort}}{{else}}587{{end}}{{if .Site.GateSMTPUser}} as {{.Site.GateSMTPUser}}{{end}}</dd></div>{{end}}
+<div><dt>Credential</dt><dd>{{if .Site.GateSecret}}stored, never shown{{else}}not set{{end}}</dd></div>
+</dl>
+{{if .Site.GateProvider}}<p id="msg" role="alert"></p>
+<form hx-post="/sites/{{$id}}/gate/test" hx-target="#msg">
+<label>Deliver a test to <input name="to" type="email" autocomplete="off"></label>
+<button type="submit" class="outline">{{icon "mail"}}Send test mail</button>
+</form>{{end}}{{hint "gate_secret"}}
+{{else}}<p class="empty">Magic links need Cloudflare (ServanaGo creates the <code>ml.{{$h}}</code> host) and <code>SERVANAGO_SECRET_KEY</code> in the environment file.</p>{{end}}
+</section>
+{{end}}
+
+{{if eq .Active "snippets"}}
+<section class="sect" id="panel-snippets">
+<h2>Snippets</h2>
+<p class="sect-note">Shared Caddyfile blocks attached to this site. They run after the gate and IP allowlist, before the site's own handler. Attach or detach them in the editor's Behaviour section; the catalog lives on the <a href="/snippets">Snippets page</a>.</p>
+{{if .Site.Snippets}}<table>
+<thead><tr><th>Attached</th><th>Free on this site</th></tr></thead>
+<tbody><tr><td>{{range .Snips}}{{if .On}}<code>{{.Name}}</code> {{end}}{{end}}</td>
+<td>{{range .Snips}}{{if not .On}}<code>{{.Name}}</code> {{end}}{{end}}</td></tr></tbody>
+</table>{{else if .Snips}}<p class="empty">Snippets exist on the <a href="/snippets">Snippets page</a>, but none are attached to {{$h}}.</p>
+{{else}}<p class="empty">No snippets exist yet. Create one on the <a href="/snippets">Snippets page</a>.</p>{{end}}
+</section>
+{{end}}
+
+{{if eq .Active "runtime"}}
+<section class="sect" id="panel-runtime">
+<h2>Runtime</h2>
+{{if .Site.IsRuntime}}
+{{with .Unit}}
+{{if .Err}}<p class="explain" role="alert">{{.Err}}</p>{{else}}
+<p><strong>{{.State}}</strong>{{if .PID}} · pid {{.PID}}{{end}}</p>
+{{if .Logs}}<pre id="unit-logs" tabindex="0" aria-label="Recent log lines">{{range .Logs}}{{.}}
+{{end}}</pre>
+<p class="sect-note">The journal tail since the last restart; the full history is under <code>/var/log/servanago/</code>.</p>
+{{else}}<p class="empty">No log lines yet.</p>{{end}}{{end}}
+{{else}}<p class="explain" role="alert">The ServanaGo helper is not answering, so no unit state can be shown for {{$h}}. Check <code>systemctl status servanago-helper</code>.</p>{{end}}
+{{else}}<p class="empty">{{$h}} is a {{.Site.Kind}} site: no supervised unit belongs to it.</p>{{end}}
+</section>
+{{end}}
+
+{{if eq .Active "gate"}}
+<section class="sect" id="panel-gate">
+<h2>Gate and access</h2>
+{{if .MailOK}}
+<p class="sect-note">The magic-link gate, its access list, the IP allowlist and basic authentication. {{hint "gate_mode"}}</p>
+<p>Mode: {{if eq .Site.GateMode "open"}}<strong>magic link, any email address</strong>{{else if eq .Site.GateMode "acl"}}<strong>magic link, allowlist</strong>{{else}}<strong>anybody, no gate</strong>{{end}}. The mode and mail provider are edited in the editor's Access section.</p>
+<table>
+<caption>Who may ask for a link</caption>
+<thead><tr><th>Entry</th><th>Added by</th><th>Added</th><th></th></tr></thead>
+<tbody>
+{{range .Grants}}<tr><td>{{if eq .Mode "domain"}}@{{end}}<code>{{.Value}}</code></td><td>{{.AddedBy}}</td><td>{{.AddedAt}}</td>
+<td><button type="button" class="outline secondary" hx-post="/sites/{{$id}}/gate/grants/delete" hx-vals='{"mode":"{{.Mode}}","value":"{{.Value}}","back":"/sites/{{$id}}/gate"}' hx-confirm="Remove {{.Value}}? Their session ends unless another rule still admits them.">Remove</button></td></tr>
+{{else}}<tr><td colspan="4">Nobody yet.</td></tr>{{end}}
+</tbody>
+</table>
+<form hx-post="/sites/{{$id}}/gate/grants" hx-target="#msg">
+{{hint "gate_rows"}}
+<label>Add an address or @domain <input name="rule" placeholder="alice@example.com or @contractor.example" autocomplete="off"></label>
+<input type="hidden" name="back" value="/sites/{{$id}}/gate">
+<button type="submit" class="outline">{{icon "plus"}}Add entry</button>
+</form>
+{{else}}<p class="empty">Magic links need Cloudflare and <code>SERVANAGO_SECRET_KEY</code> in the environment file; until then this site is served to anybody.</p>{{end}}
+<dl class="detail">
+<div><dt>IP allowlist</dt><dd>{{if .Site.Allowlist}}<code>{{.Site.Allowlist}}</code>{{else}}any address{{end}}</dd></div>
+<div><dt>Basic authentication</dt><dd>{{if .Site.BasicUser}}on, user <code>{{.Site.BasicUser}}</code>{{else}}off{{end}}</dd></div>
+</dl>
+{{hint "allowlist"}}
+</section>
+{{end}}
+
+{{if eq .Active "routes"}}
+<section class="sect" id="panel-routes">
+<h2>Extra routes</h2>
+<p class="sect-note">Path routes applied ahead of the site's default handler, one per line as <code>path=dial</code> in the editor's Behaviour section.</p>
+{{if .Routes}}
+<table>
+<thead><tr><th>Path</th><th>To</th></tr></thead>
+<tbody>
+{{range .Routes}}<tr><td><code>{{.Path}}</code></td><td><code>{{.Dial}}</code></td></tr>{{end}}
+</tbody>
+</table>
+{{else}}<p class="empty">No extra routes.</p>{{end}}
+{{with .Row}}{{if .HasUpstream}}<dl class="detail">
+<div><dt>Skip TLS verification of the upstream</dt><dd>{{if .Site.TLSSkipVerify}}yes{{else}}no{{end}}</dd></div>
+<div><dt>Stream responses as they arrive</dt><dd>{{if .Site.Stream}}yes{{else}}no{{end}}</dd></div>
+<div><dt>Upload limit</dt><dd>{{if .Site.MaxBody}}{{size .Site.MaxBody}}{{else}}Caddy default{{end}}</dd></div>
+</dl>{{end}}{{end}}
+</section>
+{{end}}
+
+{{if eq .Active "countries"}}
+<section class="sect" id="panel-countries">
+<h2>Country filter</h2>
+{{if .Site.CountryMode}}
+<p>Rule: {{if eq .Site.CountryMode "deny"}}<strong>denying</strong>{{else}}<strong>allowing only</strong>{{end}} <span class="chip">{{.CountryText}}</span></p>
+{{else}}<p class="empty">Off — the site is open to every country.</p>{{end}}
+{{if not .GeoOn}}<p class="explain">The GeoLite2 country database is not configured on this host, so the rule above does nothing. Set its path on the <a href="/settings">Settings</a> page; the codes are edited in the editor's Access section.</p>{{end}}
+</section>
+{{end}}
+{{end}}
+{{end}}

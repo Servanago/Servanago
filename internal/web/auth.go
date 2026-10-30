@@ -358,6 +358,15 @@ func hxRedirect(w http.ResponseWriter, to string) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// backOf is where an action's caller wants to land: forms on a site tab send back=/sites/<id>/<tab>,
+// everything else keeps the endpoint's own page. Values outside the site tree are ignored.
+func backOf(r *http.Request, def string) string {
+	if v := r.PostFormValue("back"); strings.HasPrefix(v, "/sites/") && !strings.ContainsAny(v, " \r\n\t") {
+		return v
+	}
+	return def
+}
+
 // csrf: SameSite=Strict covers cookies; additionally non-GET needs HX-Request and a same-host Origin.
 func (s *Server) csrf(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

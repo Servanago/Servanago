@@ -2,6 +2,7 @@
 {{with .Data}}
 <p class="crumb"><a href="/">Sites</a> <span aria-hidden="true">/</span> {{if .Edit}}{{index .Site.Hostnames 0}}{{else}}New site{{end}}</p>
 <h1>{{if .Edit}}{{index .Site.Hostnames 0}}{{else}}Add site{{end}} {{helplink "sites"}}</h1>
+{{if .Edit}}{{template "tabrail" .}}{{end}}
 {{if .Row}}<p class="chips">
 {{if not .Row.Enabled}}<span class="chip">disabled</span>{{else if .Row.Probed}}
 {{if .Row.Upstream}}<span class="chip up-{{.Row.Upstream}}">backend {{.Row.Upstream}}</span>{{else}}<span class="chip">static files</span>{{end}}
@@ -9,7 +10,7 @@
 {{if and .DNSOn .Row.DNSState}}<span class="chip dns-{{.Row.DNSState}}">DNS {{.Row.DNSState}}</span>{{end}}
 {{end}}
 </p>{{end}}
-<div class="editor">
+<div class="editor" id="panel-settings">
 <nav class="toc" aria-label="On this page">
 <a href="#sec-basics">Basics</a>
 <a href="#sec-access">Access</a>

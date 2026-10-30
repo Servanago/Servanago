@@ -179,8 +179,7 @@ func (s *Server) startScanSite(w http.ResponseWriter, r *http.Request) {
 		s.runScan(ctx, x, "manual")
 	}()
 	s.audit(r, "scan.started", x.Hostnames[0])
-	w.Header().Set("HX-Redirect", "/scan")
-	w.WriteHeader(http.StatusNoContent)
+	hxRedirect(w, backOf(r, "/scan"))
 }
 
 // runScan scans one site end to end: run row, walk, quarantine on find, notify, finish row.

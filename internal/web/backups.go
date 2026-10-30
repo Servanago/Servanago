@@ -104,6 +104,32 @@ type runView struct {
 	When, Scope, Trigger, Status, Archive, Size, Error, Actor string
 }
 
+// scopeOf builds one scope's view: the panel the Backups page renders and the facts the site's
+// Backups tab shows. canFiles comes from the site's kind, which the caller knows.
+func (s *Server) scopeOf(now time.Time, set store.BackupSettings, last map[string]store.BackupRun, lastOK map[string]int64,
+	scope, title string, siteID int64, sb store.SiteBackup, isPanel, canFiles bool) scopeView {
+	v := scopeView{Scope: scope, Title: title, SiteID: siteID, Panel: isPanel, On: sb.On || isPanel && set.Panel, Sched: sb.Sched, Keep: sb.Keep, KeepWeekly: sb.KeepWeekly, EffSched: set.Sched, CanFiles: canFiles}
+	if sb.Sched != "" {
+		v.EffSched = sb.Sched
+	}
+	if l, ok := last[scope]; ok {
+		v.LastText = when(l.Finished) + " " + l.Status
+		v.LastOK = l.Status == "ok"
+		v.LastErr = l.Error
+	} else {
+		v.LastText = "never"
+	}
+	v.LastOKText = when(lastOK[scope])
+	if sc, err := backup.ParseSched(v.EffSched); err == nil {
+		v.Due = sc.Due(backup.Last(set.Dir, scope), now)
+	}
+	ins, _ := backup.List(set.Dir, scope)
+	for _, in := range ins {
+		v.Archives = append(v.Archives, archiveView{Name: in.Name, When: in.Manifest.Started.Local().Format("2006-01-02 15:04"), Size: humanBytes(in.Bytes), Trigger: in.Manifest.Trigger, Damaged: in.Damaged})
+	}
+	return v
+}
+
 func humanBytes(n int64) string {
 	switch {
 	case n >= 1<<30:
@@ -147,37 +173,17 @@ func (s *Server) backupsPage(w http.ResponseWriter, r *http.Request) {
 		d.JobState = resp.Status.ActiveState
 		d.Running = resp.Status.ActiveState == "active" || resp.Status.ActiveState == "activating"
 	}
-	mk := func(scope, title string, siteID int64, sb store.SiteBackup, isPanel bool) scopeView {
-		v := scopeView{Scope: scope, Title: title, SiteID: siteID, Panel: isPanel, On: sb.On || isPanel && set.Panel, Sched: sb.Sched, Keep: sb.Keep, KeepWeekly: sb.KeepWeekly, EffSched: set.Sched}
-		if sb.Sched != "" {
-			v.EffSched = sb.Sched
-		}
-		if l, ok := last[scope]; ok {
-			v.LastText = when(l.Finished) + " " + l.Status
-			v.LastOK = l.Status == "ok"
-			v.LastErr = l.Error
-		} else {
-			v.LastText = "never"
-		}
-		v.LastOKText = when(lastOK[scope])
-		if sc, err := backup.ParseSched(v.EffSched); err == nil {
-			v.Due = sc.Due(backup.Last(set.Dir, scope), now)
-		}
-		ins, _ := backup.List(set.Dir, scope)
-		for _, in := range ins {
-			v.Archives = append(v.Archives, archiveView{Name: in.Name, When: in.Manifest.Started.Local().Format("2006-01-02 15:04"), Size: humanBytes(in.Bytes), Trigger: in.Manifest.Trigger, Damaged: in.Damaged})
-		}
-		return v
+	mk := func(scope, title string, siteID int64, sb store.SiteBackup, isPanel, canFiles bool) scopeView {
+		return s.scopeOf(now, set, last, lastOK, scope, title, siteID, sb, isPanel, canFiles)
 	}
-	d.Scopes = append(d.Scopes, mk("panel", "Panel (database, certificates, secret key)", 0, store.SiteBackup{}, true))
+	d.Scopes = append(d.Scopes, mk("panel", "Panel (database, certificates, secret key)", 0, store.SiteBackup{}, true, false))
 	for _, site := range sites {
 		sb, err := st.GetSiteBackup(ctx, site.ID)
 		if err != nil {
 			fail(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		v := mk(site.Slug, site.Hostnames[0], site.ID, sb, false)
-		v.CanFiles = site.Kind != "" && site.Kind != "proxy"
+		v := mk(site.Slug, site.Hostnames[0], site.ID, sb, false, site.Kind != "" && site.Kind != "proxy")
 		ps, _ := st.ListProfiles(ctx, site.ID)
 		for _, p := range ps {
 			t := p.Container + " / " + p.DB
@@ -288,7 +294,7 @@ func (s *Server) saveBackupSettings(w http.ResponseWriter, r *http.Request) {
 		s.audit(r, "backup.passphrase", "")
 	}
 	s.refreshBackupWarn(ctx)
-	hxRedirect(w, "/backups")
+	hxRedirect(w, backOf(r, "/backups"))
 }
 
 // runBackup starts the job for one scope or all of them, now.
@@ -316,7 +322,7 @@ func (s *Server) runBackup(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "backup.run", spec.Scope+" "+spec.Slug)
 	s.flash("Backup started. Results appear here within a minute of it finishing.")
-	hxRedirect(w, "/backups")
+	hxRedirect(w, backOf(r, "/backups"))
 }
 
 func (s *Server) siteByForm(w http.ResponseWriter, r *http.Request) (store.Site, bool) {
@@ -379,7 +385,7 @@ func (s *Server) saveSiteBackup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "backup.site", fmt.Sprintf("%s on=%v", site.Slug, sb.On))
-	hxRedirect(w, "/backups")
+	hxRedirect(w, backOf(r, "/backups"))
 }
 
 func (s *Server) addBackupProfile(w http.ResponseWriter, r *http.Request) {
@@ -421,7 +427,7 @@ func (s *Server) addBackupProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "backup.profile.add", site.Slug+" "+p.Name)
-	hxRedirect(w, "/backups")
+	hxRedirect(w, backOf(r, "/backups"))
 }
 
 func (s *Server) deleteBackupProfile(w http.ResponseWriter, r *http.Request) {
@@ -439,7 +445,7 @@ func (s *Server) deleteBackupProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "backup.profile.delete", site.Slug+" "+tidy(name, 32))
-	hxRedirect(w, "/backups")
+	hxRedirect(w, backOf(r, "/backups"))
 }
 
 func (s *Server) addBackupVolume(w http.ResponseWriter, r *http.Request) {
@@ -461,7 +467,7 @@ func (s *Server) addBackupVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "backup.volume.add", site.Slug+" "+v)
-	hxRedirect(w, "/backups")
+	hxRedirect(w, backOf(r, "/backups"))
 }
 
 func (s *Server) deleteBackupVolume(w http.ResponseWriter, r *http.Request) {
@@ -478,7 +484,7 @@ func (s *Server) deleteBackupVolume(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "backup.volume.delete", site.Slug)
-	hxRedirect(w, "/backups")
+	hxRedirect(w, backOf(r, "/backups"))
 }
 
 // scopeArchive validates an archive name against its scope and the files on disk and returns its path.
@@ -604,7 +610,7 @@ func (s *Server) restoreBackup(w http.ResponseWriter, r *http.Request) {
 		fail(w, serr.code, serr.msg)
 		return
 	}
-	hxRedirect(w, "/backups")
+	hxRedirect(w, backOf(r, "/backups"))
 }
 
 // helperActor is the signed-in user's name as the helper accepts it (no spaces: the MCP actor is "mcp token").

@@ -56,3 +56,18 @@
 </main>
 </body>
 </html>{{end}}
+
+{{define "tabrail"}}{{$id := .Site.ID}}{{$act := .Active}}
+<nav class="tabs" aria-label="Site sections">
+<a{{if or (not $act) (eq $act "settings")}} class="sel"{{end}} href="/sites/{{$id}}/settings">Settings</a>
+<a{{if eq $act "dns"}} class="sel"{{end}} href="/sites/{{$id}}/dns">DNS</a>
+<a{{if eq $act "ssl"}} class="sel"{{end}} href="/sites/{{$id}}/ssl">SSL</a>
+<a{{if eq $act "scan"}} class="sel"{{end}} href="/sites/{{$id}}/scan">Scan</a>
+<a{{if eq $act "backups"}} class="sel"{{end}} href="/sites/{{$id}}/backups">Backups</a>
+<a{{if eq $act "mail"}} class="sel"{{end}} href="/sites/{{$id}}/mail">Mail</a>
+<a{{if eq $act "snippets"}} class="sel"{{end}} href="/sites/{{$id}}/snippets">Snippets</a>
+<a{{if eq $act "runtime"}} class="sel"{{end}} href="/sites/{{$id}}/runtime">Runtime</a>
+<a{{if eq $act "gate"}} class="sel"{{end}} href="/sites/{{$id}}/gate">Gate</a>
+<a{{if eq $act "routes"}} class="sel"{{end}} href="/sites/{{$id}}/routes">Routes</a>
+<a{{if eq $act "countries"}} class="sel"{{end}} href="/sites/{{$id}}/countries">Countries</a>
+</nav>{{end}}

@@ -650,6 +650,7 @@ func (s *Server) updateSite(w http.ResponseWriter, r *http.Request) {
 type siteEditForm struct {
 	Site        store.Site
 	Edit        bool
+	Active      string        // the tab rail's selected name: always "settings" for the editor
 	HostLines   string        // the Hostnames box: one per line, primary first
 	DNSOn       bool          // Cloudflare is configured; otherwise the DNS record fields are hidden
 	GateACL     string        // textarea content of the allowlist on the add form
@@ -719,7 +720,7 @@ func extOpts(selected string) []extOpt {
 func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.Site, edit bool) {
 	title := "Add site"
 	rep := s.detect(r.Context())
-	form := siteEditForm{Site: rt, Edit: edit, HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
+	form := siteEditForm{Site: rt, Edit: edit, Active: "settings", HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
 		MailOK: s.gateUsable(), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOpts(rt.PHPExtensions), Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"

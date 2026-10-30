@@ -241,8 +241,7 @@ func (s *Server) dnsAction(w http.ResponseWriter, r *http.Request, action string
 	if rt, err := s.deps.Store.GetSite(r.Context(), id); err == nil {
 		s.audit(r, action, rt.Hostnames[0])
 	}
-	w.Header().Set("HX-Redirect", "/")
-	w.WriteHeader(http.StatusNoContent)
+	hxRedirect(w, backOf(r, "/"))
 }
 
 // renewWindow is when an issued certificate shows amber: Caddy renews about 30 days before expiry,

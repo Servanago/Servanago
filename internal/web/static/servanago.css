@@ -385,3 +385,9 @@ body:not(.app) .login-box { width: 100%; }
 @media (max-width: 640px) {
   .wordmark { font-size: 1.05rem; }
 }
+
+/* Site view tabs: one rail per site page, Settings last-selected at /sites/<id>. */
+.tabs { display: flex; gap: 0.15rem; border-bottom: 1px solid var(--sg-border); margin: 0.2rem 0 1.4rem; overflow-x: auto; max-width: 60rem; }
+.tabs a { padding: 0.42rem 0.7rem; border-bottom: 2px solid transparent; color: var(--sg-text-secondary); white-space: nowrap; font-size: 0.92rem; text-decoration: none; }
+.tabs a:hover { background: var(--sg-surface-raised); color: var(--sg-text); }
+.tabs a.sel { color: var(--sg-green-400); border-bottom-color: var(--sg-green-400); font-weight: 600; }
