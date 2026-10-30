@@ -13,6 +13,15 @@ import (
 	"time"
 )
 
+// Body and field caps: Postmark caps inbound attachments at 35 MB and RawEmail roughly doubles
+// the payload; one event notification is small and the stored row is bounded. Constants, not
+// settings — these numbers move by release, not by deployment.
+const (
+	MaxBody      = 100 << 20 // inbound webhook body cap
+	MaxEventBody = 5 << 20   // one event notification
+	MaxPayload   = 64 << 10  // what we store per event row
+)
+
 // statusOf maps Postmark's bounce type to an RFC 3464 status; anything unknown is a hard fail.
 func statusOf(bounceType string) string {
 	if strings.HasPrefix(bounceType, "Soft") {
@@ -31,6 +40,9 @@ func mailerDaemonLoop(addr string) bool {
 	lp, _, _ := strings.Cut(strings.ToLower(a.Address), "@")
 	return lp == "mailer-daemon" || lp == "postmaster"
 }
+
+// MailerDaemonLoop is the handler-facing name of the loop guard.
+func MailerDaemonLoop(addr string) bool { return mailerDaemonLoop(addr) }
 
 var dsnMaxContent = 512 << 10 // the bounce body shipped inside the DSN, capped
 

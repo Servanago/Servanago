@@ -256,6 +256,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sites/{id}/dns/takeover", s.protected(s.takeOverDNS))
 	// /mcp authenticates with its own bearer token and carries no cookie, so the cookie-era CSRF check does not apply.
 	top := http.NewServeMux()
+	// The Postmark webhooks authenticate per domain with basic auth: no cookie, no CSRF.
+	top.Handle("POST /_mailbridge/hook/{name}", s.geoGuard(http.HandlerFunc(s.mailHook)))
+	top.Handle("POST /_mailbridge/events/{name}", s.geoGuard(http.HandlerFunc(s.mailEvents)))
 	top.Handle("/mcp", s.geoGuard(s.mcpHandler()))
 	top.Handle("/", s.geoGuard(s.csrf(mux)))
 	return top
