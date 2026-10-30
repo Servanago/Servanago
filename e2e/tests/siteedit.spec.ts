@@ -17,7 +17,7 @@ test('add a site, edit it, delete it', async ({ page }) => {
   await page.getByRole('button', { name: 'Add site' }).click();
   await expect(page).toHaveURL(/\/$/);
   const row = siteRow(page, /sonarr\.routes\.example\.net/);
-  await expect(row.locator('.target')).toHaveText('192.168.1.20:8989');
+  await expect((await openRow(row)).getByText('192.168.1.20:8989')).toBeVisible();
 
   await (await openRow(row)).getByRole('link', { name: 'Edit' }).click();
   await page.getByLabel('Enabled').uncheck();

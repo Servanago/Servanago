@@ -25,7 +25,7 @@ test('static site: serve a folder, no dotfiles, no listing', async ({ page }) =>
   await page.getByRole('button', { name: 'Add site' }).click();
 
   const row = siteRow(page, /files\.static\.example\.test/);
-  await expect(row.locator('.target')).toContainText(root);
+  await expect((await openRow(row)).getByText(root).first()).toBeVisible();
 
   // Navigate (not page.request): only the browser applies the host-resolver rule for *.static.example.test.
   expect((await page.goto(`${SITE}/`))!.status()).toBe(200);

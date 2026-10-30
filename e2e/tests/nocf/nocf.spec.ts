@@ -22,7 +22,7 @@ test('without Cloudflare: add a domain and a site, and no DNS appears anywhere',
   await page.getByRole('button', { name: 'Add site' }).click();
 
   const row = await openRow(siteRow(page, /app\.nocf\.example\.net/));
-  await expect(row.locator('.target')).toHaveText('192.168.1.40:9300');
+  await expect(row.getByText('192.168.1.40:9300')).toBeVisible();
   await expect(row.getByText('DNS', { exact: true })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Resync' })).toHaveCount(0);
 });
