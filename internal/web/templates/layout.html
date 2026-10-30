@@ -14,38 +14,33 @@
 <script src="/static/htmx.min.js" defer></script>
 </head>
 <body{{if not .Bare}} class="app"{{end}}>
-{{if .Bare}}<main class="container">{{else}}<aside class="sidebar">
-<a class="brand" href="/" aria-label="ServanaGo dashboard"><img src="/static/mark-64.png" alt="" width="32" height="32"><span class="wordmark">Servana<b>Go</b></span></a>
-<nav class="side-nav" aria-label="Main">
-<div class="nav-group">
+{{if .Bare}}<main class="container">{{else}}<header class="topbar"><div class="topbar-in">
+<a class="brand" href="/" aria-label="ServanaGo dashboard"><img src="/static/mark-64.png" alt="" width="30" height="30"><span class="wordmark">Servana<b>Go</b></span></a>
+<nav class="topnav" aria-label="Main">
 <a href="/"{{if eq .Nav "dashboard"}} aria-current="page"{{end}}>{{icon "globe"}}Sites</a>
-<a href="/reference"{{if eq .Nav "reference"}} aria-current="page"{{end}}>{{icon "list"}}Reference</a>
-<a href="/sites/new">{{icon "plus"}}Add site</a>
-</div>
-<div class="nav-group"><h6>Infrastructure</h6>
-<a href="/domains"{{if eq .Nav "domains"}} aria-current="page"{{end}}>{{icon "domains"}}Domains</a>
 <a href="/dns"{{if eq .Nav "dns"}} aria-current="page"{{end}}>{{icon "globe"}}DNS</a>
+<a href="/domains"{{if eq .Nav "domains"}} aria-current="page"{{end}}>{{icon "domains"}}Domains</a>
 <a href="/php"{{if eq .Nav "php"}} aria-current="page"{{end}}>{{icon "code"}}PHP</a>
 <a href="/snippets"{{if eq .Nav "snippets"}} aria-current="page"{{end}}>{{icon "braces"}}Snippets</a>
-</div>
-{{if .LoggedIn}}<div class="nav-group"><h6>Access</h6>
-<a href="/users"{{if eq .Nav "users"}} aria-current="page"{{end}}>{{icon "users"}}Users</a>
-<a href="/security"{{if eq .Nav "security"}} aria-current="page"{{end}}>{{icon "shield"}}Security</a>
-</div>{{end}}
-<div class="nav-group"><h6>Operations</h6>
-<a href="/logs"{{if eq .Nav "logs"}} aria-current="page"{{end}}>{{icon "list"}}Logs</a>
 <a href="/backups"{{if eq .Nav "backups"}} aria-current="page"{{end}}>{{icon "archive"}}Backups</a>
 <a href="/scan"{{if eq .Nav "scan"}} aria-current="page"{{end}}>{{icon "shield"}}Scan</a>
 <a href="/mail"{{if eq .Nav "mail"}} aria-current="page"{{end}}>{{icon "mail"}}Mail</a>
-{{if .LoggedIn}}<a href="/audit"{{if eq .Nav "audit"}} aria-current="page"{{end}}>{{icon "clock"}}Audit trail</a>{{end}}
-</div>
+<a href="/logs"{{if eq .Nav "logs"}} aria-current="page"{{end}}>{{icon "list"}}Logs</a>
+<a href="/sites/new" class="new">{{icon "plus"}}Add site</a>
 </nav>
-<div class="nav-group side-foot">
-<a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>{{icon "settings"}}Settings</a>
-<a href="/help"{{if eq .Nav "help"}} aria-current="page"{{end}}>{{icon "help"}}Help</a>
-{{if .LoggedIn}}<button class="signout" hx-post="/logout">{{icon "logout"}}Sign out</button>{{end}}
+{{if .LoggedIn}}<details class="usermenu">
+<summary aria-label="Account menu">Menu</summary>
+<div class="usermenu-body">
+<a href="/settings"{{if eq .Nav "settings"}} aria-current="page"{{end}}>Settings</a>
+<a href="/users"{{if eq .Nav "users"}} aria-current="page"{{end}}>Users</a>
+<a href="/security"{{if eq .Nav "security"}} aria-current="page"{{end}}>Security</a>
+<a href="/audit"{{if eq .Nav "audit"}} aria-current="page"{{end}}>Audit trail</a>
+<a href="/reference"{{if eq .Nav "reference"}} aria-current="page"{{end}}>Reference</a>
+<a href="/help"{{if eq .Nav "help"}} aria-current="page"{{end}}>Help</a>
+<button class="signout" hx-post="/logout">Sign out</button>
 </div>
-</aside>
+</details>{{else}}<a class="topfoot" href="/settings">Settings</a> <a class="topfoot" href="/help">Help</a>{{end}}
+</div></header>
 <main class="content">{{end}}
 {{if .Open}}<div class="banner danger" role="alert"><strong>UI is open.</strong> Anyone who can reach this page can change your sites. Set <code>ADMIN_PASSWORD</code> in the environment file and restart ServanaGo to require a login.</div>{{end}}
 {{if .StartupErr}}<div class="banner danger" role="alert"><strong>Your saved settings were rejected, so only this page is being served.</strong> Fix or delete the item named below, then restart. {{helplink "troubleshooting"}}<br>{{errhtml .StartupErr}}</div>{{end}}
@@ -53,7 +48,26 @@
 {{if .BackupWarn}}<div class="banner warn" role="alert"><strong>Backup problem.</strong> {{.BackupWarn}} <a href="/backups">Backups</a></div>{{end}}
 {{if .CFErr}}<div class="banner danger" role="alert"><strong>Cloudflare token problem.</strong> Certificates and DNS will fail until it is fixed. {{helplink "token"}}<br>{{errhtml .CFErr}}</div>{{end}}
 {{template "content" .}}
-</main>
+{{if not .Bare}}</main>
+<div class="toasts" aria-live="polite"></div>
+<script>
+// Tab saves answer into the form's message paragraph; this also raises each one as a toast.
+document.addEventListener('htmx:afterSwap', function (e) {
+  var t = e.target;
+  if (!t || !t.hasAttribute || !t.hasAttribute('data-toast')) return;
+  var text = (t.textContent || '').trim();
+  if (!text) return;
+  var box = document.querySelector('.toasts');
+  if (!box) return;
+  var el = document.createElement('div');
+  el.className = 'toast';
+  el.dataset.kind = t.dataset.err ? 'err' : 'ok';
+  el.textContent = text;
+  box.appendChild(el);
+  setTimeout(function () { el.remove(); }, 4500);
+});
+</script>
+{{else}}</main>{{end}}
 </body>
 </html>{{end}}
 

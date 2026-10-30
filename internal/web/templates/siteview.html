@@ -48,7 +48,7 @@
 </table>
 {{else}}<p class="empty">This site has no DNS records yet. Save the site once and ServanaGo creates the main record in its zone.</p>{{end}}
 {{end}}
-{{if .Row}}<p id="msg" role="alert"></p>
+{{if .Row}}<p id="msg" role="alert" data-toast></p>
 <form hx-post="/sites/{{$id}}/dns/resync" hx-target="#msg" class="acts">
 <input type="hidden" name="back" value="/sites/{{$id}}/dns">
 <button type="submit" class="outline">{{icon "refresh"}}Resync now</button></form>
@@ -133,7 +133,7 @@
 </table>
 {{end}}{{end}}{{end}}{{end}}
 {{else}}<p class="empty">Scanning is not set up on this host. Point ServanaGo at clamd on the <a href="/settings">Settings</a> page. {{helplink "scan"}}</p>{{end}}
-<p id="msg" role="alert"></p>
+<p id="msg" role="alert" data-toast></p>
 </section>
 {{end}}
 
@@ -195,7 +195,7 @@
 </table>{{end}}
 {{else}}
 <p class="empty">Backups are not configured on this host. First set the backup folder on the <a href="/backups">Backups page</a>; this site's schedule then shows here.</p>{{end}}
-<p id="msg" role="alert"></p>
+<p id="msg" role="alert" data-toast></p>
 </section>
 {{end}}
 
@@ -220,7 +220,7 @@
 {{hintid "gate_secret"}}
 <button type="submit">Save mail</button>
 </form>
-<p id="msg" role="alert"></p>
+<p id="msg" role="alert" data-toast></p>
 {{if .Site.GateProvider}}
 <form hx-post="/sites/{{$id}}/gate/test" hx-target="#msg">
 <label>Deliver a test to <input name="to" type="email" autocomplete="off"></label>
@@ -245,7 +245,7 @@
 </form>
 <p class="sect-note">The catalog — where bodies are written and allowlist-checked — is the <a href="/snippets">Snippets page</a>.</p>
 {{else}}<p class="empty">No snippets exist yet. Create one on the <a href="/snippets">Snippets page</a>, then attach it here.</p>{{end}}
-<p id="msg" role="alert"></p>
+<p id="msg" role="alert" data-toast></p>
 </section>
 {{end}}
 
@@ -273,7 +273,7 @@
 {{hintid "gate_mode"}}
 <button type="submit">Save gate</button>
 </form>
-<p id="msg" role="alert"></p>
+<p id="msg" role="alert" data-toast></p>
 <table>
 <caption>Who may ask for a link</caption>
 <thead><tr><th>Entry</th><th>Added by</th><th>Added</th><th></th></tr></thead>
@@ -320,7 +320,7 @@
 {{end}}
 <button type="submit">Save routes</button>
 </form>
-<p id="msg" role="alert"></p>
+<p id="msg" role="alert" data-toast></p>
 </section>
 {{end}}
 
@@ -340,7 +340,7 @@
 {{hintid "country_codes"}}
 <button type="submit">Save countries</button>
 </form>
-<p id="msg" role="alert"></p>
+<p id="msg" role="alert" data-toast></p>
 {{else}}
 <p class="empty">The GeoLite2 country database is not configured on this host, so no country rule takes effect. Set its path on the <a href="/settings">Settings</a> page first.</p>
 {{end}}

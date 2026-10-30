@@ -10,12 +10,15 @@
 <div class="sites">
 {{range .}}
 {{$row := .}}{{$h := .Health}}
-<details class="srow" data-host="{{.Host}}">
+<details class="srow" data-host="{{.Host}}" data-kind="{{.KindLabel}}" data-health="{{$h.Level}}">
 <summary>
 <span class="dot dot-{{$h.Level}}" aria-hidden="true"></span>
 <span class="host">{{.Host}}{{range .Aliases}}<small class="alias">{{.}}</small>{{end}}</span>
 <span class="target">{{.Target}}</span>
 <span class="chip">{{.KindLabel}}</span>
+{{if .Probed}}<span class="chip cert-{{.Cert.State}}" title="Certificate state{{if not .Cert.NotAfter.IsZero}} — expires {{.Cert.NotAfter.Format "2006-01-02"}}{{end}}">{{.Cert.State}}</span>{{end}}
+{{if and .DNSOn .DNSState}}<span class="chip dns-{{.DNSState}}">DNS {{.DNSState}}</span>{{end}}
+{{if .GateMode}}<span class="chip" title="A magic link is required before this site is served">gated</span>{{end}}
 {{if .ScanOn}}{{if ne .Scan.StartedAt 0}}<span class="chip" title="Newest scan run{{if .Scan.FinishedAt}} ({{unixts .Scan.FinishedAt}}){{end}}">{{if .ScanHits}}{{printf "%d hit" .ScanHits}}{{if ne .ScanHits 1}}s{{end}}{{else if eq .Scan.State "running"}}scan running{{else if eq .Scan.State "error"}}scan error{{else if .Scan.FinishedAt}}scan clean{{end}}</span>{{end}}{{end}}{{if .BackText}}<span class="chip{{if not .BackOK}} chip-warn{{end}}" title="Newest backup run of this site">backup {{.BackText}}</span>{{end}}
 <span class="state state-{{$h.Level}}">{{$h.Label}}</span>
 </summary>
@@ -71,6 +74,17 @@
 </ul>
 </article>
 {{end}}
+<div class="ref-controls" id="sitefilter">
+<input type="search" id="site-q" placeholder="Search hostnames…" aria-label="Search sites">
+<select id="site-fk" aria-label="Filter by kind">
+<option value="">All kinds</option>
+<option>Static</option><option>Proxy</option><option>Node</option><option>PHP</option><option>FrankenPHP</option><option>FastCGI</option><option>CGI</option>
+</select>
+<select id="site-fs" aria-label="Filter by state">
+<option value="">Any state</option>
+<option value="bad">Needs attention</option><option value="warn">Warnings</option><option value="off">Disabled</option><option value="ok">All green</option>
+</select>
+</div>
 <div id="sites" hx-get="/status" hx-trigger="every 10s" hx-swap="innerHTML">{{template "sites" .Sites}}</div>
 <p id="msg" role="alert"></p>
 
@@ -94,7 +108,9 @@
 {{template "deletedlg" .DNSOn}}
 <script>
 (function () {
-  // Open rows survive the 10s poll and the reload after Disable or Resync; sessionStorage may be blocked, then they do not.
+  /* Open rows survive the 10s poll and the reload after Disable or Resync; sessionStorage may be
+     blocked, then they do not. The search and the kind/state selects are a client-side filter
+     re-applied after every poll swap. */
   var open = {}, KEY = 'sg-open-rows';
   try { open = JSON.parse(sessionStorage.getItem(KEY) || '{}') || {}; } catch (_) { open = {}; }
   function restore(root) {
@@ -107,8 +123,20 @@
     if (d.open) open[d.dataset.host] = true; else delete open[d.dataset.host];
     try { sessionStorage.setItem(KEY, JSON.stringify(open)); } catch (_) { /* in-memory only */ }
   }, true);
+  var q = document.getElementById('site-q'), fk = document.getElementById('site-fk'), fs = document.getElementById('site-fs');
+  function applyFilter() {
+    if (!q) return;
+    var text = (q.value || '').toLowerCase(), kind = fk.value, state = fs.value;
+    document.querySelectorAll('#sites .srow').forEach(function (d) {
+      var hit = (!text || (d.dataset.host + ' ' + (d.textContent || '')).toLowerCase().indexOf(text) >= 0) &&
+        (!kind || d.dataset.kind === kind) &&
+        (!state || d.dataset.health === state);
+      d.hidden = !hit;
+    });
+  }
+  if (q) { q.addEventListener('input', applyFilter); fk.addEventListener('change', applyFilter); fs.addEventListener('change', applyFilter); }
   document.body.addEventListener('htmx:afterSwap', function (e) {
-    if (e.target.id === 'sites') restore(e.target);
+    if (e.target.id === 'sites') { restore(e.target); applyFilter(); }
   });
 })();
 </script>
