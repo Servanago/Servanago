@@ -5,8 +5,8 @@
 Debian 12+ or Ubuntu 22.04+ with systemd. One deb installs the binary, a `servanago` system user, `/etc/servanago/servanago.env`, the `servanago.service` unit, `/var/lib/servanago` (`DATA_DIR`) and `/var/log/servanago`.
 
 ```sh
-make deb                                    # bin/servanago_0.15.1_amd64.deb
-sudo apt-get install ./bin/servanago_0.15.1_amd64.deb
+make deb                                    # bin/servanago_0.16.0_amd64.deb
+sudo apt-get install ./bin/servanago_0.16.0_amd64.deb
 ```
 
 Or all of it with nothing but this checkout: `sudo packaging/install.sh`.

@@ -27,8 +27,8 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 Debian 12+ or Ubuntu 22.04+ with systemd:
 
 ```sh
-make deb                                    # bin/servanago_0.15.1_amd64.deb
-sudo apt-get install ./bin/servanago_0.15.1_amd64.deb
+make deb                                    # bin/servanago_0.16.0_amd64.deb
+sudo apt-get install ./bin/servanago_0.16.0_amd64.deb
 ```
 
 Edit `/etc/servanago/servanago.env` (`SERVANAGO_HOST`, `ACME_EMAIL`, `ADMIN_PASSWORD`), then `sudo systemctl start servanago` and open `https://<SERVANAGO_HOST>`.
