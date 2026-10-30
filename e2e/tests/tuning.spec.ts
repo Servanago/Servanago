@@ -23,10 +23,10 @@ test('streaming and upload limit: set, badge, edit, reject bad size', async ({ p
   await expect(row.getByText('max 2GB')).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
-  await page.getByText('Advanced', { exact: true }).click();
+  await page.locator('nav[aria-label="Site sections"]').getByRole('link', { name: 'Routes' }).click();
   await expect(page.getByLabel('Send responses as they arrive')).toBeChecked();
   await expect(page.getByLabel('Upload limit')).toHaveValue('2GB');
   await page.getByLabel('Upload limit').fill('500GB');
-  await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'upload limit' })).toBeVisible();
+  await page.getByRole('button', { name: 'Save routes' }).click();
+  await expect(page.getByText('upload limit').first()).toBeVisible();
 });

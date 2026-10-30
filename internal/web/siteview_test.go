@@ -269,3 +269,97 @@ func TestMailScopedSave(t *testing.T) {
 		t.Error("stored secret not kept across a blank-password save")
 	}
 }
+
+// The last four sections: snippets, routes (+ tuning), countries, per-site DNS record IPs.
+
+func TestSnippetsScopedSave(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"snp.example.com"}, Kind: "static", StaticRoot: "/srv/www/snp"})
+	ctx := context.Background()
+	if _, err := s.deps.Store.CreateSnippet(ctx, "sec-headers", "header X-A 1"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.deps.Store.CreateSnippet(ctx, "rate-limit", "rate_limit 1/m"); err != nil {
+		t.Fatal(err)
+	}
+	w := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/snippets", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"snippets": {"sec-headers", "rate-limit", ""}}.Encode()})
+	if w.Code != 200 {
+		t.Fatalf("attach: %d %s", w.Code, w.Body.String())
+	}
+	rt, _ := s.deps.Store.GetSite(ctx, id)
+	if len(rt.Snippets) != 2 || rt.Snippets[0] != "rate-limit" || rt.Snippets[1] != "sec-headers" {
+		t.Fatalf("attached: %v", rt.Snippets)
+	}
+	// an unknown name is refused, nothing changes
+	w = s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/snippets", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"snippets": {"ghost"}}.Encode()})
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("unknown snippet: %d %s", w.Code, w.Body.String())
+	}
+	if cur, _ := s.deps.Store.GetSite(ctx, id); len(cur.Snippets) != 2 {
+		t.Errorf("unknown snippet changed the rows: %v", cur.Snippets)
+	}
+	// detaching everything clears (the form always carries the empty sentinel)
+	w = s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/snippets", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"snippets": {""}}.Encode()})
+	if w.Code != 200 {
+		t.Fatalf("detach: %d", w.Code)
+	}
+	if rt, _ = s.deps.Store.GetSite(ctx, id); len(rt.Snippets) != 0 {
+		t.Errorf("still attached: %v", rt.Snippets)
+	}
+}
+
+func TestRoutesScopedSave(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"rte.example.com"}, Kind: "static", StaticRoot: "/srv/www/rte"})
+	w := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/routes", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"extra_routes": {"/api=127.0.0.1:3011"}, "stream": {"on"}, "max_body": {"2GB"}, "tls_skip_verify": {"on"}}.Encode()})
+	if w.Code != 200 {
+		t.Fatalf("routes save: %d %s", w.Code, w.Body.String())
+	}
+	rt, _ := s.deps.Store.GetSite(context.Background(), id)
+	if rt.ExtraRoutes != "/api=127.0.0.1:3011" || rt.Stream != true || rt.MaxBody != 2<<30 {
+		t.Fatalf("routes: %q %v %d", rt.ExtraRoutes, rt.Stream, rt.MaxBody)
+	}
+	w = s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/routes", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"extra_routes": {"/api=nonsense"}}.Encode()})
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("bad route: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestGeoScopedSave(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"geo.example.com"}, Kind: "static", StaticRoot: "/srv/www/geo"})
+	w := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/geo", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"country_mode": {"deny"}, "countries": {"RU, IR"}}.Encode()})
+	if w.Code != 200 {
+		t.Fatalf("geo save: %d %s", w.Code, w.Body.String())
+	}
+	rt, _ := s.deps.Store.GetSite(context.Background(), id)
+	if rt.CountryMode != "deny" || rt.Countries != "RU IR" {
+		t.Fatalf("geo: %q %q", rt.CountryMode, rt.Countries)
+	}
+	w = s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/geo", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"country_mode": {"deny"}, "countries": {"USA"}}.Encode()})
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("bad code: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDNSIpScopedSave(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"ip.example.com"}, Kind: "static", StaticRoot: "/srv/www/ip"})
+	w := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/dns-ip", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"record_ip": {"192.168.1.9"}, "record_ip6": {"2001:db8::9"}}.Encode()})
+	if w.Code != 200 {
+		t.Fatalf("dns-ip save: %d %s", w.Code, w.Body.String())
+	}
+	rt, _ := s.deps.Store.GetSite(context.Background(), id)
+	if rt.RecordIP != "192.168.1.9" || rt.RecordIP6 != "2001:db8::9" {
+		t.Fatalf("record ips: %q %q", rt.RecordIP, rt.RecordIP6)
+	}
+	w = s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/dns-ip", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"record_ip": {"999.1.1.1"}}.Encode()})
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("bad ip: %d %s", w.Code, w.Body.String())
+	}
+}

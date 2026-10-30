@@ -52,8 +52,9 @@ test('snippets: add, refuse a bad one, attach to a site, block paths, detach, de
   // Shared server: detach, delete the snippet, delete the site.
   await page.goto('http://127.0.0.1:28081/');
   await (await openRow(siteRow(page, /snip\.static\.example\.test/))).getByRole('link', { name: 'Edit' }).click();
+  await page.locator('nav[aria-label="Site sections"]').getByRole('link', { name: 'Snippets' }).click();
   await page.getByLabel('e2e_block').uncheck();
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save snippets' }).click();
   await expect(page.getByText('Saved and applied.')).toBeVisible();
   expect((await page.goto(`${SITE}/composer.lock`))!.status()).toBe(200);
 

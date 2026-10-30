@@ -39,6 +39,18 @@
 <input type="hidden" name="back" value="/sites/{{$id}}/dns">
 <button type="submit" class="outline warn">{{icon "takeover"}}Take over DNS</button></form>
 {{end}}{{end}}
+{{if .Row}}
+<form hx-post="/sites/{{$id}}/dns-ip" hx-target="#msg">
+<details class="feature"><summary>Record addresses</summary>
+<label>This site's DNS record IP (blank = the domain's default) <input name="record_ip" value="{{.Site.RecordIP}}" placeholder="192.168.1.20" aria-describedby="hint-record_ip"></label>
+{{hintid "record_ip"}} {{helplink "addresses"}}
+<label>This site's DNS record IPv6 (blank = the domain's) <input name="record_ip6" value="{{.Site.RecordIP6}}" placeholder="2001:db8::20" aria-describedby="hint-record_ip6"></label>
+{{hintid "record_ip6"}}
+<input type="hidden" name="back" value="/sites/{{$id}}/dns">
+<button type="submit" class="outline">Save record IPs</button>
+</details>
+</form>
+{{end}}
 {{else}}
 <p class="empty">Cloudflare is not connected, so this tab has no records to work with: point {{$h}} at this server in your own DNS. {{helplink "token"}}</p>{{end}}
 </section>
@@ -204,13 +216,18 @@
 {{if eq .Active "snippets"}}
 <section class="sect" id="panel-snippets">
 <h2>Snippets</h2>
-<p class="sect-note">Shared Caddyfile blocks attached to this site. They run after the gate and IP allowlist, before the site's own handler. Attach or detach them in the editor's Behaviour section; the catalog lives on the <a href="/snippets">Snippets page</a>.</p>
-{{if .Site.Snippets}}<table>
-<thead><tr><th>Attached</th><th>Free on this site</th></tr></thead>
-<tbody><tr><td>{{range .Snips}}{{if .On}}<code>{{.Name}}</code> {{end}}{{end}}</td>
-<td>{{range .Snips}}{{if not .On}}<code>{{.Name}}</code> {{end}}{{end}}</td></tr></tbody>
-</table>{{else if .Snips}}<p class="empty">Snippets exist on the <a href="/snippets">Snippets page</a>, but none are attached to {{$h}}.</p>
-{{else}}<p class="empty">No snippets exist yet. Create one on the <a href="/snippets">Snippets page</a>.</p>{{end}}
+{{if .Snips}}
+<p class="sect-note">Shared Caddyfile blocks attached to this site; they run after the gate and IP allowlist, before the site's own handler. {{hint "snippets"}}</p>
+<form hx-post="/sites/{{$id}}/snippets" hx-target="#msg">
+<input type="hidden" name="snippets" value="">
+<fieldset><legend>Attached to {{$h}}</legend>
+{{range .Snips}}<label><input type="checkbox" name="snippets" value="{{.Name}}"{{if .On}} checked{{end}}> {{.Name}}</label>
+{{end}}</fieldset>
+<button type="submit">Save snippets</button>
+</form>
+<p class="sect-note">The catalog — where bodies are written and allowlist-checked — is the <a href="/snippets">Snippets page</a>.</p>
+{{else}}<p class="empty">No snippets exist yet. Create one on the <a href="/snippets">Snippets page</a>, then attach it here.</p>{{end}}
+<p id="msg" role="alert"></p>
 </section>
 {{end}}
 
@@ -277,30 +294,45 @@
 {{if eq .Active "routes"}}
 <section class="sect" id="panel-routes">
 <h2>Extra routes</h2>
-<p class="sect-note">Path routes applied ahead of the site's default handler, one per line as <code>path=dial</code> in the editor's Behaviour section.</p>
-{{if .Routes}}
-<table>
-<thead><tr><th>Path</th><th>To</th></tr></thead>
-<tbody>
-{{range .Routes}}<tr><td><code>{{.Path}}</code></td><td><code>{{.Dial}}</code></td></tr>{{end}}
-</tbody>
-</table>
-{{else}}<p class="empty">No extra routes.</p>{{end}}
-{{with .Row}}{{if .HasUpstream}}<dl class="detail">
-<div><dt>Skip TLS verification of the upstream</dt><dd>{{if .Site.TLSSkipVerify}}yes{{else}}no{{end}}</dd></div>
-<div><dt>Stream responses as they arrive</dt><dd>{{if .Site.Stream}}yes{{else}}no{{end}}</dd></div>
-<div><dt>Upload limit</dt><dd>{{if .Site.MaxBody}}{{size .Site.MaxBody}}{{else}}Caddy default{{end}}</dd></div>
-</dl>{{end}}{{end}}
+<p class="sect-note">Path routes applied ahead of the site's default handler, one per line; a proxy site's tuning sits with them.</p>
+<form hx-post="/sites/{{$id}}/routes" hx-target="#msg">
+<label>Extra routes (one per line, path=dial)
+<textarea name="extra_routes" rows="3" placeholder="/cryptpad_websocket=127.0.0.1:3303" aria-describedby="hint-extra_routes">{{.Site.ExtraRoutes}}</textarea></label>
+{{hintid "extra_routes"}}
+{{if eq .Site.Kind "proxy"}}
+<label><input type="checkbox" name="tls_skip_verify"{{if .Site.TLSSkipVerify}} checked{{end}} aria-describedby="hint-skip_verify"> Skip TLS verification (self-signed https upstream)</label>
+{{hintid "skip_verify"}}
+<label><input type="checkbox" name="stream"{{if .Site.Stream}} checked{{end}} aria-describedby="hint-stream"> Send responses as they arrive (streaming)</label>
+{{hintid "stream"}}
+<label>Upload limit (blank = no limit) <input name="max_body" value="{{size .Site.MaxBody}}" placeholder="2GB" aria-describedby="hint-max_body"></label>
+{{hintid "max_body"}}
+{{end}}
+<button type="submit">Save routes</button>
+</form>
+<p id="msg" role="alert"></p>
 </section>
 {{end}}
 
 {{if eq .Active "countries"}}
 <section class="sect" id="panel-countries">
 <h2>Country filter</h2>
-{{if .Site.CountryMode}}
-<p>Rule: {{if eq .Site.CountryMode "deny"}}<strong>denying</strong>{{else}}<strong>allowing only</strong>{{end}} <span class="chip">{{.CountryText}}</span></p>
-{{else}}<p class="empty">Off — the site is open to every country.</p>{{end}}
-{{if not .GeoOn}}<p class="explain">The GeoLite2 country database is not configured on this host, so the rule above does nothing. Set its path on the <a href="/settings">Settings</a> page; the codes are edited in the editor's Access section.</p>{{end}}
+{{if .Site.CountryMode}}<p>Current rule: {{if eq .Site.CountryMode "deny"}}<strong>denying</strong>{{else}}<strong>allowing only</strong>{{end}} <span class="chip">{{.CountryText}}</span></p>{{else}}<p class="empty">Off — the site is open to every country.</p>{{end}}
+{{if .GeoOn}}
+<form hx-post="/sites/{{$id}}/geo" hx-target="#msg">
+<label>Rule <select name="country_mode" aria-describedby="hint-country_mode">
+<option value=""{{if not .Site.CountryMode}} selected{{end}}>Off (every country)</option>
+<option value="deny"{{if eq .Site.CountryMode "deny"}} selected{{end}}>Deny these countries</option>
+<option value="allow"{{if eq .Site.CountryMode "allow"}} selected{{end}}>Allow only these countries</option>
+</select></label>
+{{hintid "country_mode"}}
+<label>Countries (ISO codes, space or comma separated) <input name="countries" value="{{.Site.Countries}}" placeholder="RU CN" autocomplete="off" aria-describedby="hint-country_codes"></label>
+{{hintid "country_codes"}}
+<button type="submit">Save countries</button>
+</form>
+<p id="msg" role="alert"></p>
+{{else}}
+<p class="empty">The GeoLite2 country database is not configured on this host, so no country rule takes effect. Set its path on the <a href="/settings">Settings</a> page first.</p>
+{{end}}
 </section>
 {{end}}
 {{end}}

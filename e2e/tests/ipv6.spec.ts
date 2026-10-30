@@ -22,9 +22,10 @@ test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA record
 
   // a per-site IPv6 override, then clearing it removes the AAAA badge only when the domain has none
   await row.getByRole('link', { name: 'Edit' }).click();
-  await page.getByText('Advanced', { exact: true }).click();
+  await page.locator('nav[aria-label="Site sections"]').getByRole('link', { name: 'DNS' }).click();
+  await page.locator('#panel-dns').locator('summary', { hasText: 'Record addresses' }).click();
   await page.getByLabel('AAAA record IPv6').fill('2001:db8::99');
-  await page.getByRole('button', { name: 'Save' }).click();
+  await page.getByRole('button', { name: 'Save record IPs' }).click();
   await expect(page.getByText('Saved and applied.')).toBeVisible();
   await page.goto('/');
   await openRow(row); // a fresh page starts with every row closed

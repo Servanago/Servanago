@@ -217,6 +217,8 @@
 </section>
 <section class="sect" id="sec-behaviour">
 <h2>Behaviour</h2>
+{{if .Edit}}<p class="sect-note">Notes here; snippets, routes, tuning and the DNS record IPs have their own tabs: <a href="/sites/{{.Site.ID}}/snippets">Snippets</a>, <a href="/sites/{{.Site.ID}}/routes">Routes</a> and <a href="/sites/{{.Site.ID}}/dns">DNS</a>.</p>
+{{else}}
 <p class="sect-note">Snippets, extra routes, notes and tuning. All optional.</p>
 {{if .Snippets}}<fieldset aria-describedby="hint-snippets"><legend>Snippets</legend>
 {{range .Snippets}}<label><input type="checkbox" name="snippets" value="{{.Name}}"{{if .On}} checked{{end}}> {{.Name}}</label>
@@ -239,6 +241,7 @@
 </details>
 <label>Extra routes (one per line, path=dial) <textarea name="extra_routes" rows="3" placeholder="/cryptpad_websocket=127.0.0.1:3303" aria-describedby="hint-extra_routes">{{.Site.ExtraRoutes}}</textarea></label>
 {{hintid "extra_routes"}}
+{{end}}
 <label>Notes <textarea name="notes" rows="4" maxlength="10000" aria-describedby="hint-notes">{{.Site.Notes}}</textarea></label>
 {{hintid "notes"}}
 </section>

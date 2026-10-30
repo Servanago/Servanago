@@ -128,7 +128,11 @@ func (a siteArgs) overlay(v url.Values) {
 	flag("enabled", a.Enabled)
 	flag("tls_skip_verify", a.TLSSkipVerify)
 	if a.Snippets != nil {
-		v["snippets"] = *a.Snippets
+		if len(*a.Snippets) == 0 {
+			v["snippets"] = []string{""} // the empty sentinel the snippets form posts to clear
+		} else {
+			v["snippets"] = *a.Snippets
+		}
 	}
 	if a.ExtraRoutes != nil {
 		v.Set("extra_routes", *a.ExtraRoutes)

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/store"
 )
@@ -236,4 +237,100 @@ func (s *Server) saveSiteMail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inplace(w, "Saved and applied. A test mail goes out without saving.")
+}
+
+// saveSiteSnippets replaces the site's attached snippets in place; the store refuses unknown names.
+func (s *Server) saveSiteSnippets(w http.ResponseWriter, r *http.Request) {
+	if !s.mutateSite(w, r, "site.snippets", func(rt *store.Site) error {
+		rt.Snippets = nil
+		for _, n := range r.PostForm["snippets"] {
+			if n != "" {
+				rt.Snippets = append(rt.Snippets, n)
+			}
+		}
+		return nil
+	}) {
+		return
+	}
+	inplace(w, "Saved and applied.")
+}
+
+// saveSiteRoutes writes the extra routes box and (a proxy site's) tuning in place.
+func (s *Server) saveSiteRoutes(w http.ResponseWriter, r *http.Request) {
+	if !s.mutateSite(w, r, "site.routes", func(rt *store.Site) error {
+		text, err := extraRoutesText(r.PostFormValue("extra_routes"))
+		if err != nil {
+			return err
+		}
+		rt.ExtraRoutes = text
+		if _, ok := r.PostForm["tls_skip_verify"]; ok {
+			rt.TLSSkipVerify = r.PostFormValue("tls_skip_verify") != ""
+		}
+		if _, ok := r.PostForm["stream"]; ok {
+			rt.Stream = r.PostFormValue("stream") != ""
+		}
+		if _, ok := r.PostForm["max_body"]; ok {
+			rt.MaxBody = 0
+			if v := strings.TrimSpace(r.PostFormValue("max_body")); v != "" {
+				n, err := config.ParseSize(v)
+				if err != nil {
+					return fmt.Errorf("upload limit: %w", err)
+				}
+				rt.MaxBody = n
+			}
+		}
+		return nil
+	}) {
+		return
+	}
+	inplace(w, "Saved and applied.")
+}
+
+// saveSiteGeo writes the country rule in place.
+func (s *Server) saveSiteGeo(w http.ResponseWriter, r *http.Request) {
+	if !s.mutateSite(w, r, "site.geo", func(rt *store.Site) error {
+		mode := r.PostFormValue("country_mode")
+		if mode == "deny" || mode == "allow" {
+			codes, err := config.ValidateCountryList(r.PostFormValue("countries"))
+			if err != nil {
+				return fmt.Errorf("country list: %w", err)
+			}
+			rt.Countries = strings.Join(codes, " ")
+		} else if mode != "" {
+			return fmt.Errorf("country mode %q must be deny, allow or empty (off)", mode)
+		}
+		rt.CountryMode = mode
+		return nil
+	}) {
+		return
+	}
+	inplace(w, "Saved and applied. The rule applies to requests as soon as Caddy has reloaded.")
+}
+
+// saveSiteDNSIP writes the DNS record IP overrides in place.
+func (s *Server) saveSiteDNSIP(w http.ResponseWriter, r *http.Request) {
+	if !s.mutateSite(w, r, "site.dns_ip", func(rt *store.Site) error {
+		if _, ok := r.PostForm["record_ip"]; ok {
+			ip := strings.TrimSpace(r.PostFormValue("record_ip"))
+			if ip != "" {
+				if _, err := config.ValidateIP(ip); err != nil {
+					return fmt.Errorf("record IP: %w", err)
+				}
+			}
+			rt.RecordIP = ip
+		}
+		if _, ok := r.PostForm["record_ip6"]; ok {
+			ip6 := strings.TrimSpace(r.PostFormValue("record_ip6"))
+			if ip6 != "" {
+				if _, err := config.ValidateIP6(ip6); err != nil {
+					return fmt.Errorf("record IPv6: %w", err)
+				}
+			}
+			rt.RecordIP6 = ip6
+		}
+		return nil
+	}) {
+		return
+	}
+	inplace(w, "Saved and applied. The record updates in Cloudflare on the next sync.")
 }

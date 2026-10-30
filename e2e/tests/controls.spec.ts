@@ -29,10 +29,12 @@ test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await expect(row.locator('.state')).not.toHaveText('Disabled');
 
   await row.getByRole('link', { name: 'Edit' }).click();
+  await page.locator('nav[aria-label="Site sections"]').getByRole('link', { name: 'Gate' }).click();
+  await expect(page).toHaveURL(/\/sites\/\d+\/gate$/);
   await expect(page.getByLabel('Allowed sources')).toHaveValue('192.168.0.0/16');
   await expect(page.getByLabel('User', { exact: true })).toHaveValue('alice');
   await expect(page.getByLabel('Password', { exact: true })).toHaveValue('');
   await page.getByLabel('Allowed sources').fill('not-a-cidr');
-  await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByRole('alert').filter({ hasText: 'not-a-cidr' })).toBeVisible();
+  await page.getByRole('button', { name: 'Save allowlist and basic auth' }).click();
+  await expect(page.getByText('not-a-cidr')).toBeVisible();
 });

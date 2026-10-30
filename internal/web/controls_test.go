@@ -160,8 +160,8 @@ func TestProxyTuningInHandlersAndPages(t *testing.T) {
 	if !got.Stream || got.MaxBody != 2<<30 {
 		t.Fatalf("%+v", got)
 	}
-	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, `value="2GB"`) || !strings.Contains(body, "name=\"stream\" checked") {
-		t.Errorf("edit page lost the options")
+	if body := s.do(req{path: "/sites/" + itoa(r.ID) + "/routes"}).Body.String(); !strings.Contains(body, `value="2GB"`) || !strings.Contains(body, "name=\"stream\" checked") {
+		t.Errorf("routes tab lost the options")
 	}
 	if body := s.do(req{path: "/"}).Body.String(); !strings.Contains(body, ">stream<") || !strings.Contains(body, "max 2GB") {
 		t.Errorf("dashboard badges missing")

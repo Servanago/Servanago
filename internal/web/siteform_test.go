@@ -244,7 +244,7 @@ func TestEditPageShowsStatusChipsAndPrefillWorks(t *testing.T) {
 	s, _, d := newDNSServer(t)
 	r := addRoute(t, s, d)
 	body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String()
-	for _, want := range []string{"<h1>sonarr.example.com", "chip", "aria-describedby", `id="hint-hostnames"`, "Advanced", "Delete site"} {
+	for _, want := range []string{"<h1>sonarr.example.com", "chip", "aria-describedby", `id="hint-hostnames"`, "Delete site"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("edit page missing %q", want)
 		}

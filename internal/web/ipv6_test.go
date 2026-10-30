@@ -116,7 +116,7 @@ func TestEditingRouteClearsAAAA(t *testing.T) {
 	if len(cf.dns.Records()) != 2 {
 		t.Fatalf("setup: %+v", typesOf(cf))
 	}
-	e := form("upstream_host", "192.168.1.20", "upstream_port", "8989", "enabled", "on")
+	e := form("upstream_host", "192.168.1.20", "upstream_port", "8989", "enabled", "on", "record_ip6", "")
 	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(r.ID), body: e.Encode(), hdr: htmxPost}); w.Code != 200 {
 		t.Fatalf("%d %q", w.Code, w.Body.String())
 	}

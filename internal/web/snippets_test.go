@@ -73,7 +73,7 @@ func TestSnippetsCRUDAndRefusals(t *testing.T) {
 	if code, body := snippetReq(s, "DELETE", "/snippets/"+id); code != 409 || !strings.Contains(body, "a.example.com") {
 		t.Errorf("delete in use: %d %q", code, body)
 	}
-	f["snippets"] = nil
+	f["snippets"] = []string{""} // the sentinel the snippets form posts to clear
 	if w := s.do(req{method: "PUT", path: "/sites/" + itoa(rs[0].ID), body: f.Encode(), hdr: htmxPost}); w.Code != 200 {
 		t.Fatalf("detach: %d", w.Code)
 	}
@@ -82,8 +82,8 @@ func TestSnippetsCRUDAndRefusals(t *testing.T) {
 	}
 }
 
-// The edit page lists snippets as checkboxes and keeps the ones already attached.
-func TestSiteEditShowsSnippets(t *testing.T) {
+// The snippets tab lists the site's snippets as checkboxes and keeps the ones already attached.
+func TestSnippetsTabShowsAttachments(t *testing.T) {
 	s, _ := siteServer(t)
 	ctx := context.Background()
 	if code, body := snippetReq(s, "POST", "/snippets", "name", "compress", "body", "encode gzip"); code != 204 {
@@ -97,7 +97,7 @@ func TestSiteEditShowsSnippets(t *testing.T) {
 	if err := s.deps.Store.UpdateSite(ctx, rs[0]); err != nil {
 		t.Fatal(err)
 	}
-	body := s.do(req{path: "/sites/" + itoa(rs[0].ID)}).Body.String()
+	body := s.do(req{path: "/sites/" + itoa(rs[0].ID) + "/snippets"}).Body.String()
 	if !strings.Contains(body, `name="snippets" value="compress" checked`) {
 		t.Errorf("checkbox missing or unchecked:\n%s", body)
 	}

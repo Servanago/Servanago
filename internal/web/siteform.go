@@ -264,7 +264,12 @@ func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (st
 	} else if r.CountryMode != "" {
 		return r, fmt.Errorf("country mode %q must be deny, allow or empty (off)", r.CountryMode)
 	}
-	r.Snippets = v["snippets"] // the store rejects a name that does not exist
+	r.Snippets = r.Snippets[:0:0]
+	for _, n := range v["snippets"] {
+		if n != "" {
+			r.Snippets = append(r.Snippets, n) // the store rejects a name that does not exist
+		}
+	}
 	r.Notes = strings.ReplaceAll(strings.TrimSpace(v.Get("notes")), "\r\n", "\n")
 	if utf8.RuneCountInString(r.Notes) > maxNotes {
 		return r, fmt.Errorf("notes: at most 10,000 characters")
@@ -400,18 +405,36 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 		return in, nil, userError{http.StatusUnprocessableEntity, "fcgiwrap is not installed on this host; install it, then save again"}
 	}
 	// Overlay only the fields this form owns onto the stored site (base is the zero Site on create).
+	// Sections that moved to the site's tabs (snippets, extra routes, countries, record IPs) stay
+	// stored unless the form carries them.
 	base.Kind, base.Hostnames, base.Scheme = in.Kind, in.Hostnames, in.Scheme
 	base.UpstreamHost, base.UpstreamPort, base.StaticRoot = in.UpstreamHost, in.UpstreamPort, in.StaticRoot
 	base.StartCommand = in.StartCommand
 	base.InstallCommand, base.BuildCommand = in.InstallCommand, in.BuildCommand
-	base.TLSSkipVerify, base.Enabled, base.RecordIP, base.RecordIP6 = in.TLSSkipVerify, in.Enabled, in.RecordIP, in.RecordIP6
 	base.FPMVersion, base.PHPExtensions, base.PHPHealthPath = in.FPMVersion, in.PHPExtensions, in.PHPHealthPath
-	base.ExtraRoutes, base.Snippets = in.ExtraRoutes, in.Snippets
-	base.CountryMode, base.Countries = in.CountryMode, in.Countries
 	base.SiteUser, base.PublicDir, base.Notes = in.SiteUser, in.PublicDir, in.Notes
+	if _, ok := r.PostForm["record_ip"]; ok {
+		base.RecordIP = in.RecordIP
+	}
+	if _, ok := r.PostForm["record_ip6"]; ok {
+		base.RecordIP6 = in.RecordIP6
+	}
+	if _, ok := r.PostForm["tls_skip_verify"]; ok {
+		base.TLSSkipVerify = in.TLSSkipVerify
+	}
+	if _, ok := r.PostForm["extra_routes"]; ok {
+		base.ExtraRoutes = in.ExtraRoutes
+	}
+	if _, ok := r.PostForm["snippets"]; ok {
+		base.Snippets = in.Snippets
+	}
+	if _, ok := r.PostForm["country_mode"]; ok {
+		base.CountryMode, base.Countries = in.CountryMode, in.Countries
+	}
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
 	}
+	base.Enabled = in.Enabled
 	if base.Kind == "static" || base.Kind == "php" || base.Kind == "fastcgi" || base.Kind == "cgi" {
 		base.Stream, base.MaxBody = false, 0
 	}
