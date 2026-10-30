@@ -1,6 +1,6 @@
 {
   "name": "servanago",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "Agent skills for operating a ServanaGo host and its MCP server: setup, sites, snippets and backups.",
   "author": { "name": "Brian Tafoya" },
   "license": "MIT",
