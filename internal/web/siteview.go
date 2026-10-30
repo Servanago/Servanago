@@ -1,13 +1,18 @@
 package web
 
 import (
+	"bytes"
+	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/servanago/servanago/internal/config"
+	"github.com/servanago/servanago/internal/helper"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/store"
 )
@@ -305,6 +310,73 @@ func (s *Server) saveSiteGeo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inplace(w, "Saved and applied. The rule applies to requests as soon as Caddy has reloaded.")
+}
+
+// siteRuntimeAction starts, stops or restarts the site's supervised unit through the helper,
+// then answers the runtime tab's unit panel again (the page's fragment, no reload).
+func (s *Server) siteRuntimeAction(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	do := r.PathValue("do")
+	switch do {
+	case "start", "stop", "restart":
+	default:
+		http.NotFound(w, r)
+		return
+	}
+	rt, err := s.deps.Store.GetSite(r.Context(), id)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+	if !rt.IsRuntime() {
+		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("%s is a %s site: no supervised unit to %s.", rt.Hostnames[0], rt.Kind, do))
+		return
+	}
+	hc := s.helperClient()
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), 60*time.Second)
+	defer cancel()
+	spec := helper.Spec{Slug: rt.Slug}
+	do1 := helper.ActionUnitStop
+	do2 := ""
+	switch do {
+	case "start":
+		do1 = helper.ActionUnitStart
+	case "restart":
+		do2 = helper.ActionUnitStart
+	}
+	if _, err := hc.Call(ctx, do1, spec); err != nil {
+		fail(w, http.StatusBadGateway, "systemd would not "+strings.TrimPrefix(do1, "unit-")+": "+err.Error())
+		return
+	}
+	if do2 != "" {
+		if _, err := hc.Call(ctx, do2, spec); err != nil {
+			fail(w, http.StatusBadGateway, "systemd would not start: "+err.Error())
+			return
+		}
+	}
+	words := map[string]string{"start": "started", "stop": "stopped", "restart": "restarted"}
+	s.audit(r, "site.unit_"+words[do], rt.Hostnames[0])
+	panel := struct {
+		Site store.Site
+		Unit *unitPanel
+	}{rt, s.unitPanelFor(r, rt)}
+	s.renderPart(w, "siteview", "unitpanel", panel)
+}
+
+// renderPart renders one define of a registered page to the wire for an in-place update.
+func (s *Server) renderPart(w http.ResponseWriter, pageName, def string, data any) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	var buf bytes.Buffer
+	if err := s.pages[pageName].ExecuteTemplate(&buf, def, data); err != nil {
+		slog.Error("render fragment", "define", def, "error", err)
+		http.Error(w, "This update failed to render; the error is in the ServanaGo log.", http.StatusInternalServerError)
+		return
+	}
+	_, _ = buf.WriteTo(w)
 }
 
 // saveSiteDNSIP writes the DNS record IP overrides in place.

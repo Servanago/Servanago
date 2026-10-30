@@ -17,8 +17,9 @@ import (
 
 // fakeHost fakes a host with node and one php-fpm, and records every helper call.
 type fakeHost struct {
-	mu    sync.Mutex
-	calls []string // "action slug kind"
+	mu     sync.Mutex
+	calls  []string // "action slug kind"
+	active string   // the unit's fake ActiveState; unit-stop and -start flip it
 }
 
 func (f *fakeHost) record(name string) helper.Action {
@@ -26,6 +27,12 @@ func (f *fakeHost) record(name string) helper.Action {
 		f.mu.Lock()
 		defer f.mu.Unlock()
 		f.calls = append(f.calls, name+" "+r.Vals.Slug+" "+r.Vals.Kind)
+		switch name {
+		case "unit-stop":
+			f.active = "inactive"
+		case "unit-start":
+			f.active = "active"
+		}
 		return helper.Response{OK: true}
 	}
 }
@@ -74,7 +81,13 @@ func runtimeServer(t *testing.T) (*Server, *fakeHost) {
 		helper.ActionUnitStart:   host.record("unit-start"),
 		helper.ActionUnitStop:    host.record("unit-stop"),
 		helper.ActionUnitStatus: func(helper.Request) helper.Response {
-			return helper.Response{OK: true, Status: &helper.StatusData{ActiveState: "active", SubState: "running", PID: "4242"}}
+			host.mu.Lock()
+			defer host.mu.Unlock()
+			active := host.active
+			if active == "" {
+				active = "active"
+			}
+			return helper.Response{OK: true, Status: &helper.StatusData{ActiveState: active, SubState: "running", PID: "4242"}}
 		},
 		helper.ActionUnitLogs: func(helper.Request) helper.Response {
 			return helper.Response{OK: true, Logs: []string{"listening on 3000", `<script>alert("x")</script>`}}

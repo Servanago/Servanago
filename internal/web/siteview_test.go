@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/crypto/bcrypt"
 
@@ -361,5 +362,63 @@ func TestDNSIpScopedSave(t *testing.T) {
 		body: url.Values{"record_ip": {"999.1.1.1"}}.Encode()})
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Errorf("bad ip: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// Runtime actions go through the helper; the tab's fragment shows the state they left behind.
+
+func TestRuntimeTabActsOnTheUnit(t *testing.T) {
+	s, host := runtimeServer(t)
+	root := t.TempDir()
+	if w := s.do(req{method: "POST", path: "/sites", body: form(nodeForm(root)...).Encode(), hdr: htmxPost}); w.Code != 204 {
+		t.Fatalf("create: %d %q", w.Code, w.Body.String())
+	}
+	rs, _ := s.deps.Store.ListSites(context.Background())
+	id := itoa(rs[0].ID)
+	body := s.do(req{path: "/sites/" + id + "/runtime"}).Body.String()
+	for _, want := range []string{"active (running)", `hx-post="/sites/` + id + `/runtime/stop"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("runtime tab lacks %q", want)
+		}
+	}
+	w := s.do(req{method: "POST", path: "/sites/" + id + "/runtime/stop", hdr: htmxPost})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "inactive") {
+		t.Fatalf("stop: %d %s", w.Code, w.Body.String())
+	}
+	w = s.do(req{method: "POST", path: "/sites/" + id + "/runtime/restart", hdr: htmxPost})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), "active") {
+		t.Fatalf("restart: %d %s", w.Code, w.Body.String())
+	}
+	restLog := host.log()
+	stopAt := strings.LastIndex(restLog, "unit-stop "+rs[0].Slug)
+	startAt := strings.LastIndex(restLog, "unit-start "+rs[0].Slug)
+	if stopAt < 0 || startAt < 0 || stopAt > startAt {
+		t.Errorf("restart did not stop+start in order: %q", restLog)
+	}
+	// kinds without a unit are refused cleanly
+	proxy, err := s.deps.Store.CreateSite(context.Background(), store.Site{Hostnames: []string{"px.example.com"}, Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: 9990, Enabled: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if w := s.do(req{method: "POST", path: "/sites/" + itoa(proxy.ID) + "/runtime/start", hdr: htmxPost}); w.Code != http.StatusUnprocessableEntity {
+		t.Errorf("proxy: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// The dashboard row carries the newest backup run like the row's other chips do.
+func TestDashboardRowCarriesBackupAge(t *testing.T) {
+	s, id, _ := signedWith(t, store.Site{Hostnames: []string{"tabs.example.com"}, Kind: "static", StaticRoot: "/srv/www/tabs", Enabled: true})
+	if err := s.deps.Store.SaveBackupSettings(context.Background(), store.BackupSettings{Enabled: true, Dir: t.TempDir(), Sched: "daily 04:30", Keep: 3}); err != nil {
+		t.Fatal(err)
+	}
+	rt, _ := s.deps.Store.GetSite(context.Background(), id)
+	ts := time.Now().Unix() - 3*24*3600
+	if ok, err := s.deps.Store.AddRun(context.Background(), store.BackupRun{RunID: "r1", Scope: rt.Slug, Trigger: "sweep", Status: "ok", Finished: ts, Bytes: 0}); err != nil || !ok {
+		t.Fatalf("add run: %v %v", ok, err)
+	}
+	ck := cookiesOf(t, login(s, "pw", map[string]string{"X-Forwarded-Proto": "https"}, ""))
+	body := s.do(req{path: "/", cookies: ck}).Body.String()
+	if !strings.Contains(body, "backup "+when(ts)) {
+		t.Errorf("backup chip missing (want %q)", "backup "+when(ts))
 	}
 }

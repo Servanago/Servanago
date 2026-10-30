@@ -16,7 +16,7 @@
 <span class="host">{{.Host}}{{range .Aliases}}<small class="alias">{{.}}</small>{{end}}</span>
 <span class="target">{{.Target}}</span>
 <span class="chip">{{.KindLabel}}</span>
-{{if .ScanOn}}{{if ne .Scan.StartedAt 0}}<span class="chip" title="Newest scan run{{if .Scan.FinishedAt}} ({{unixts .Scan.FinishedAt}}){{end}}">{{if .ScanHits}}{{printf "%d hit" .ScanHits}}{{if ne .ScanHits 1}}s{{end}}{{else if eq .Scan.State "running"}}scan running{{else if eq .Scan.State "error"}}scan error{{else if .Scan.FinishedAt}}scan clean{{end}}</span>{{end}}{{end}}
+{{if .ScanOn}}{{if ne .Scan.StartedAt 0}}<span class="chip" title="Newest scan run{{if .Scan.FinishedAt}} ({{unixts .Scan.FinishedAt}}){{end}}">{{if .ScanHits}}{{printf "%d hit" .ScanHits}}{{if ne .ScanHits 1}}s{{end}}{{else if eq .Scan.State "running"}}scan running{{else if eq .Scan.State "error"}}scan error{{else if .Scan.FinishedAt}}scan clean{{end}}</span>{{end}}{{end}}{{if .BackText}}<span class="chip{{if not .BackOK}} chip-warn{{end}}" title="Newest backup run of this site">backup {{.BackText}}</span>{{end}}
 <span class="state state-{{$h.Level}}">{{$h.Label}}</span>
 </summary>
 <div class="srow-body">

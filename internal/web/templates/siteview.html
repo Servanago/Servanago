@@ -1,3 +1,21 @@
+{{define "unitpanel"}}<div id="unit-panel">
+{{with .Unit}}
+{{if .Err}}<p class="explain" role="alert">{{.Err}}</p>{{else}}
+<p><strong>{{.State}}</strong>{{if .PID}} · pid {{.PID}}{{end}}</p>
+<div class="acts">
+<button type="button" class="mini" hx-post="/sites/{{$.Site.ID}}/runtime/restart" hx-target="#unit-panel" hx-swap="outerHTML" title="Stop and start the unit in one go">{{icon "refresh"}}Restart</button>
+<button type="button" class="mini" hx-post="/sites/{{$.Site.ID}}/runtime/stop" hx-target="#unit-panel" hx-swap="outerHTML">Stop</button>
+<button type="button" class="mini" hx-post="/sites/{{$.Site.ID}}/runtime/start" hx-target="#unit-panel" hx-swap="outerHTML">Start</button>
+</div>
+{{if .Logs}}<pre id="unit-logs" tabindex="0" aria-label="Recent log lines">{{range .Logs}}{{.}}
+{{end}}</pre>
+<p class="sect-note">The journal tail since the last restart; the full history is under <code>/var/log/servanago/</code>.</p>
+{{else}}<p class="empty">No log lines yet.</p>{{end}}
+{{end}}
+{{else}}<p class="explain" role="alert">The ServanaGo helper is not answering, so no unit state can be shown. Check <code>systemctl status servanago-helper</code>.</p>
+{{end}}
+</div>{{end}}
+
 {{define "content"}}
 {{with .Data}}
 {{$h := index .Site.Hostnames 0}}{{$id := .Site.ID}}
@@ -235,14 +253,7 @@
 <section class="sect" id="panel-runtime">
 <h2>Runtime</h2>
 {{if .Site.IsRuntime}}
-{{with .Unit}}
-{{if .Err}}<p class="explain" role="alert">{{.Err}}</p>{{else}}
-<p><strong>{{.State}}</strong>{{if .PID}} · pid {{.PID}}{{end}}</p>
-{{if .Logs}}<pre id="unit-logs" tabindex="0" aria-label="Recent log lines">{{range .Logs}}{{.}}
-{{end}}</pre>
-<p class="sect-note">The journal tail since the last restart; the full history is under <code>/var/log/servanago/</code>.</p>
-{{else}}<p class="empty">No log lines yet.</p>{{end}}{{end}}
-{{else}}<p class="explain" role="alert">The ServanaGo helper is not answering, so no unit state can be shown for {{$h}}. Check <code>systemctl status servanago-helper</code>.</p>{{end}}
+{{template "unitpanel" .}}
 {{else}}<p class="empty">{{$h}} is a {{.Site.Kind}} site: no supervised unit belongs to it.</p>{{end}}
 </section>
 {{end}}

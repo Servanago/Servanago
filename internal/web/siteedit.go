@@ -32,6 +32,9 @@ type siteRow struct {
 	// Docker is the container a local proxy upstream points at; DockerErr is true when it could not be looked up.
 	Docker    *helper.Container
 	DockerErr bool
+	// BackText is the newest backup run's when and result; "" when backups are off or not configured.
+	BackText string
+	BackOK   bool
 }
 
 // HasDNS is true once at least one of the site's records has been synced or attempted.
@@ -87,6 +90,16 @@ func (s *Server) buildRows(r *http.Request, rs []store.Site) ([]siteRow, error) 
 	for i, x := range rs {
 		rows[i] = siteRow{Site: x, Host: x.Hostnames[0], DNS: bySite[x.ID], DNSOn: s.dnsOn(),
 			ScanOn: st.ScanSocket != "", Scan: runIDs[x.ID]}
+	}
+	if set, err := s.deps.Store.GetBackupSettings(r.Context()); err == nil && set.Enabled {
+		if last, _, err := s.deps.Store.LastRuns(r.Context()); err == nil {
+			for i := range rows {
+				if l, ok := last[rows[i].Slug]; ok {
+					rows[i].BackText = when(l.Finished) + " · " + l.Status
+					rows[i].BackOK = l.Status == "ok"
+				}
+			}
+		}
 	}
 	var (
 		hitIDs []int64
