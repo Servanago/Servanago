@@ -55,4 +55,22 @@
 </form>
 <p id="geo-msg" role="alert"></p>
 </article>
+<article>
+<h2>Mail bridge</h2>
+{{if .Data.MailOn}}<p>On. The bridge delivers each provisioned domain's inbound Postmark mail over LMTP{{if .Data.MailLMTP}} to <code>{{.Data.MailLMTP}}</code>{{if .Data.MailTLS}} with STARTTLS{{end}}{{if eq .Data.MailUser ""}}, no credential{{else}} as {{.Data.MailUser}}{{end}}{{else}} — no target server set yet{{end}}.</p>
+{{else}}<p>Off. Set the Postmark <strong>account</strong> token below; then provision domains on the <strong>Mail</strong> page. The mail server itself runs on this host or nearby and speaks LMTP.</p>{{end}}
+<form hx-post="/settings/mail" hx-target="#mail-msg">
+<label>Postmark account token {{if .Data.MailTokenSet}}(set; leave blank to keep){{end}} <input type="password" name="mail_token" autocomplete="new-password" placeholder="account-wide token from account.postmarkapp.com"></label>
+{{hint "mail_pm_token"}}
+<label>LMTP target <input name="mail_lmtp" value="{{.Data.MailLMTP}}" placeholder="192.168.1.9:2424" autocomplete="off"></label>
+{{hint "mail_lmtp"}}
+<label class="check"><input type="checkbox" name="mail_tls"{{if .Data.MailTLS}} checked{{end}}> Use STARTTLS (needed for a real network hop, not for loopback)</label>
+{{hint "mail_lmtp_tls"}}
+<label>LMTP user <input name="mail_user" value="{{.Data.MailUser}}" autocomplete="off"></label>
+<label>LMTP password {{if .Data.MailPassSet}}(set; leave blank to keep){{end}} <input type="password" name="mail_pass" autocomplete="new-password"></label>
+{{hint "mail_lmtp_pass"}}
+<button type="submit">Save</button>
+</form>
+<p id="mail-msg" role="alert"></p>
+</article>
 {{end}}

@@ -32,6 +32,13 @@ type smtpData struct {
 	GeoDB          string
 	WebUIMode      string
 	WebUICountries string
+	// The mail-bridge section.
+	MailOn       bool // Cloudflare configured: the bridge can provision
+	MailTokenSet bool
+	MailLMTP     string
+	MailTLS      bool
+	MailUser     string
+	MailPassSet  bool
 }
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +52,9 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		PassSet: st.SMTPPass != nil, MailReady: st.MailReady(),
 		ScanOn: st.ScanSocket != "", Socket: st.ScanSocket, Hour: strconv.Itoa(st.ScanHour),
 		NtfySet: st.ScanNtfy != nil, TokenSet: st.ScanNtfyToken != nil,
-		GeoOn: st.GeoDB != "", GeoDB: st.GeoDB, WebUIMode: st.WebUIMode, WebUICountries: st.WebUICountries}})
+		GeoOn: st.GeoDB != "", GeoDB: st.GeoDB, WebUIMode: st.WebUIMode, WebUICountries: st.WebUICountries,
+		MailOn: st.MailToken != nil, MailTokenSet: st.MailToken != nil, MailLMTP: st.MailLMTP,
+		MailTLS: st.MailTLS == "starttls", MailUser: st.MailUser, MailPassSet: st.MailPass != nil}})
 }
 
 // saveSMTP replaces the email delivery settings wholesale; a blank password keeps the stored one.

@@ -1,0 +1,72 @@
+{{define "content"}}
+<h1>Mail</h1>
+<p>The Postmark bridge per domain: inbound mail arrives at Postmark, the webhook below delivers the raw
+message over LMTP to your mail server, bounces come back as reports. ServanaGo provisioned the Postmark
+server, the domain and the DNS rows; it holds no mailboxes itself.</p>
+{{if not .Data.Ready}}<div class="empty">The mail bridge needs the Cloudflare DNS feature (Settings and the DNS token) and <code>SERVANAGO_HOST</code> set, so Postmark can reach a public webhook URL. {{helplink "mail"}}</div>
+{{else}}
+{{if not .Data.TokenSet}}<div class="banner warn">No Postmark account token yet — save it under <a href="/settings">Settings</a>, Mail bridge. {{helplink "mail"}}</div>{{end}}
+{{if not .Data.LMTPSet}}<div class="banner warn">No LMTP target yet — set the host:port of your mail server's LMTP listener under <a href="/settings">Settings</a>, Mail bridge. {{helplink "mail"}}</div>{{end}}
+
+<article>
+<h2>Provision a domain</h2>
+<form hx-post="/mail/provision" hx-target="#mail-msg">
+<label>Domain <input name="mail_domain" placeholder="mail.example.com" autocomplete="off"></label>
+{{hint "mail_domain"}}
+<label class="check"><input type="checkbox" name="mail_adopt"> Adopt an existing Postmark server or domain with these names</label>
+{{hint "mail_adopt"}}
+<label>LMTP for this domain (optional override) <input name="mail_lmtp" placeholder="192.168.1.9:2424" autocomplete="off"></label>
+{{hint "mail_lmtp"}}
+<button type="submit">Provision</button>
+</form>
+<p id="mail-msg" role="alert"></p>
+</article>
+
+{{if .Data.Rows}}
+<article>
+<table class="maildoms">
+<thead><tr><th>Domain</th><th>DNS</th><th>DKIM</th><th>Return-Path</th><th>Inbound</th><th>Counters</th><th></th><th></th></tr></thead>
+<tbody>
+{{range .Data.Rows}}
+<tr>
+<td><strong>{{.Name}}</strong><br><small><code>{{.HookPath}}</code><br><code>{{.EventsPath}}</code></small></td>
+<td><small>{{if .DNSSetup}}{{.DNSSetup}}{{else}}not written yet{{end}}</small></td>
+<td><span class="tune">{{if .DKIMState}}{{.DKIMState}}{{else}}unchecked{{end}}</span></td>
+<td><span class="tune">{{if .RPState}}{{.RPState}}{{else}}unchecked{{end}}</span></td>
+<td><small>in {{.Recv}}, {{.Delivered}} delivered, {{.Deduped}} dup, {{.Rejected}} rejected, {{.Fallbacks}} rebuilt{{if .LastInbound}}, last {{unixts .LastInbound}}{{end}}</small></td>
+<td><small>LMTP {{if .LMTPAddr}}<code>{{.LMTPAddr}}</code>{{else}}global{{end}}</small>
+{{if .LMTPAddr}}<details><summary>Change</summary>
+<form hx-post="/mail/domains/{{.Name}}/lmtp" hx-target="#mail-msg">
+<label>LMTP target <input name="lmtp_addr" value="{{.LMTPAddr}}" placeholder="192.168.1.9:2424"></label>
+<button type="submit">Save</button>
+</form></details>{{end}}</td>
+<td><button type="button" class="outline" hx-post="/mail/domains/{{.Name}}/verify" hx-target="#mail-msg">Verify</button></td>
+<td><button type="submit" class="outline" hx-post="/mail/domains/{{.Name}}/delete" hx-target="#mail-msg" hx-confirm="Forget the mail bridge for {{.Name}}? The Postmark server/domain and the DNS rows stay; the local state and counters go.">Remove</button></td>
+</tr>
+{{end}}
+</tbody></table>
+</article>
+{{else}}<div class="empty">No mail domains provisioned yet. {{helplink "mail"}}</div>{{end}}
+
+{{if .Data.Events}}
+<article>
+<h2>Recent events</h2>
+<table class="mailevents">
+<thead><tr><th>When</th><th>Domain</th><th>Type</th><th>Address</th><th>Detail</th><th>DSN</th></tr></thead>
+<tbody>
+{{range .Data.Events}}
+<tr>
+<td><small>{{unixts .CreatedAt}}</small></td>
+<td><small>{{index $.Data.DomainNames .DomainID}}</small></td>
+<td><span class="tune">{{.RecordType}}</span></td>
+<td><small>{{.Address}}</small></td>
+<td><small>{{.Summary}}</small></td>
+<td>{{if .DSNSent}}<small>sent {{unixts .DSNSent}}</small>{{else}}<small>—</small>{{end}}</td>
+</tr>
+{{end}}
+</tbody></table>
+</article>
+{{end}}
+{{end}}
+<p id="msg" role="alert"></p>
+{{end}}

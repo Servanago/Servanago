@@ -74,6 +74,12 @@ type Server struct {
 	phpWatch  atomic.Bool   // one build watcher at a time
 	healthGet func(ctx context.Context, host, path string) (int, error)
 	sendMail  func(from, to, subject, body string) error
+
+	// Mail bridge (mail.go): the Postmark base URL test hook and verify-watch pacing.
+	pmBase      string // empty = the real Postmark API (mail.go postmarkAdmin)
+	applyInline bool   // test seam: run the detached DNS/verify pass in the request goroutine
+	mailPoll    time.Duration
+	mailTries   int // verification checks the detached watch makes
 }
 
 func (s *Server) flash(msg string) {
@@ -91,9 +97,9 @@ func (s *Server) takeFlashes() []string {
 }
 
 func New(d Deps) *Server {
-	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second, geo: geoip.New()}
+	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second, geo: geoip.New(), mailTries: 15}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "scan", "scanrun", "siteedit", "snippets", "logs", "help", "php", "reference", "backups"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "mail", "scan", "scanrun", "siteedit", "snippets", "logs", "help", "php", "reference", "backups"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -198,6 +204,12 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /settings/smtp", s.protected(s.saveSMTP))
 	mux.Handle("POST /settings/scan", s.protected(s.saveScan))
 	mux.Handle("POST /settings/geo", s.protected(s.saveGeo))
+	mux.Handle("POST /settings/mail", s.protected(s.saveMail))
+	mux.Handle("GET /mail", s.protected(s.mailPage))
+	mux.Handle("POST /mail/provision", s.protected(s.mailProvision))
+	mux.Handle("POST /mail/domains/{name}/verify", s.protected(s.mailDomainVerify))
+	mux.Handle("POST /mail/domains/{name}/lmtp", s.protected(s.saveDomainLMTP))
+	mux.Handle("POST /mail/domains/{name}/delete", s.protected(s.mailDomainRemove))
 	mux.Handle("GET /scan", s.protected(s.scanPage))
 	mux.Handle("GET /scan/runs/{id}", s.protected(s.scanRunPage))
 	mux.Handle("POST /scan/sites/{id}", s.protected(s.startScanSite))

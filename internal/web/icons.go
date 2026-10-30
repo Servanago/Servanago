@@ -23,6 +23,7 @@ var icons = map[string]string{
 	"logout":   `<path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/>`,
 	"plus":     `<path d="M12 5v14"/><path d="M5 12h14"/>`,
 	"takeover": `<path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>`,
+	"mail":     `<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6L22 7"/>`,
 }
 
 func icon(name string) template.HTML {
