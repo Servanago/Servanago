@@ -2,6 +2,26 @@
 
 A site is one or more free hostnames (FQDNs; the first is the main one) served by one backend. Each hostname gets its own A (and optional AAAA) record when Cloudflare is configured.
 
+## The site view
+
+Every site has a control view at `/sites/<id>`: one page per area, shared by a tab rail.
+
+| Tab page | What lives there |
+|---|---|
+| `/sites/<id>` (Settings) | The editor: hostnames, kind and its fields, notes; the delete button. |
+| `/sites/<id>/dns` | The site's A/AAAA records with their sync state, resync and take-over, and the per-site record IP overrides. |
+| `/sites/<id>/ssl` | Certificate facts per hostname: issuer, valid-until, state. |
+| `/sites/<id>/scan` | This site's scan runs and findings, with a manual scan now. |
+| `/sites/<id>/backups` | Per-site schedule, database dumps, container volumes, run now. |
+| `/sites/<id>/mail` | The gate's mail provider (SMTP or Postmark) and a test mail. |
+| `/sites/<id>/snippets` | Attach/detach the site's snippets. |
+| `/sites/<id>/runtime` | Unit state and journal tail; start, stop and restart. |
+| `/sites/<id>/gate` | Gate mode, who may ask for a link, IP allowlist, basic auth. |
+| `/sites/<id>/routes` | Extra routes and a proxy site's TLS/stream/upload tuning. |
+| `/sites/<id>/countries` | The site's country rule. |
+
+Tabs save in place: a form posts from its tab, the button shows the save, and the page does not reload. Actions that came from the dashboard rows (resync, scan, backup saves, access list rows) accept a return-to tab.
+
 ## Kinds
 
 | Kind | What it does |
@@ -18,7 +38,7 @@ Node.js, PHP, FrankenPHP and CGI sites need the packaged install (the root helpe
 
 ## Runtimes
 
-ServanaGo detects Node.js and php-fpm and shows the install command; it never installs a runtime, never runs your install or build commands, and never changes the ownership of your files. Give `sg-NAME` access yourself (the Help page has the commands). The edit page shows the unit's state and recent journal lines.
+ServanaGo detects Node.js and php-fpm and shows the install command; it never installs a runtime, never runs your install or build commands, and never changes the ownership of your files. Give `sg-NAME` access yourself (the Help page has the commands). The site's Runtime tab shows the unit's state and recent journal lines, and offers start, stop and restart.
 
 Users on the same host are separated by Unix permissions only: **do not host mutually untrusted sites.**
 
