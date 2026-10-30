@@ -173,18 +173,30 @@
 <section class="sect" id="panel-mail">
 <h2>Magic-link mail</h2>
 {{if .MailOK}}
-<p class="sect-note">Where this site's gate sends sign-in links. The fields themselves are edited in the editor's Access section; sending a test saves nothing.</p>
-<dl class="detail">
-<div><dt>Provider</dt><dd>{{if .Site.GateProvider}}{{.Site.GateProvider}}{{else}}none yet{{end}}</dd></div>
-<div><dt>Sender</dt><dd>{{if .Site.GateFrom}}<code>{{.Site.GateFrom}}</code>{{else}}not set{{end}}</dd></div>
-{{if eq .Site.GateProvider "smtp"}}<div><dt>SMTP</dt><dd>{{.Site.GateSMTPHost}}:{{if .Site.GateSMTPPort}}{{.Site.GateSMTPPort}}{{else}}587{{end}}{{if .Site.GateSMTPUser}} as {{.Site.GateSMTPUser}}{{end}}</dd></div>{{end}}
-<div><dt>Credential</dt><dd>{{if .Site.GateSecret}}stored, never shown{{else}}not set{{end}}</dd></div>
-</dl>
-{{if .Site.GateProvider}}<p id="msg" role="alert"></p>
+<p class="sect-note">Delivers this site's sign-in links. Saving stores the provider here; a test mail goes out without saving. {{hint "gate_provider"}}</p>
+<form hx-post="/sites/{{$id}}/mail" hx-target="#msg">
+<label>Mail provider
+<select name="gate_provider" aria-describedby="hint-gate_provider">
+<option value=""{{if not .Site.GateProvider}} selected{{end}}>None</option>
+<option value="smtp"{{if eq .Site.GateProvider "smtp"}} selected{{end}}>SMTP</option>
+<option value="postmark"{{if eq .Site.GateProvider "postmark"}} selected{{end}}>Postmark (HTTP API)</option>
+</select></label>
+{{hintid "gate_provider"}}
+<label>Sender (From address) <input name="gate_from" value="{{.Site.GateFrom}}" placeholder="access@example.com" autocomplete="off"></label>
+<label>SMTP host <input name="gate_smtp_host" value="{{.Site.GateSMTPHost}}" placeholder="smtp.example.com" autocomplete="off"></label>
+<label>SMTP port <input name="gate_smtp_port" value="{{if .Site.GateSMTPPort}}{{.Site.GateSMTPPort}}{{else}}587{{end}}" inputmode="numeric" autocomplete="off"></label>
+<label>SMTP user <input name="gate_smtp_user" value="{{.Site.GateSMTPUser}}" autocomplete="off"></label>
+<label>SMTP password or Postmark server token <input type="password" name="gate_secret" autocomplete="new-password" aria-describedby="hint-gate_secret" placeholder="{{if .Site.GateSecret}}leave blank to keep the current one{{end}}"></label>
+{{hintid "gate_secret"}}
+<button type="submit">Save mail</button>
+</form>
+<p id="msg" role="alert"></p>
+{{if .Site.GateProvider}}
 <form hx-post="/sites/{{$id}}/gate/test" hx-target="#msg">
 <label>Deliver a test to <input name="to" type="email" autocomplete="off"></label>
 <button type="submit" class="outline">{{icon "mail"}}Send test mail</button>
-</form>{{end}}{{hint "gate_secret"}}
+</form>
+{{end}}
 {{else}}<p class="empty">Magic links need Cloudflare (ServanaGo creates the <code>ml.{{$h}}</code> host) and <code>SERVANAGO_SECRET_KEY</code> in the environment file.</p>{{end}}
 </section>
 {{end}}
@@ -222,8 +234,18 @@
 <section class="sect" id="panel-gate">
 <h2>Gate and access</h2>
 {{if .MailOK}}
-<p class="sect-note">The magic-link gate, its access list, the IP allowlist and basic authentication. {{hint "gate_mode"}}</p>
-<p>Mode: {{if eq .Site.GateMode "open"}}<strong>magic link, any email address</strong>{{else if eq .Site.GateMode "acl"}}<strong>magic link, allowlist</strong>{{else}}<strong>anybody, no gate</strong>{{end}}. The mode and mail provider are edited in the editor's Access section.</p>
+<p class="sect-note">The magic-link gate and its access list. Enabling needs a mail provider on the <a href="/sites/{{$id}}/mail">Mail tab</a>; links open on <code>ml.{{$h}}</code>. With "any email address", the access list is not consulted: its rows stay set for when you switch back.</p>
+<form hx-post="/sites/{{$id}}/gate" hx-target="#msg">
+<label>Gate mode
+<select name="gate_mode" aria-describedby="hint-gate_mode">
+<option value=""{{if not .Site.GateMode}} selected{{end}}>No gate: anybody</option>
+<option value="acl"{{if eq .Site.GateMode "acl"}} selected{{end}}>Magic link, with an access list</option>
+<option value="open"{{if eq .Site.GateMode "open"}} selected{{end}}>Magic link, any email address</option>
+</select></label>
+{{hintid "gate_mode"}}
+<button type="submit">Save gate</button>
+</form>
+<p id="msg" role="alert"></p>
 <table>
 <caption>Who may ask for a link</caption>
 <thead><tr><th>Entry</th><th>Added by</th><th>Added</th><th></th></tr></thead>
@@ -234,17 +256,21 @@
 </tbody>
 </table>
 <form hx-post="/sites/{{$id}}/gate/grants" hx-target="#msg">
-{{hint "gate_rows"}}
 <label>Add an address or @domain <input name="rule" placeholder="alice@example.com or @contractor.example" autocomplete="off"></label>
 <input type="hidden" name="back" value="/sites/{{$id}}/gate">
 <button type="submit" class="outline">{{icon "plus"}}Add entry</button>
 </form>
 {{else}}<p class="empty">Magic links need Cloudflare and <code>SERVANAGO_SECRET_KEY</code> in the environment file; until then this site is served to anybody.</p>{{end}}
-<dl class="detail">
-<div><dt>IP allowlist</dt><dd>{{if .Site.Allowlist}}<code>{{.Site.Allowlist}}</code>{{else}}any address{{end}}</dd></div>
-<div><dt>Basic authentication</dt><dd>{{if .Site.BasicUser}}on, user <code>{{.Site.BasicUser}}</code>{{else}}off{{end}}</dd></div>
-</dl>
-{{hint "allowlist"}}
+<form hx-post="/sites/{{$id}}/access" hx-target="#msg2">
+<label>Allowed sources (CIDR ranges, one per line; empty = anyone)
+<textarea name="allowlist" rows="3" placeholder="192.168.0.0/16" aria-describedby="hint-allowlist">{{.Site.Allowlist}}</textarea></label>
+{{hintid "allowlist"}}
+<label>Basic authentication user <input name="basic_user" value="{{.Site.BasicUser}}" autocomplete="off"></label>
+<label>Password <input type="password" name="basic_password" autocomplete="new-password" aria-describedby="hint-basic_auth" placeholder="{{if .Site.BasicHash}}leave blank to keep the current password{{end}}"></label>
+{{hintid "basic_auth"}}
+<button type="submit" class="outline">Save allowlist and basic auth</button>
+</form>
+<p id="msg2" role="alert"></p>
 </section>
 {{end}}
 

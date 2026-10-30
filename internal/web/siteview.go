@@ -144,3 +144,96 @@ func (s *Server) siteViewPage(w http.ResponseWriter, r *http.Request, rt store.S
 	}
 	s.render(w, "siteview", http.StatusOK, page{Title: d.Title + " · " + rt.Hostnames[0], Nav: "dashboard", Data: d})
 }
+
+// inplace answers an in-place save the way updateSite does: 200 with a short status line that
+// htmx swaps into the form's message target.
+func inplace(w http.ResponseWriter, msg string) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = fmt.Fprint(w, msg)
+}
+
+// mutateSite opens the apply transaction, lets fn change the stored site, and reports the result:
+// every scoped save shares it.
+func (s *Server) mutateSite(w http.ResponseWriter, r *http.Request, action string, fn func(*store.Site) error) bool {
+	rt, ok := s.gateSite(w, r) // parses the form and loads the site; has answered when !ok
+	if !ok {
+		return false
+	}
+	if err := s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
+		cur, err := tx.GetSite(r.Context(), rt.ID)
+		if err != nil {
+			return userError{http.StatusNotFound, "site not found"}
+		}
+		if err := fn(&cur); err != nil {
+			return userError{http.StatusUnprocessableEntity, err.Error()}
+		}
+		return tx.UpdateSite(r.Context(), cur)
+	}); err != nil {
+		failErr(w, err)
+		return false
+	}
+	s.audit(r, action, rt.Hostnames[0])
+	return true
+}
+
+// saveSiteGate writes the Gate tab's mode and mail block in place; grants keep their own rows.
+func (s *Server) saveSiteGate(w http.ResponseWriter, r *http.Request) {
+	if !s.mutateSite(w, r, "site.gate", func(rt *store.Site) error {
+		mode := strings.TrimSpace(r.PostFormValue("gate_mode"))
+		switch mode {
+		case "", "acl", "open":
+		default:
+			return fmt.Errorf("access mode %q is unknown: use none, acl or open", mode)
+		}
+		rt.GateMode = mode
+		if err := s.applyGateMail(rt, r.PostForm); err != nil {
+			return err
+		}
+		if _, err := s.parseGate(r.Context(), *rt, r.PostForm); err != nil { // refuses a gate the app cannot honor
+			return err
+		}
+		return nil
+	}) {
+		return
+	}
+	inplace(w, "Saved and applied. The gate covers every hostname; the first link takes a minute.")
+}
+
+// saveSiteAccess writes the IP allowlist and basic auth of the Gate tab in place.
+func (s *Server) saveSiteAccess(w http.ResponseWriter, r *http.Request) {
+	if !s.mutateSite(w, r, "site.access", func(rt *store.Site) error {
+		if _, ok := r.PostForm["allowlist"]; ok {
+			a, err := parseAllowlist(r.PostFormValue("allowlist"))
+			if err != nil {
+				return err
+			}
+			rt.Allowlist = a
+		}
+		if _, ok := r.PostForm["basic_user"]; ok {
+			return applyBasicAuth(rt, strings.TrimSpace(r.PostFormValue("basic_user")), r.PostFormValue("basic_password"))
+		}
+		return nil
+	}) {
+		return
+	}
+	inplace(w, "Saved and applied.")
+}
+
+// saveSiteMail writes the mail provider block of the Mail tab in place. A blank credential keeps
+// the stored one; the gate-mode checks only run for a site that actually gates.
+func (s *Server) saveSiteMail(w http.ResponseWriter, r *http.Request) {
+	if !s.mutateSite(w, r, "site.mail", func(rt *store.Site) error {
+		if err := s.applyGateMail(rt, r.PostForm); err != nil {
+			return err
+		}
+		if rt.GateMode != "" {
+			if _, err := s.parseGate(r.Context(), *rt, r.PostForm); err != nil {
+				return err
+			}
+		}
+		return nil
+	}) {
+		return
+	}
+	inplace(w, "Saved and applied. A test mail goes out without saving.")
+}

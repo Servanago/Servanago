@@ -74,17 +74,30 @@ func TestGateRowsAddRemoveAndSurviveSiteSave(t *testing.T) {
 
 // The edit page of a gated site with access rows once stopped rendering at the first row (a template error
 // answered 200 with half a page), so the Save button was missing.
-func TestGatedSiteEditPageRendersToTheEnd(t *testing.T) {
+func TestGatedSitePagesRenderToTheEnd(t *testing.T) {
 	s, id, c := gatedSite(t) // one row: alice@example.com
-	w := s.do(req{path: "/sites/" + itoa(id), cookies: []*http.Cookie{c}})
-	body := w.Body.String()
-	if w.Code != 200 {
-		t.Fatalf("edit page: %d", w.Code)
+	page := func(extra string) string {
+		w := s.do(req{path: "/sites/" + itoa(id) + extra, cookies: []*http.Cookie{c}})
+		if w.Code != 200 {
+			t.Fatalf("%s page: %d", "/sites/ "+extra, w.Code)
+		}
+		return w.Body.String()
 	}
-	for _, want := range []string{"alice@example.com", "/gate/grants/delete", "Add entry", "Send test", ">Save</button>", "</form>"} {
+	body := page("")
+	for _, want := range []string{">Save</button>", "</form>", "panel-settings"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("edit page of a gated site lacks %q (page cut short?)", want)
 		}
+	}
+	gate := page("/gate")
+	for _, want := range []string{"alice@example.com", "/gate/grants/delete", "Add entry", ">Save gate</button>"} {
+		if !strings.Contains(gate, want) {
+			t.Errorf("gate tab lacks %q (page cut short?)", want)
+		}
+	}
+	mail := page("/mail")
+	if !strings.Contains(mail, ">Save mail</button>") || !strings.Contains(mail, "Send test mail") {
+		t.Errorf("mail tab lacks its controls (page cut short?)")
 	}
 }
 
@@ -115,9 +128,11 @@ func TestGateMailSecretSealedAndKept(t *testing.T) {
 	if again, _ := s.deps.Store.GetSite(ctx, id); string(again.GateSecret) != string(got.GateSecret) {
 		t.Fatal("blank secret replaced the stored one")
 	}
-	// The edit page never prints it.
-	if page := s.do(req{path: "/sites/" + itoa(id), cookies: []*http.Cookie{c}}).Body.String(); strings.Contains(page, "server-token-1") {
-		t.Fatal("edit page shows the secret")
+	// The edit page and the Mail tab never print it.
+	for _, extra := range []string{"", "/mail"} {
+		if page := s.do(req{path: "/sites/" + itoa(id) + extra, cookies: []*http.Cookie{c}}).Body.String(); strings.Contains(page, "server-token-1") {
+			t.Fatal("/sites page shows the secret at " + extra)
+		}
 	}
 	if code := put("enabled", "on", "gate_mode", "open", "gate_provider", "carrier-pigeon"); code != 422 {
 		t.Fatalf("unknown provider: %d", code)

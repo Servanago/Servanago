@@ -59,8 +59,11 @@ func TestApplyControlsBasicAuth(t *testing.T) {
 	if err := applyControls(&r, url.Values{"basic_user": {"alice"}, "basic_password": {"other"}}); err != nil || r.BasicHash == hash {
 		t.Fatalf("hash not replaced: %v", err)
 	}
-	// an empty user clears both
-	if err := applyControls(&r, url.Values{}); err != nil || r.BasicUser != "" || r.BasicHash != "" {
+	// an absent field is preserved, an empty one clears both
+	if err := applyControls(&r, url.Values{}); err != nil || r.BasicUser != "alice" || r.BasicHash == "" {
+		t.Fatalf("absent basic_user must keep auth: %+v %v", r, err)
+	}
+	if err := applyControls(&r, url.Values{"basic_user": {""}}); err != nil || r.BasicUser != "" || r.BasicHash != "" {
 		t.Fatalf("not cleared: %+v %v", r, err)
 	}
 	for name, v := range map[string]url.Values{
@@ -90,8 +93,8 @@ func TestControlsEndToEndInHandlers(t *testing.T) {
 			t.Errorf("%s leaks the hash or password", path)
 		}
 	}
-	if body := s.do(req{path: "/sites/" + itoa(r.ID)}).Body.String(); !strings.Contains(body, "192.168.0.0/16") || !strings.Contains(body, "alice") {
-		t.Errorf("edit page lost allowlist or user")
+	if body := s.do(req{path: "/sites/" + itoa(r.ID) + "/gate"}).Body.String(); !strings.Contains(body, "192.168.0.0/16") || !strings.Contains(body, "alice") {
+		t.Errorf("gate tab lost allowlist or user")
 	}
 
 	// editing other fields with a blank password field keeps auth
@@ -136,7 +139,11 @@ func TestApplyControlsProxyTuning(t *testing.T) {
 	if err := applyControls(&r, url.Values{"stream": {"on"}, "max_body": {" 2gb "}}); err != nil || !r.Stream || r.MaxBody != 2<<30 {
 		t.Fatalf("%+v %v", r, err)
 	}
-	if err := applyControls(&r, url.Values{}); err != nil || r.Stream || r.MaxBody != 0 {
+	// absent fields are preserved, empty ones clear
+	if err := applyControls(&r, url.Values{}); err != nil || !r.Stream || r.MaxBody != 2<<30 {
+		t.Fatalf("missing fields must keep the tuning: %+v %v", r, err)
+	}
+	if err := applyControls(&r, url.Values{"stream": {""}, "max_body": {""}}); err != nil || r.Stream || r.MaxBody != 0 {
 		t.Fatalf("not cleared: %+v %v", r, err)
 	}
 	for _, bad := range []string{"2XB", "0", "101GB", "-5MB"} {

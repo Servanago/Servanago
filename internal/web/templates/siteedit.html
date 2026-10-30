@@ -134,6 +134,8 @@
 <section class="sect" id="sec-access">
 <h2>Access</h2>
 <p class="sect-note">Who can open the site. Anyone, unless you restrict it here.</p>
+{{if .Edit}}<p class="sect-note">Access (the gate, its list, allowlist, basic authentication) and this site's mail provider live on their own tabs now: <a href="/sites/{{.Site.ID}}/gate">Gate</a> and <a href="/sites/{{.Site.ID}}/mail">Mail</a>.</p>
+{{else}}
 <details class="feature"{{if .Site.GateMode}} open{{end}}>
 <summary>Magic-link access <span class="feature-state">{{if .Site.GateMode}}on{{else}}off{{end}}</span></summary>
 <div class="feature-body">
@@ -211,6 +213,7 @@
 {{hintid "country_mode"}}{{hintid "country_codes"}}
 </div>
 </details>
+{{end}}
 </section>
 <section class="sect" id="sec-behaviour">
 <h2>Behaviour</h2>
