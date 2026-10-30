@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { navTo } from './helpers';
 import { login } from './helpers';
 
 test('a second administrator signs in on their own, changes their password, and is removed', async ({ page, browser, baseURL }) => {
   await login(page);
-  await page.getByRole('link', { name: 'Users' }).click();
+  await navTo(page, 'Users');
   await expect(page.getByRole('row', { name: /^admin / })).toContainText('(you)');
   // You cannot manage yourself from this table.
   await expect(page.getByRole('row', { name: /^admin / }).getByText('Manage')).toHaveCount(0);
@@ -48,7 +49,7 @@ test('a second administrator signs in on their own, changes their password, and 
   await ctx.close();
 
   // Everything above is on the Audit page, newest first.
-  await page.getByRole('link', { name: 'Audit' }).click();
+  await navTo(page, 'Audit trail');
   await expect(page.getByRole('heading', { name: 'Audit' })).toBeVisible();
   for (const what of ['user.removed', 'user.password', 'user.added', 'reauth.failed']) {
     await expect(page.getByRole('row', { name: new RegExp(what.replace('.', '\\.')) }).first()).toBeVisible();

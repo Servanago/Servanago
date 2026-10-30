@@ -1,4 +1,5 @@
 import { test, expect } from '@playwright/test';
+import { signout } from './helpers';
 
 test('unauthenticated visit redirects to login', async ({ page }) => {
   await page.goto('/');
@@ -21,7 +22,7 @@ test('login reaches the dashboard and logout returns to login', async ({ page })
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: 'Sites' })).toBeVisible();
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await signout(page);
   await expect(page).toHaveURL(/\/login$/);
 });
 

@@ -23,7 +23,7 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
   await expect(row.getByText('pending').first()
     .or(row.getByText('issued').first())
     .or(row.getByText('expiring soon').first())).toBeVisible();
-  await expect(row.getByText('synced')).toBeVisible();
+  await expect(row.getByText('synced').first()).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();

@@ -15,7 +15,7 @@ test('list row delete panel: cancel keeps the site, delete asks about the DNS re
   await page.getByLabel('Upstream host or IP').fill('192.168.1.24');
   await page.getByRole('button', { name: 'Add site' }).click();
   const row = await openRow(siteRow(page, /lidarr\.delrow\.example\.net/));
-  await expect(row.getByText('synced')).toBeVisible();
+  await expect(row.getByText('synced').first()).toBeVisible();
 
   await row.getByRole('button', { name: 'Delete', exact: true }).click();
   const panel = page.getByRole('dialog');

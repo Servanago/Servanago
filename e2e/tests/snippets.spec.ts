@@ -55,7 +55,7 @@ test('snippets: add, refuse a bad one, attach to a site, block paths, detach, de
   await page.locator('nav[aria-label="Site sections"]').getByRole('link', { name: 'Snippets' }).click();
   await page.getByLabel('e2e_block').uncheck();
   await page.getByRole('button', { name: 'Save snippets' }).click();
-  await expect(page.getByText('Saved and applied.')).toBeVisible();
+  await expect(page.getByText('Saved and applied.').first()).toBeVisible();
   expect((await page.goto(`${SITE}/composer.lock`))!.status()).toBe(200);
 
   await page.goto('http://127.0.0.1:28081/snippets');

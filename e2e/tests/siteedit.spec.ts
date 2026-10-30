@@ -22,7 +22,7 @@ test('add a site, edit it, delete it', async ({ page }) => {
   await (await openRow(row)).getByRole('link', { name: 'Edit' }).click();
   await page.getByLabel('Enabled').uncheck();
   await page.getByRole('button', { name: 'Save' }).click();
-  await expect(page.getByText('Saved and applied.')).toBeVisible();
+  await expect(page.getByText('Saved and applied.').first()).toBeVisible();
   await page.goto('/');
   await expect(row.locator('.state')).toHaveText('Disabled');
 

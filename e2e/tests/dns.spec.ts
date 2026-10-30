@@ -15,10 +15,10 @@ test('site shows DNS synced; delete asks with the record named', async ({ page }
   await page.getByLabel('Upstream host or IP').fill('192.168.1.21');
   await page.getByRole('button', { name: 'Add site' }).click();
   const row = await openRow(siteRow(page, /radarr\.dns\.example\.net/));
-  await expect(row.getByText('synced')).toBeVisible();
+  await expect(row.getByText('synced').first()).toBeVisible();
 
   await row.getByRole('button', { name: 'Resync' }).click();
-  await expect(row.getByText('synced')).toBeVisible();
+  await expect(row.getByText('synced').first()).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
   await page.getByRole('button', { name: 'Delete site' }).click();

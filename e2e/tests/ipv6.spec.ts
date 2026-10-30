@@ -26,7 +26,7 @@ test('dual-stack: a site on a domain with an IPv6 address gets A and AAAA record
   await page.locator('#panel-dns').locator('summary', { hasText: 'Record addresses' }).click();
   await page.getByLabel(/DNS record IPv6/).fill('2001:db8::99');
   await page.getByRole('button', { name: 'Save record IPs' }).click();
-  await expect(page.getByText('Saved and applied.')).toBeVisible();
+  await expect(page.getByText('Saved and applied.').first()).toBeVisible();
   await page.goto('/');
   await openRow(row); // a fresh page starts with every row closed
   await expect(row.getByText('AAAA synced', { exact: true })).toBeVisible();

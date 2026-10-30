@@ -1,9 +1,10 @@
 import { test, expect } from '@playwright/test';
+import { navTo } from './helpers';
 import { login } from './helpers';
 
 test('help page opens from the nav and ? links jump to a section', async ({ page }) => {
   await login(page);
-  await page.getByRole('link', { name: 'Help', exact: true }).click();
+  await navTo(page, 'Help');
   await expect(page.getByRole('heading', { name: 'Help', level: 1 })).toBeVisible();
   await expect(page.getByRole('heading', { name: 'What the status words mean' })).toBeVisible();
   await expect(page.getByRole('cell', { name: 'DNS conflict' })).toBeVisible();

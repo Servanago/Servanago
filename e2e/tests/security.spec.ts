@@ -1,4 +1,5 @@
 import { test, expect, Page } from '@playwright/test';
+import { signout } from './helpers';
 import { createHmac } from 'node:crypto';
 
 // WebAuthn needs a secure context and a real hostname: localhost qualifies, 127.0.0.1 does not.
@@ -44,7 +45,7 @@ test('authenticator app: enroll, sign in with a backup code, turn off', async ({
   await expect(page.locator('#totp-msg li code')).toHaveCount(10);
   const codes = await page.locator('#totp-msg li code').allInnerTexts();
 
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await signout(page);
   await signIn(page);
   await expect(page).toHaveURL(/\/login\/totp$/);
   await page.getByLabel('Code', { exact: true }).fill('000000');
@@ -77,7 +78,7 @@ test('passkey: add, sign in without the password, delete', async ({ page }) => {
   await page.getByRole('button', { name: 'Add passkey' }).click();
   await expect(page.getByRole('cell', { name: 'e2e key' })).toBeVisible();
 
-  await page.getByRole('button', { name: 'Sign out' }).click();
+  await signout(page);
   await page.goto('/login');
   await page.getByRole('button', { name: 'Sign in with passkey' }).click();
   await expect(page).toHaveURL(/\/$/);
