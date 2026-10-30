@@ -67,12 +67,13 @@ func (s *Server) postInbound(ctx context.Context, md store.MailDomain, in *mailb
 		mailBridgeErr(w, http.StatusInternalServerError, "storage error")
 		return
 	}
-	fresh, err := s.deps.Store.DeliverOnce(ctx, sha256hex(in.MessageID+"|"+rcpt), md.ID)
+	key := sha256hex(in.MessageID + "|" + rcpt)
+	seen, err := s.deps.Store.Delivered(ctx, key)
 	if err != nil {
 		mailBridgeErr(w, http.StatusInternalServerError, "storage error")
 		return
 	}
-	if !fresh {
+	if seen {
 		_ = s.countAnd(ctx, md, "deduped", false)
 		w.WriteHeader(http.StatusOK) // a retry after a lost 200 must not produce a second copy
 		return
@@ -95,6 +96,12 @@ func (s *Server) postInbound(ctx context.Context, md store.MailDomain, in *mailb
 	case derr != nil:
 		slog.Error("mail bridge lmtp", "domain", md.Name, "result", res, "error", derr)
 	case res == mailbridge.ResultOK:
+		// The dedupe key is recorded only on success: a temporary failure's next attempt
+		// must still deliver (at-least-once; concurrent first attempts both deliver and the
+		// LMTP server's own Message-ID dedupe is the second net). gopmstall's rule.
+		if _, err := s.deps.Store.DeliverOnce(ctx, key, md.ID); err != nil {
+			slog.Error("mail bridge dedupe record", "domain", md.Name, "error", err)
+		}
 		_ = s.countAnd(ctx, md, "delivered", false)
 	}
 	switch res {

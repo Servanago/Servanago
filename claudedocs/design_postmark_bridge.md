@@ -50,13 +50,19 @@ inbound attachments at 35 MB and `RawEmail` roughly doubles the payload), events
 `Client` stays the gate's server-token sender. New `Admin{AccountToken}` on the same
 `X-Postmark-Account-Token` conventions, endpoints verified in gopmstall's spikes:
 
-- `Servers()` / `Domains()`: paginated lists (`count`/`offset`; count max 200) for name lookup.
-- `CreateServer(name)`, `UpdateServer(id, ServerConfig)`: `PUT /servers/{id}` with the account
+- `Servers()` / `Domains()`: paginated lists (`count`/`offset`) for name lookup.
+- `CreateServer(name)`, `UpdateServer(id, ServerPatch)`: `PUT /servers/{id}` with the account
   token sets `InboundHookUrl`, `RawEmailEnabled`, `BounceHookUrl`, `DeliveryHookUrl`,
-  `IncludeBounceContentInHook`, `EnableSmtpApiErrorHooks`, `InboundDomain` (all verified settable).
-- `CreateDomain(name)` posts `{Name, ReturnPathDomain: pm-bounces.<name>}`; DKIM is generated
-  lazily: first call's response carries `DKIMPendingHost`/`DKIMPendingTextValue` (the TXT pair to
-  publish). `VerifyDkim(id)` / `VerifyReturnPath(id)` are PUTs returning `{Valid}`.
+  `IncludeBounceContentInHook`, `EnableSmtpApiErrorHooks`, `InboundDomain` (verified settable).
+  The hook fields are Postmark's server-configuration route, marked deprecated in the docs in
+  favor of the per-stream Webhooks API; that newer API needs per-server server tokens, which
+  the bridge does not store, and the spikes proved the server fields work live (2026-10-23).
+  Deliberate: stay on the verified fields; revisit only when Postmark removes them.
+- `CreateDomain(name)` posts `{Name, ReturnPathDomain: pm-bounces.<name>}` (both names per the
+  docs); DKIM is generated lazily: the response carries `DKIMPendingHost`/`DKIMPendingTextValue`
+  (the TXT pair to publish). `VerifyDkim(id)` / `VerifyReturnPath(id)` are PUTs that return the
+  whole domain object; the answer booleans are `DKIMVerified` and `ReturnPathDomainVerified`
+  (docs + gopostmarkinbound), not a `{Valid}` wrapper.
 - Postmark replies wrap errors as `{ErrorCode, Message}` with 422 status; treat 2xx +
   `ErrorCode == 0` as success.
 

@@ -6,19 +6,31 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
-// fakeLMTP runs one session per test: fixed replies, transcript on lines.
+// fakeLMTP runs one session per test: fixed replies, transcript on lines. The transcript is
+// mutex-guarded: the server goroutine may still be writing (the QUIT reply) when the test reads.
 type fakeLMTP struct {
 	rcpt, data string // RCPT and final-DATA replies
+	mu         sync.Mutex
 	saw        strings.Builder
 }
 
 func (f *fakeLMTP) write(c net.Conn, s string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	_, _ = fmt.Fprint(c, s+"\r\n")
 	f.saw.WriteString("< " + strings.ReplaceAll(s, "\r\n", " ⁋ ") + "\n")
+}
+
+// transcript snapshots what the session exchanged.
+func (f *fakeLMTP) transcript() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.saw.String()
 }
 
 func (f *fakeLMTP) listen(t *testing.T, target *Target) {
@@ -54,7 +66,9 @@ func serveOne(ln net.Listener, f *fakeLMTP) {
 		line = strings.TrimSuffix(line, "\r\n")
 		switch {
 		case true: // every command is transcribed before it is answered
+			f.mu.Lock()
 			f.saw.WriteString("cmd: " + line + "\n")
+			f.mu.Unlock()
 		}
 		switch {
 		case strings.HasPrefix(line, "LHLO"):
@@ -95,7 +109,9 @@ func (f *fakeLMTP) readBody(conn net.Conn) {
 		if line == "." {
 			return
 		}
+		f.mu.Lock()
 		f.saw.WriteString("body: " + line + "\n")
+		f.mu.Unlock()
 	}
 }
 
@@ -107,14 +123,11 @@ func TestDeliverLMTP(t *testing.T) {
 	if res != ResultOK || err != nil {
 		t.Fatalf("deliver: %v %v", res, err)
 	}
-	tr := f.saw.String()
-	for _, want := range []string{"LHLO panel.test", "MAIL FROM:<sender@x.test>", "RCPT TO:<rcpt@example.test>", "hello"} {
+	tr := f.transcript()
+	for _, want := range []string{"LHLO panel.test", "MAIL FROM:<sender@x.test>", "RCPT TO:<rcpt@example.test>", "hello", "250 2.0.0 OK"} {
 		if !strings.Contains(tr, want) {
 			t.Fatalf("missing %q in transcript:\n%s", want, tr)
 		}
-	}
-	if got := lastLine(tr); !strings.Contains(got, "250 2.0.0 OK") {
-		t.Fatalf("final data reply missing: got %q", got)
 	}
 }
 
@@ -163,7 +176,7 @@ func TestDeliverDotStuffs(t *testing.T) {
 	if err != nil || res != ResultOK {
 		t.Fatalf("deliver: %v %v", res, err)
 	}
-	tr := f.saw.String()
+	tr := f.transcript()
 	if !strings.Contains(tr, "body: .") || strings.Contains(tr, "body: .ok:") {
 		t.Fatalf("dots not stuffed or line sent unstuffed:\n%s", tr)
 	}
@@ -203,10 +216,4 @@ func TestDeliverTLSRejected(t *testing.T) {
 	if res != ResultTemporary || err == nil {
 		t.Fatalf("tls dial: %v %v", res, err)
 	}
-}
-
-// lastLine is the final transcript entry (the last reply the fake wrote).
-func lastLine(s string) string {
-	lines := strings.Split(strings.TrimRight(s, "\n"), "\n")
-	return lines[len(lines)-1]
 }

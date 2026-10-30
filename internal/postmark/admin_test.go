@@ -108,9 +108,9 @@ func TestAdminDomains(t *testing.T) {
 		case path == "/domains/3":
 			_, _ = w.Write([]byte(`{"ID":3,"Name":"deeper.example.test","DKIMHost":"20200615080323pm._domainkey.deeper.example.test","DKIMTextValue":"v=DKIM1 p=VERIFIED"}`))
 		case path == "/domains/3/verifyDkim":
-			_, _ = w.Write([]byte(`{"Valid":true}`))
+			_, _ = w.Write([]byte(`{"ID":3,"DKIMVerified":true}`))
 		case path == "/domains/3/verifyReturnPath":
-			_, _ = w.Write([]byte(`{"Valid":false}`))
+			_, _ = w.Write([]byte(`{"ID":3,"ReturnPathDomainVerified":false}`))
 		default:
 			http.NotFound(w, r)
 		}

@@ -21,6 +21,14 @@ const adminTimeout = 30 * time.Second
 // Admin is the account-token client.
 type Admin struct {
 	Token string
+	URL   string // test hook: empty is the real API
+}
+
+func (a Admin) base() string {
+	if a.URL != "" {
+		return a.URL
+	}
+	return adminEndpoint
 }
 
 type pmServer struct {
@@ -51,6 +59,12 @@ type Server struct {
 }
 
 // ServerPatch sets the fields the pointer carries and leaves the rest alone.
+//
+// The hook fields here are the server-configuration path Postmark's docs mark deprecated in
+// favor of the newer per-stream Webhooks API, but they are what the gopmstall spikes pushed
+// live (2026-10-23) and what the inbound/event messages arrive from, so they remain the
+// bridge's configuration path: the newer API needs per-server server tokens, which nothing
+// in scope stores.
 type ServerPatch struct {
 	InboundHookURL    *string
 	RawEmail          *bool
@@ -92,7 +106,7 @@ func (p ServerPatch) json() map[string]any {
 type Domain struct {
 	ID                       int64  `json:"ID"`
 	Name                     string `json:"Name"`
-	Status                   string `json:"Status"`
+	DKIMVerified             bool   `json:"DKIMVerified"`
 	DKIMHost                 string `json:"DKIMHost"`
 	DKIMTextValue            string `json:"DKIMTextValue"`
 	DKIMPendingHost          string `json:"DKIMPendingHost"`
@@ -118,7 +132,7 @@ func (a Admin) do(ctx context.Context, method, path string, payload, out any) er
 		}
 		body = b
 	}
-	req, err := http.NewRequestWithContext(ctx, method, adminEndpoint+path, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, method, a.base()+path, bytes.NewReader(body))
 	if err != nil {
 		return err
 	}
@@ -251,20 +265,21 @@ func (a Admin) GetDomain(ctx context.Context, id int64) (Domain, error) {
 	return d, err
 }
 
-// VerifyDkim asks Postmark to check the DKIM TXT now.
+// VerifyDkim asks Postmark to check the DKIM TXT now; the reply is the domain object and the
+// boolean field is the verified state (spike + docs: not a {Valid} wrapper).
 func (a Admin) VerifyDkim(ctx context.Context, id int64) (bool, error) {
 	var out struct {
-		Valid bool `json:"Valid"`
+		DKIMVerified bool `json:"DKIMVerified"`
 	}
 	err := a.do(ctx, http.MethodPut, fmt.Sprintf("/domains/%d/verifyDkim", id), nil, &out)
-	return out.Valid, err
+	return out.DKIMVerified, err
 }
 
 // VerifyReturnPath asks Postmark to check the Return-Path CNAME now.
 func (a Admin) VerifyReturnPath(ctx context.Context, id int64) (bool, error) {
 	var out struct {
-		Valid bool `json:"Valid"`
+		ReturnPathDomainVerified bool `json:"ReturnPathDomainVerified"`
 	}
 	err := a.do(ctx, http.MethodPut, fmt.Sprintf("/domains/%d/verifyReturnPath", id), nil, &out)
-	return out.Valid, err
+	return out.ReturnPathDomainVerified, err
 }

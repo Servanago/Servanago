@@ -203,6 +203,19 @@ func (s *Store) ListMailEvents(ctx context.Context, domainID int64, limit int) (
 	return out, rows.Err()
 }
 
+// Delivered reports whether a delivery key was already recorded (check only, no insert).
+func (s *Store) Delivered(ctx context.Context, key string) (bool, error) {
+	var one int
+	err := s.q.QueryRowContext(ctx, `SELECT 1 FROM mail_delivered WHERE key=?`, key).Scan(&one)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("read delivery %s: %w", key, err)
+	}
+	return true, nil
+}
+
 // DeliverOnce records a delivery key and reports whether it was new (false = seen before).
 func (s *Store) DeliverOnce(ctx context.Context, key string, domainID int64) (bool, error) {
 	res, err := s.q.ExecContext(ctx,
