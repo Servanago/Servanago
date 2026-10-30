@@ -244,7 +244,7 @@ pre.notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9rem; ov
 body.app { min-height: 100vh; }
 .topbar { position: sticky; top: 0; z-index: 20; background: var(--sg-surface); border-bottom: 1px solid var(--sg-border); padding: 0 1.4rem; }
 .topbar-in { max-width: 74rem; margin: 0 auto; display: flex; align-items: center; gap: 1.1rem; min-height: 3.6rem; }
-.brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--sg-text); text-decoration: none; white-space: nowrap; }
+.brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--sg-text); text-decoration: none; white-space: nowrap; flex: none; }
 .brand img { height: 1.8rem; width: auto; display: block; }
 .topnav { display: flex; gap: 0.1rem; overflow-x: auto; scrollbar-width: none; min-width: 0; align-items: center; }
 .topnav::-webkit-scrollbar { display: none; }
@@ -254,7 +254,7 @@ body.app { min-height: 100vh; }
 .topnav a[aria-current="page"] .icon { color: var(--sg-accent); }
 .topnav a.new { color: var(--sg-accent); font-weight: 600; }
 .topnav .icon { width: 1rem; height: 1rem; }
-.usermenu { position: relative; margin-left: auto; }
+.usermenu { position: relative; margin-left: auto; flex: none; }
 .usermenu > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem; margin: 0; padding: 0.35rem 0.75rem; border: 1px solid var(--sg-border); border-radius: 999px; background: var(--sg-surface-raised); color: var(--sg-text-secondary); font-size: 0.85rem; }
 .usermenu > summary::-webkit-details-marker, .usermenu > summary::marker { display: none; content: ""; }
 .usermenu[open] > summary, .usermenu > summary:hover { border-color: var(--sg-accent); color: var(--sg-text); }
@@ -264,7 +264,7 @@ body.app { min-height: 100vh; }
 .usermenu-body a[aria-current="page"] { color: var(--sg-text); font-weight: 600; }
 .usermenu-body .signout { text-align: left; padding: 0.4rem 0.7rem; border-radius: var(--sg-radius-sm); background: none; border: 0; color: var(--sg-text-secondary); font-size: 0.87rem; cursor: pointer; margin: 0.3rem 0 0; border-top: 1px solid var(--sg-border); border-radius: 0 0 var(--sg-radius-sm) var(--sg-radius-sm); }
 .usermenu-body .signout:hover { background: rgba(240, 122, 129, 0.14); color: #F7A1A6; }
-.topfoot { color: var(--sg-text-secondary); font-size: 0.85rem; margin-left: 0; }
+.topfoot { color: var(--sg-text-secondary); font-size: 0.85rem; margin-left: 0; white-space: nowrap; flex: none; }
 main.content { width: 100%; max-width: 74rem; padding: 1.8rem clamp(1.1rem, 3.5vw, 2.6rem) 4rem; margin: 0 auto; }
 
 /* ---- Dashboard: page head, site rows, status strip ------------------------------------------------ */
@@ -420,6 +420,10 @@ form.htmx-request button[type="submit"] { opacity: 0.65; pointer-events: none; }
 form.htmx-request button[type="submit"]::after { content: ""; width: 0.85rem; height: 0.85rem; border: 2px solid rgba(255, 255, 255, 0.35); border-top-color: #fff; border-radius: 50%; display: inline-block; margin-left: 0.5rem; vertical-align: -0.12em; animation: sgspin 0.7s linear infinite; }
 @keyframes sgspin { to { transform: rotate(1turn); } }
 @media (prefers-reduced-motion: reduce) { form.htmx-request button[type="submit"]::after { animation: none; } }
+/* Dashboard filter row: search and the two selects on one line, collapsing on phones. */
+#sitefilter { display: flex; flex-wrap: wrap; gap: 0.5rem 0.6rem; margin: 0 0 1rem; }
+#sitefilter input[type="search"] { flex: 1 1 14rem; margin: 0; width: auto; }
+#sitefilter select { margin: 0; width: auto; flex: 0 1 11rem; }
 /* Toasts: the tab panels' message targets also surface here (data-toast). */
 .toasts { position: fixed; right: 1.1rem; bottom: 1.1rem; z-index: 60; display: flex; flex-direction: column; gap: 0.45rem; max-width: min(22rem, calc(100vw - 2.2rem)); }
 .toast { display: flex; gap: 0.6rem; align-items: baseline; padding: 0.65rem 0.9rem; border: 1px solid var(--sg-border); border-left-width: 0; border-radius: var(--sg-radius-md); background: var(--sg-surface-raised); box-shadow: var(--sg-shadow-panel); font-size: 0.88rem; color: var(--sg-text); animation: sgrise 0.25s cubic-bezier(0.16, 1, 0.3, 1); }

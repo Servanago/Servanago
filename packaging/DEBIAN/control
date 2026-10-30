@@ -1,5 +1,5 @@
 Package: servanago
-Version: 0.16.0
+Version: 0.16.1
 Architecture: @ARCH@
 Maintainer: Brian Tafoya <btafoya@briantafoya.com>
 Depends: systemd

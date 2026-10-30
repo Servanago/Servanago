@@ -1,12 +1,12 @@
 # ServanaGo
 
-> Lightweight self-hosted web runtime manager: a Go app with a web UI, embedded Caddy, SQLite and systemd supervision. One native host, one Caddy ingress for every site. Site kinds: reverse proxy, static, Node.js, PHP-FPM (distro PHP or PHP that ServanaGo compiles itself), FrankenPHP, FastCGI and CGI. Optional Cloudflare (DNS-01 certificates, A/AAAA records), optional MCP endpoint for agents. Status: early (v0.16.0); not a hosting control panel and not a sandbox for mutually untrusted tenants. MIT licensed.
+> Lightweight self-hosted web runtime manager: a Go app with a web UI, embedded Caddy, SQLite and systemd supervision. One native host, one Caddy ingress for every site. Site kinds: reverse proxy, static, Node.js, PHP-FPM (distro PHP or PHP that ServanaGo compiles itself), FrankenPHP, FastCGI and CGI. Optional Cloudflare (DNS-01 certificates, A/AAAA records), optional MCP endpoint for agents. Status: early (v0.16.1); not a hosting control panel and not a sandbox for mutually untrusted tenants. MIT licensed.
 
 Target platform: native host, Debian 12+ / Ubuntu 22.04+ with systemd 252+. Packaged as a `.deb`. There is no container image.
 
 ## Install
 
-- Build and install the package: `make deb`, then `sudo apt-get install ./bin/servanago_0.16.0_amd64.deb`. Or `sudo packaging/install.sh` from a checkout. Releases carry the `.deb`.
+- Build and install the package: `make deb`, then `sudo apt-get install ./bin/servanago_0.16.1_amd64.deb`. Or `sudo packaging/install.sh` from a checkout. Releases carry the `.deb`.
 - The deb installs the binary, a `servanago` system user, `/etc/servanago/servanago.env` (a conffile; dpkg keeps your edits), `servanago.service`, and `servanago-helper.service`. `DATA_DIR` is `/var/lib/servanago`, logs go to journald (`journalctl -u servanago`).
 - The unit is enabled but not started. Fill in the env file (`SERVANAGO_HOST`, `ACME_EMAIL`, `ADMIN_PASSWORD`), then `systemctl start servanago`.
 - The helper is a root daemon the control plane asks over a Unix socket (SO_PEERCRED) for privileged work: per-site units, system users, php-fpm pools, PHP builds, backups. It accepts a closed set of typed actions only; the web UI never runs as root. Running from source without it works, but pages that need it say so.
