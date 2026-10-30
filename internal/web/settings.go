@@ -26,6 +26,7 @@ type smtpData struct {
 	Socket   string // the configured path
 	Hour     string
 	NtfySet  bool
+	NtfyURL  string // the stored topic URL, unsealed for display; empty when unreadable
 	TokenSet bool
 	// The country-filter section.
 	GeoOn          bool
@@ -47,14 +48,22 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	s.render(w, "settings", http.StatusOK, page{Title: "Settings", Data: smtpData{
+	d := smtpData{
 		Host: st.SMTPHost, Port: strconv.Itoa(st.SMTPPort), User: st.SMTPUser, From: st.MailFrom,
 		PassSet: st.SMTPPass != nil, MailReady: st.MailReady(),
 		ScanOn: st.ScanSocket != "", Socket: st.ScanSocket, Hour: strconv.Itoa(st.ScanHour),
 		NtfySet: st.ScanNtfy != nil, TokenSet: st.ScanNtfyToken != nil,
 		GeoOn: st.GeoDB != "", GeoDB: st.GeoDB, WebUIMode: st.WebUIMode, WebUICountries: st.WebUICountries,
 		MailOn: st.MailToken != nil, MailTokenSet: st.MailToken != nil, MailLMTP: st.MailLMTP,
-		MailTLS: st.MailTLS == "starttls", MailUser: st.MailUser, MailPassSet: st.MailPass != nil}})
+		MailTLS: st.MailTLS == "starttls", MailUser: st.MailUser, MailPassSet: st.MailPass != nil}
+	if st.ScanNtfy != nil && s.deps.Cfg.SecretKey != "" { // the topic URL is not itself a secret: show it
+		if url, err := secretbox.Open(s.deps.Cfg.SecretKey, st.ScanNtfy); err == nil {
+			d.NtfyURL = string(url)
+		} else {
+			slog.Error("unseal the ntfy topic URL", "error", err)
+		}
+	}
+	s.render(w, "settings", http.StatusOK, page{Title: "Settings", Data: d})
 }
 
 // saveSMTP replaces the email delivery settings wholesale; a blank password keeps the stored one.

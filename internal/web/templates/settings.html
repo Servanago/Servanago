@@ -27,7 +27,7 @@
 {{hint "scan_socket"}}
 <label>Sweep hour (0-23) <input name="scan_hour" value="{{.Data.Hour}}" placeholder="3" inputmode="numeric"></label>
 {{hint "scan_hour"}}
-<label>ntfy topic URL {{if .Data.NtfySet}}(set; leave blank to keep){{end}} <input name="scan_ntfy" placeholder="https://ntfy.example.com/servanago" autocomplete="off"></label>
+<label>ntfy topic URL {{if .Data.NtfySet}}(set; leave blank to keep){{end}} <input name="scan_ntfy" value="{{.Data.NtfyURL}}" placeholder="https://ntfy.example.com/servanago" autocomplete="off"></label>
 {{hint "scan_ntfy"}}
 <label>ntfy access token {{if .Data.TokenSet}}(set; leave blank to keep){{end}} <input type="password" name="scan_ntfy_token" autocomplete="new-password" placeholder="{{if .Data.TokenSet}}leave blank to keep{{end}}"></label>
 {{hint "scan_ntfy_token"}}

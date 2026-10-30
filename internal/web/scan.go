@@ -413,6 +413,13 @@ func (s *Server) saveScan(w http.ResponseWriter, r *http.Request) {
 		cancel()
 	}
 	s.audit(r, "settings.scan", "socket="+st.ScanSocket)
+	s.flash("Virus-scanning settings saved.")
+	switch {
+	case clear:
+		s.flash("The ntfy topic and its access token were removed.")
+	case ntfy != "": // blank keeps the stored one; nothing to report then
+		s.flash("The ntfy topic is set: " + ntfy)
+	}
 	hxRedirect(w, "/settings")
 }
 

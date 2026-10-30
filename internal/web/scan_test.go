@@ -306,3 +306,40 @@ func TestGeoGuardBlocksPublicClients(t *testing.T) {
 		t.Fatalf("loopback got judged: %d", w.Code)
 	}
 }
+
+// TestScanSettingsFeedback checks the save is legible: a flash lands, the ntfy topic URL is
+// shown back on the page, the token is not.
+func TestScanSettingsFeedback(t *testing.T) {
+	s, _ := scanTestServer(t)
+	w := s.do(req{method: "POST", path: "/settings/scan", hdr: htmxPost,
+		body: form("scan_socket", "/tmp/clamd.sock", "scan_ntfy", "https://ntfy.example.com/t", "scan_ntfy_token", "tok9").Encode()})
+	if w.Code != 204 {
+		t.Fatalf("save: %d %s", w.Code, w.Body.String())
+	}
+	page := s.do(req{path: "/settings"}).Body.String()
+	if !strings.Contains(page, "Virus-scanning settings saved.") {
+		t.Error("no success flash")
+	}
+	if !strings.Contains(page, "The ntfy topic is set: https://ntfy.example.com/t") {
+		t.Error("no ntfy flash")
+	}
+	if !strings.Contains(page, `value="https://ntfy.example.com/t"`) {
+		t.Error("the stored topic URL is not shown")
+	}
+	if strings.Contains(page, "tok9") {
+		t.Error("the access token leaked onto the page")
+	}
+
+	// clearing notes itself and empties the shown URL
+	if w := s.do(req{method: "POST", path: "/settings/scan", hdr: htmxPost,
+		body: form("scan_socket", "/tmp/clamd.sock", "scan_ntfy", "", "clear_ntfy", "1").Encode()}); w.Code != 204 {
+		t.Fatalf("clear: %d", w.Code)
+	}
+	page = s.do(req{path: "/settings"}).Body.String()
+	if !strings.Contains(page, "The ntfy topic and its access token were removed.") {
+		t.Error("no removal flash")
+	}
+	if strings.Contains(page, "ntfy.example.com/t") {
+		t.Error("the removed URL still shows")
+	}
+}
