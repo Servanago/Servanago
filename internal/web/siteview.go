@@ -381,6 +381,7 @@ func (s *Server) renderPart(w http.ResponseWriter, pageName, def string, data an
 
 // saveSiteDNSIP writes the DNS record IP overrides in place.
 func (s *Server) saveSiteDNSIP(w http.ResponseWriter, r *http.Request) {
+	idParsed, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
 	if !s.mutateSite(w, r, "site.dns_ip", func(rt *store.Site) error {
 		if _, ok := r.PostForm["record_ip"]; ok {
 			ip := strings.TrimSpace(r.PostFormValue("record_ip"))
@@ -404,5 +405,6 @@ func (s *Server) saveSiteDNSIP(w http.ResponseWriter, r *http.Request) {
 	}) {
 		return
 	}
+	s.reconcile(r, idParsed) // the record's content changes with the override; the row updates detached
 	inplace(w, "Saved and applied. The record updates in Cloudflare on the next sync.")
 }
