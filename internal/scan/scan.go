@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io/fs"
 	"net"
@@ -187,7 +188,11 @@ func (c *Client) ScanTree(ctx context.Context, root string, hit func(path, virus
 	err := filepath.WalkDir(root, func(p string, d fs.DirEntry, werr error) error {
 		if werr != nil { // unreadable directory entry: skip it, keep scanning
 			res.Skipped++
-			note(&res, p+": "+werr.Error())
+			msg := p + ": " + werr.Error()
+			if errors.Is(werr, fs.ErrPermission) { // serving needs only x on the folder, scanning needs r
+				msg += " (the scanner runs as servanago and must list and read the folder: sudo setfacl -R -m u:servanago:rX " + root + ")"
+			}
+			note(&res, msg)
 			return nil
 		}
 		if d.IsDir() {

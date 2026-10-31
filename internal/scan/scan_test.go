@@ -232,3 +232,21 @@ func TestLiveClamd(t *testing.T) {
 		t.Fatalf("tree: %+v %v", res, err)
 	}
 }
+
+func TestScanTreeUnreadableRootNamesTheFix(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	sock, _ := fake.Clamd(t, "")
+	root := filepath.Join(t.TempDir(), "site")
+	if err := os.Mkdir(root, 0o111); err != nil { // enter-only, like u:servanago:--x
+		t.Fatal(err)
+	}
+	res, err := New(sock).ScanTree(context.Background(), root, func(string, string) error { return nil })
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Errs) == 0 || !strings.Contains(res.Errs[0], "setfacl -R -m u:servanago:rX") {
+		t.Fatalf("want a setfacl hint, got %v", res.Errs)
+	}
+}

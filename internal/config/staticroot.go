@@ -60,7 +60,7 @@ func ValidateStaticRoot(root, dataDir string, allowed []string) (string, error) 
 }
 
 // StaticRootReadable reports whether the server can enter root: the site page shows this, a failure never stops anything.
-// Entering is enough (Caddy opens files by name and lists nothing), so a folder shared with `setfacl -m u:servanago:x` passes.
+// Entering is enough (Caddy opens files by name and lists nothing), so a folder shared with `setfacl -m u:servanago:x` passes. The virus scanner needs `rX` (it lists and reads).
 func StaticRootReadable(root string) error {
 	_, err := os.Stat(root + "/.") // resolving "." needs x on root itself
 	return err
