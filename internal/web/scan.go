@@ -338,7 +338,7 @@ func (s *Server) sitesBy(ctx context.Context, keep func(store.Site) bool) []stor
 	return out
 }
 
-// saveScan stores the scanning section of the Settings page: socket, hour and the ntfy secrets.
+// saveScan stores the Virus scanning tab of the Settings page: socket and sweep hour (the ntfy topic is the Notifications tab, saveNotify).
 func (s *Server) saveScan(w http.ResponseWriter, r *http.Request) {
 	socket := strings.TrimSpace(r.PostFormValue("scan_socket"))
 	if socket != "" && !filepath.IsAbs(socket) {
@@ -358,33 +358,6 @@ func (s *Server) saveScan(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return
 	}
-	var ntfyURL, ntfyToken []byte
-	clear := r.PostFormValue("clear_ntfy") != ""
-	ntfy := strings.TrimSpace(r.PostFormValue("scan_ntfy"))
-	if clear { // drop the topic and its token both
-	} else if ntfy == "" {
-		ntfyURL, ntfyToken = cur.ScanNtfy, cur.ScanNtfyToken
-	} else if s.deps.Cfg.SecretKey == "" {
-		fail(w, http.StatusUnprocessableEntity, "Storing the ntfy address needs SERVANAGO_SECRET_KEY (at least 32 characters) in the environment file.")
-		return
-	} else {
-		if !strings.HasPrefix(ntfy, "https://") || len(ntfy) > 500 || strings.ContainsAny(ntfy, " \r\n\t") {
-			fail(w, http.StatusUnprocessableEntity, "The ntfy address must be an https:// topic URL.")
-			return
-		}
-		if ntfyURL, err = secretbox.Seal(s.deps.Cfg.SecretKey, []byte(ntfy)); err != nil {
-			fail(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if tok := r.PostFormValue("scan_ntfy_token"); tok != "" {
-			if ntfyToken, err = secretbox.Seal(s.deps.Cfg.SecretKey, []byte(tok)); err != nil {
-				fail(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-		} else {
-			ntfyToken = cur.ScanNtfyToken
-		}
-	}
 	st := store.Settings{
 		SMTPHost:      cur.SMTPHost,
 		SMTPPort:      cur.SMTPPort,
@@ -394,8 +367,8 @@ func (s *Server) saveScan(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:     time.Now().UTC().Format(time.RFC3339),
 		ScanSocket:    socket,
 		ScanHour:      hour,
-		ScanNtfy:      ntfyURL,
-		ScanNtfyToken: ntfyToken,
+		ScanNtfy:      cur.ScanNtfy,
+		ScanNtfyToken: cur.ScanNtfyToken,
 		// the geo panel owns its own columns: carry them over untouched
 		GeoDB: cur.GeoDB, WebUIMode: cur.WebUIMode, WebUICountries: cur.WebUICountries,
 		MailToken: cur.MailToken, MailLMTP: cur.MailLMTP, MailTLS: cur.MailTLS, MailUser: cur.MailUser, MailPass: cur.MailPass,
@@ -413,13 +386,7 @@ func (s *Server) saveScan(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r, "settings.scan", "socket="+st.ScanSocket)
 	s.flash("Virus-scanning settings saved.")
-	switch {
-	case clear:
-		s.flash("The ntfy topic and its access token were removed.")
-	case ntfy != "": // blank keeps the stored one; nothing to report then
-		s.flash("The ntfy topic is set: " + ntfy)
-	}
-	hxRedirect(w, "/settings")
+	hxRedirect(w, "/settings/scan")
 }
 
 // scanHitAction handles one of the three hit buttons: quarantine, restore, ignore.
@@ -543,5 +510,5 @@ func (s *Server) saveGeo(w http.ResponseWriter, r *http.Request) {
 	s.geo.Use(db)
 	s.geoRule.Store(geoRule{db: db, mode: mode, countries: countries})
 	s.audit(r, "settings.geoip", "db="+db+" mode="+mode)
-	hxRedirect(w, "/settings")
+	hxRedirect(w, "/settings/geo")
 }

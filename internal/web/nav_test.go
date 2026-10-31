@@ -32,7 +32,7 @@ func TestTopbarNavMarksCurrentPage(t *testing.T) {
 	if got := current(body); len(got) != 1 || got[0] != "Sites" {
 		t.Errorf("dashboard current = %v, want [Sites]", got)
 	}
-	for path, label := range map[string]string{"/domains": "Domains", "/snippets": "Snippets", "/reference": "Reference", "/php": "PHP", "/backups": "Backups", "/audit": "Audit trail", "/settings": "Settings", "/help": "Help", "/users": "Users", "/scan": "Scan", "/mail": "Mail"} {
+	for path, label := range map[string]string{"/domains": "Domains", "/snippets": "Snippets", "/reference": "Reference", "/php": "PHP", "/backups": "Backups", "/audit": "Audit trail", "/settings/email": "Settings", "/help": "Help", "/users": "Users", "/scan": "Scan", "/mail": "Mail"} {
 		if got := current(s.do(req{path: path, cookies: ck}).Body.String()); len(got) != 1 || got[0] != label {
 			t.Errorf("%s current = %v, want [%s]", path, got, label)
 		}

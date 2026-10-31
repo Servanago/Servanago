@@ -51,4 +51,6 @@ An A record target (`SERVANAGO_HOST_IP`, a domain's default IP, a site's DNS rec
 
 ## Settings page
 
+The page has one tab per group, each at its own address: Email delivery (`/settings/email`), Virus scanning (`/settings/scan`), Notifications (`/settings/notify`, the ntfy topic and token), Country filter (`/settings/geo`) and Mail bridge (`/settings/mail`). `/settings` opens the first.
+
 SMTP (host, port, user, password, MAIL FROM) is set on the Settings page, not in the environment. The password is sealed with `SERVANAGO_SECRET_KEY`. This account only sends ServanaGo's own notices (such as the PHP release mail); magic-link mail for a gated site is set per site.

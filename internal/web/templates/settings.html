@@ -1,6 +1,9 @@
 {{define "content"}}
 <h1>Settings {{helplink "settings"}}</h1>
-<article>
+<nav class="tabs" aria-label="Settings sections">
+{{$tab := .Data.Tab}}{{range settingsTabs}}<a{{if eq .Key $tab}} class="sel"{{end}} href="/settings/{{.Key}}">{{.Label}}</a>
+{{end}}</nav>
+{{if eq .Data.Tab "email"}}<article>
 <h2>Email delivery</h2>
 {{if .Data.MailReady}}<p>On. ServanaGo's own notices (such as new PHP releases) are sent from here. Magic links use each site's own mail provider.</p>
 {{else}}<p>Not set. ServanaGo's own notices are not emailed. Magic links do not need this: each gated site has its own mail provider.</p>{{end}}
@@ -17,26 +20,35 @@
 <button type="submit">Save</button>
 </form>
 <p id="smtp-msg" role="alert"></p>
-</article>
-<article>
+</article>{{end}}
+{{if eq .Data.Tab "scan"}}<article>
 <h2>Virus scanning</h2>
-{{if .Data.ScanOn}}<p>On. Site folders are checked against clamd on this server; hit alerts also reach ntfy{{if .Data.NtfySet}} (set){{else}} when its topic is set{{end}} and email{{if .Data.MailReady}} (set){{else}} when email delivery is set above{{end}}.</p>
+{{if .Data.ScanOn}}<p>On. Site folders are checked against clamd on this server; hit alerts also reach ntfy{{if .Data.NtfySet}} (set){{else}} when its topic is set{{end}} and email{{if .Data.MailReady}} (set){{else}} when email delivery is set up{{end}}. The ntfy topic is on the Notifications tab.</p>
 {{else}}<p>Off. Set the clamd socket path to turn scanning on — the daemon itself comes from <code>apt install clamav-daemon</code>; ServanaGo never installs or updates it.</p>{{end}}
 <form hx-post="/settings/scan" hx-target="#scan-msg">
 <label>clamd socket <input name="scan_socket" value="{{.Data.Socket}}" placeholder="/run/clamav/clamd.ctl" autocomplete="off"></label>
 {{hint "scan_socket"}}
 <label>Sweep hour (0-23) <input name="scan_hour" value="{{.Data.Hour}}" placeholder="3" inputmode="numeric"></label>
 {{hint "scan_hour"}}
+<button type="submit">Save</button>
+</form>
+<p id="scan-msg" role="alert"></p>
+</article>{{end}}
+{{if eq .Data.Tab "notify"}}<article>
+<h2>Notifications</h2>
+{{if .Data.NtfySet}}<p>On. Every scan with hits posts an urgent message to the ntfy topic below.</p>
+{{else}}<p>Off. Set an ntfy topic URL to get a push message when a scan finds something. Hits also email the MAIL FROM mailbox when email delivery is set up.</p>{{end}}
+<form hx-post="/settings/notify" hx-target="#notify-msg">
 <label>ntfy topic URL {{if .Data.NtfySet}}(set; leave blank to keep){{end}} <input name="scan_ntfy" value="{{.Data.NtfyURL}}" placeholder="https://ntfy.example.com/servanago" autocomplete="off"></label>
 {{hint "scan_ntfy"}}
 <label>ntfy access token {{if .Data.TokenSet}}(set; leave blank to keep){{end}} <input type="password" name="scan_ntfy_token" autocomplete="new-password" placeholder="{{if .Data.TokenSet}}leave blank to keep{{end}}"></label>
 {{hint "scan_ntfy_token"}}
 <button type="submit">Save</button>
-<button type="button" class="outline" hx-post="/settings/scan" hx-target="#scan-msg" hx-vals='{"clear_ntfy":"1"}' hx-confirm="Forget the ntfy topic and its access token?">Forget ntfy</button>
+<button type="button" class="outline" hx-post="/settings/notify" hx-target="#notify-msg" hx-vals='{"clear_ntfy":"1"}' hx-confirm="Forget the ntfy topic and its access token?">Forget ntfy</button>
 </form>
-<p id="scan-msg" role="alert"></p>
-</article>
-<article>
+<p id="notify-msg" role="alert"></p>
+</article>{{end}}
+{{if eq .Data.Tab "geo"}}<article>
 <h2>Country filter</h2>
 {{if .Data.GeoOn}}<p>On. The MaxMind GeoLite2 file is read from {{.Data.GeoDB}} by geoipupdate{{if .Data.WebUIMode}}; the panel {{if eq .Data.WebUIMode "allow"}}only serves {{.Data.WebUICountries}}{{else}}refuses {{.Data.WebUICountries}}{{end}} (local and private addresses are never judged){{end}}.</p>
 {{else}}<p>Off. Point ServanaGo at a GeoLite2-Country file; geoipupdate (installed separately) keeps it fresh: <code>apt install geoipupdate</code>, license key into <code>/etc/GeoIP.conf</code>.</p>{{end}}
@@ -54,8 +66,8 @@
 <button type="submit">Save</button>
 </form>
 <p id="geo-msg" role="alert"></p>
-</article>
-<article>
+</article>{{end}}
+{{if eq .Data.Tab "mail"}}<article>
 <h2>Mail bridge</h2>
 {{if .Data.MailOn}}<p>On. The bridge delivers each provisioned domain's inbound Postmark mail over LMTP{{if .Data.MailLMTP}} to <code>{{.Data.MailLMTP}}</code>{{if .Data.MailTLS}} with STARTTLS{{end}}{{if eq .Data.MailUser ""}}, no credential{{else}} as {{.Data.MailUser}}{{end}}{{else}} — no target server set yet{{end}}.</p>
 {{else}}<p>Off. Set the Postmark <strong>account</strong> token below; then provision domains on the <strong>Mail</strong> page. The mail server itself runs on this host or nearby and speaks LMTP.</p>{{end}}
@@ -72,5 +84,5 @@
 <button type="submit">Save</button>
 </form>
 <p id="mail-msg" role="alert"></p>
-</article>
+</article>{{end}}
 {{end}}

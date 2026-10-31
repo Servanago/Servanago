@@ -544,7 +544,7 @@ func (s *Server) saveMail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "settings.mail", "lmtp="+st.MailLMTP)
-	hxRedirect(w, "/settings")
+	hxRedirect(w, "/settings/mail")
 }
 
 // webhookBase is the panel's public origin.

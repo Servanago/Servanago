@@ -87,7 +87,7 @@ func TestSettingsPageEndToEnd(t *testing.T) {
 		return srv.do(req{method: "POST", path: "/settings/smtp", body: kv.Encode(), hdr: htmxPost, cookies: []*http.Cookie{ck}})
 	}
 
-	w := s.do(req{path: "/settings", cookies: []*http.Cookie{c}})
+	w := s.do(req{path: "/settings/email", cookies: []*http.Cookie{c}})
 	if w.Code != 200 || !strings.Contains(w.Body.String(), "Email delivery") || !strings.Contains(w.Body.String(), `value="28097"`) {
 		t.Fatalf("settings page: %d %s", w.Code, w.Body.String())
 	}
@@ -126,7 +126,7 @@ func TestSettingsPageEndToEnd(t *testing.T) {
 	if set, _ = s.deps.Store.GetSettings(context.Background()); string(set.SMTPPass) != sealed {
 		t.Fatal("blank password did not keep the stored one")
 	}
-	if w = s.do(req{path: "/settings", cookies: []*http.Cookie{c}}); !strings.Contains(w.Body.String(), "leave blank to keep") {
+	if w = s.do(req{path: "/settings/email", cookies: []*http.Cookie{c}}); !strings.Contains(w.Body.String(), "leave blank to keep") {
 		t.Fatal("password-set state not shown")
 	}
 

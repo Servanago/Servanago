@@ -40,44 +40,63 @@ func scanTestServer(t *testing.T) (*Server, store.Site) {
 	return s, x
 }
 
-func TestScanSettingsSaveSealAndClear(t *testing.T) {
+// TestNotifySettingsSealKeepAndClear: the Notifications tab seals the topic and token, a blank
+// topic keeps them, a non-https topic is refused whole, and the scan tab never touches them.
+func TestNotifySettingsSealKeepAndClear(t *testing.T) {
 	s, _ := scanTestServer(t)
 	key := strings.Repeat("k", 32)
+	post := func(path string, kv ...string) int {
+		return s.do(req{method: "POST", path: path, hdr: htmxPost, body: form(kv...).Encode()}).Code
+	}
+	get := func() store.Settings {
+		st, _ := s.deps.Store.GetSettings(context.Background())
+		return st
+	}
+	if c := post("/settings/notify", "scan_ntfy", "https://ntfy.example.com/t", "scan_ntfy_token", "tok123"); c != 204 {
+		t.Fatalf("save: %d", c)
+	}
+	st := get()
+	if b, err := secretbox.Open(key, st.ScanNtfy); err != nil || string(b) != "https://ntfy.example.com/t" {
+		t.Errorf("ntfy unseal: %q %v", b, err)
+	}
+	if st.ScanNtfyToken == nil {
+		t.Error("token not sealed")
+	}
+	if st.ScanSocket == "" {
+		t.Error("the notify save wiped the scan socket")
+	}
+	if c := post("/settings/scan", "scan_socket", "/tmp/other.sock"); c != 204 || get().ScanNtfy == nil {
+		t.Errorf("scan save: %d, ntfy kept=%v", c, get().ScanNtfy != nil)
+	}
+	if c := post("/settings/notify", "scan_ntfy", ""); c != 204 || get().ScanNtfy == nil || get().ScanNtfyToken == nil {
+		t.Errorf("blank topic must keep the pair: %d", c)
+	}
+	if c := post("/settings/notify", "scan_ntfy", "http://ntfy.example.com/t"); c != 422 {
+		t.Errorf("http topic: %d, want 422", c)
+	}
+	if c := post("/settings/notify", "clear_ntfy", "1"); c != 204 || get().ScanNtfy != nil || get().ScanNtfyToken != nil {
+		t.Errorf("clear left the secrets: %d", c)
+	}
+}
+
+func TestScanSettingsSaveSealAndClear(t *testing.T) {
+	s, _ := scanTestServer(t)
 	cases := []struct {
 		name  string
 		form  url.Values
 		code  int
 		check func(t *testing.T, st store.Settings)
 	}{
-		{"socket+ntfy", form("scan_socket", "/tmp/clamd.sock", "scan_hour", "5", "scan_ntfy", "https://ntfy.example.com/t", "scan_ntfy_token", "tok123"), 204,
+		{"socket+hour", form("scan_socket", "/tmp/clamd.sock", "scan_hour", "5"), 204,
 			func(t *testing.T, st store.Settings) {
 				if st.ScanSocket != "/tmp/clamd.sock" || st.ScanHour != 5 {
 					t.Errorf("stored: %+v", st)
-				}
-				b, err := secretbox.Open(key, st.ScanNtfy)
-				if err != nil || string(b) != "https://ntfy.example.com/t" {
-					t.Errorf("ntfy unseal: %q %v", b, err)
-				}
-				if st.ScanNtfyToken == nil {
-					t.Error("token not sealed")
 				}
 			}},
 		{"bad socket", form("scan_socket", "clamd.sock"), 422,
 			func(t *testing.T, st store.Settings) {
 				if st.ScanSocket != "" {
 					t.Errorf("relative socket was stored")
-				}
-			}},
-		{"bad ntfy", form("scan_socket", "/tmp/clamd.sock", "scan_ntfy", "http://ntfy.example.com/t"), 422,
-			func(t *testing.T, st store.Settings) {
-				if st.ScanSocket != "" {
-					t.Errorf("the whole form should have been refused: %+v", st)
-				}
-			}},
-		{"clear ntfy", form("scan_socket", "/tmp/clamd.sock", "clear_ntfy", "1"), 204,
-			func(t *testing.T, st store.Settings) {
-				if st.ScanNtfy != nil || st.ScanNtfyToken != nil {
-					t.Errorf("clear left the ntfy secrets: %+v", st)
 				}
 			}},
 	}
@@ -311,15 +330,12 @@ func TestGeoGuardBlocksPublicClients(t *testing.T) {
 // shown back on the page, the token is not.
 func TestScanSettingsFeedback(t *testing.T) {
 	s, _ := scanTestServer(t)
-	w := s.do(req{method: "POST", path: "/settings/scan", hdr: htmxPost,
-		body: form("scan_socket", "/tmp/clamd.sock", "scan_ntfy", "https://ntfy.example.com/t", "scan_ntfy_token", "tok9").Encode()})
+	w := s.do(req{method: "POST", path: "/settings/notify", hdr: htmxPost,
+		body: form("scan_ntfy", "https://ntfy.example.com/t", "scan_ntfy_token", "tok9").Encode()})
 	if w.Code != 204 {
 		t.Fatalf("save: %d %s", w.Code, w.Body.String())
 	}
-	page := s.do(req{path: "/settings"}).Body.String()
-	if !strings.Contains(page, "Virus-scanning settings saved.") {
-		t.Error("no success flash")
-	}
+	page := s.do(req{path: "/settings/notify"}).Body.String()
 	if !strings.Contains(page, "The ntfy topic is set: https://ntfy.example.com/t") {
 		t.Error("no ntfy flash")
 	}
@@ -331,15 +347,43 @@ func TestScanSettingsFeedback(t *testing.T) {
 	}
 
 	// clearing notes itself and empties the shown URL
-	if w := s.do(req{method: "POST", path: "/settings/scan", hdr: htmxPost,
-		body: form("scan_socket", "/tmp/clamd.sock", "scan_ntfy", "", "clear_ntfy", "1").Encode()}); w.Code != 204 {
+	if w := s.do(req{method: "POST", path: "/settings/notify", hdr: htmxPost,
+		body: form("scan_ntfy", "", "clear_ntfy", "1").Encode()}); w.Code != 204 {
 		t.Fatalf("clear: %d", w.Code)
 	}
-	page = s.do(req{path: "/settings"}).Body.String()
+	page = s.do(req{path: "/settings/notify"}).Body.String()
 	if !strings.Contains(page, "The ntfy topic and its access token were removed.") {
 		t.Error("no removal flash")
 	}
 	if strings.Contains(page, "ntfy.example.com/t") {
 		t.Error("the removed URL still shows")
+	}
+}
+
+// TestSettingsTabs: /settings goes to the first tab, each tab shows only its own group
+// (the rail on all of them), and an unknown tab is a 404.
+func TestSettingsTabs(t *testing.T) {
+	s, _ := scanTestServer(t)
+	if w := s.do(req{path: "/settings"}); w.Code != 303 || w.Header().Get("Location") != "/settings/email" {
+		t.Fatalf("index: %d %q", w.Code, w.Header().Get("Location"))
+	}
+	own := map[string]string{"email": "Email delivery", "scan": "Virus scanning", "notify": "Notifications", "geo": "Country filter", "mail": "Mail bridge"}
+	for tab, h2 := range own {
+		w := s.do(req{path: "/settings/" + tab})
+		body := w.Body.String()
+		if w.Code != 200 || !strings.Contains(body, "<h2>"+h2+"</h2>") || !strings.Contains(body, "</article>") {
+			t.Fatalf("%s: %d, own group missing or page truncated", tab, w.Code)
+		}
+		if !strings.Contains(body, `<a class="sel" href="/settings/`+tab+`">`) || strings.Count(body, `class="sel"`) != 1 {
+			t.Errorf("%s: rail does not mark the tab", tab)
+		}
+		for other, oh2 := range own {
+			if other != tab && strings.Contains(body, "<h2>"+oh2+"</h2>") {
+				t.Errorf("%s tab also shows %q", tab, oh2)
+			}
+		}
+	}
+	if w := s.do(req{path: "/settings/nope"}); w.Code != 404 {
+		t.Errorf("unknown tab: %d", w.Code)
 	}
 }

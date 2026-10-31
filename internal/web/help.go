@@ -51,7 +51,7 @@ var hints = map[string]string{
 	"dns_managed":          "A managed row is one ServanaGo writes for a site. Editing or deleting it works, but the next save of that site (or a startup) may write the site's value back or re-add the row.",
 	"scan_socket":          "The unix socket clamd listens on, such as the Debian default /run/clamav/clamd.ctl (check `grep LocalSocket /etc/clamav/clamd.conf`). Empty turns scanning off. ServanaGo never installs clamd: `apt install clamav-daemon` does, and the daemon keeps its own signatures fresh.",
 	"scan_hour":            "The hour of day (0-23) a background sweep checks every enabled site's served folder. A manual Scan now works any time.",
-	"scan_ntfy":            "Optional: an ntfy topic URL where every scan with hits posts an urgent message, such as https://ntfy.example.com/servanago. Hits also email the MAIL FROM mailbox when email delivery above is set up.",
+	"scan_ntfy":            "Optional: an ntfy topic URL where every scan with hits posts an urgent message, such as https://ntfy.example.com/servanago. Hits also email the MAIL FROM mailbox when email delivery is set up on the Email delivery tab.",
 	"scan_hits":            "A hit is one file and the signature it matched. ServanaGo streams every regular file of the site's served folder, skipping symlinks and files over the daemon's size limit, and moves what it finds into DATA_DIR/quarantine/. While a file sits in the quarantine it does not re-alert; a file back at the original path does.",
 	"geo_db":               "The path of MaxMind's GeoLite2-Country file (the Debian package keeps it at /var/lib/GeoIP/GeoLite2-Country.mmdb). ServanaGo only reads it; keep it fresh with geoipupdate: apt install geoipupdate, then put your license key in /etc/GeoIP.conf. Empty turns country blocking off.",
 	"country_mode":         "Deny answers these countries with 403; Allow only serves the countries you name and everyone else gets the same 403. Local, home-network and private addresses are never judged, and certificates renew from anywhere.",
@@ -300,6 +300,7 @@ var helpFuncs = template.FuncMap{
 	"hintid": func(key string) template.HTML {
 		return template.HTML(`<small id="hint-` + html.EscapeString(key) + `">` + html.EscapeString(hints[key]) + `</small>`) // #nosec: escaped above
 	},
+	"settingsTabs": func() any { return settingsTabs },
 	"helplink": func(anchor string) template.HTML {
 		return template.HTML(`<a class="help-link" href="/help#` + html.EscapeString(anchor) + `" title="Open help" aria-label="Open help">?</a>`)
 	},

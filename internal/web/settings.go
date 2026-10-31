@@ -15,6 +15,7 @@ import (
 )
 
 type smtpData struct {
+	Tab       string // the selected settingsTabs key
 	Host      string
 	Port      string // text for the input's value
 	User      string
@@ -42,13 +43,34 @@ type smtpData struct {
 	MailPassSet  bool
 }
 
+// settingsTabs are the Settings page's tabs in order; the key is the /settings/{tab} path segment.
+var settingsTabs = []struct{ Key, Label string }{
+	{"email", "Email delivery"}, {"scan", "Virus scanning"}, {"notify", "Notifications"},
+	{"geo", "Country filter"}, {"mail", "Mail bridge"},
+}
+
+// settingsIndex sends /settings to the first tab.
+func settingsIndex(w http.ResponseWriter, r *http.Request) {
+	http.Redirect(w, r, "/settings/"+settingsTabs[0].Key, http.StatusSeeOther)
+}
+
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
+	tab := r.PathValue("tab")
+	known := false
+	for _, t := range settingsTabs {
+		known = known || t.Key == tab
+	}
+	if !known {
+		http.NotFound(w, r)
+		return
+	}
 	st, err := s.deps.Store.GetSettings(r.Context())
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 	d := smtpData{
+		Tab:  tab,
 		Host: st.SMTPHost, Port: strconv.Itoa(st.SMTPPort), User: st.SMTPUser, From: st.MailFrom,
 		PassSet: st.SMTPPass != nil, MailReady: st.MailReady(),
 		ScanOn: st.ScanSocket != "", Socket: st.ScanSocket, Hour: strconv.Itoa(st.ScanHour),
@@ -64,6 +86,57 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.render(w, "settings", http.StatusOK, page{Title: "Settings", Data: d})
+}
+
+// saveNotify stores the Notifications tab: the ntfy topic URL and its access token. A blank
+// topic keeps the stored pair; clear_ntfy drops both.
+func (s *Server) saveNotify(w http.ResponseWriter, r *http.Request) {
+	cur, err := s.deps.Store.GetSettings(r.Context())
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	st := cur
+	clear := r.PostFormValue("clear_ntfy") != ""
+	ntfy := strings.TrimSpace(r.PostFormValue("scan_ntfy"))
+	switch {
+	case clear:
+		st.ScanNtfy, st.ScanNtfyToken = nil, nil
+	case ntfy == "":
+	case s.deps.Cfg.SecretKey == "":
+		fail(w, http.StatusUnprocessableEntity, "Storing the ntfy address needs SERVANAGO_SECRET_KEY (at least 32 characters) in the environment file.")
+		return
+	default:
+		if !strings.HasPrefix(ntfy, "https://") || len(ntfy) > 500 || strings.ContainsAny(ntfy, " \r\n\t") {
+			fail(w, http.StatusUnprocessableEntity, "The ntfy address must be an https:// topic URL.")
+			return
+		}
+		if st.ScanNtfy, err = secretbox.Seal(s.deps.Cfg.SecretKey, []byte(ntfy)); err != nil {
+			fail(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		if tok := r.PostFormValue("scan_ntfy_token"); tok != "" {
+			if st.ScanNtfyToken, err = secretbox.Seal(s.deps.Cfg.SecretKey, []byte(tok)); err != nil {
+				fail(w, http.StatusInternalServerError, err.Error())
+				return
+			}
+		}
+	}
+	st.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.deps.Store.SaveSettings(r.Context(), st); err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	s.audit(r, "settings.notify", "")
+	switch {
+	case clear:
+		s.flash("The ntfy topic and its access token were removed.")
+	case ntfy != "":
+		s.flash("The ntfy topic is set: " + ntfy)
+	default:
+		s.flash("Notification settings saved.")
+	}
+	hxRedirect(w, "/settings/notify")
 }
 
 // saveSMTP replaces the email delivery settings wholesale; a blank password keeps the stored one.
@@ -128,5 +201,5 @@ func (s *Server) saveSMTP(w http.ResponseWriter, r *http.Request) {
 	}
 	slog.Info("settings saved", "event", "settings.smtp", "ready", host != "")
 	s.audit(r, "settings.smtp", "")
-	hxRedirect(w, "/settings")
+	hxRedirect(w, "/settings/email")
 }
