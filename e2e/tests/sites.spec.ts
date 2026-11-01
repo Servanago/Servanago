@@ -48,5 +48,5 @@ test('topbar holds the navigation over a bounded content column', async ({ page 
   expect(brand!.y).toBeGreaterThanOrEqual(0);
   expect(brand!.x).toBeGreaterThanOrEqual(8); // padded, not flush with the edge
   expect(main!.width).toBeLessThan(1300); // page content stays bounded
-  expect(page.locator('aside.sidebar')).toHaveCount(0);
+  await expect(page.locator('aside.sidebar')).toHaveCount(0);
 });
