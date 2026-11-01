@@ -24,16 +24,38 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 
 ## Quick start
 
-Debian 12+ or Ubuntu 22.04+ with systemd:
+**You need:** a Debian 12+ or Ubuntu 22.04+ server with systemd and root (sudo) access, a hostname for the panel (for example `panel.example.com`), and free ports 80 and 443. No Go toolchain is needed.
+
+**1. Install the package** from the [latest release](https://github.com/Servanago/Servanago/releases/latest):
 
 ```sh
-make deb                                    # bin/servanago_0.17.0_amd64.deb
-sudo apt-get install ./bin/servanago_0.17.0_amd64.deb
+curl -LO https://github.com/Servanago/Servanago/releases/download/v0.17.0/servanago_0.17.0_amd64.deb
+sudo apt-get install ./servanago_0.17.0_amd64.deb
 ```
 
-Edit `/etc/servanago/servanago.env` (`SERVANAGO_HOST`, `ACME_EMAIL`, `ADMIN_PASSWORD`), then `sudo systemctl start servanago` and open `https://<SERVANAGO_HOST>`.
+**2. Point DNS at the server.** Create an A record for your panel hostname that points at the server's IP. (With a Cloudflare token ServanaGo creates it for you; see [Install](docs/install.md#cloudflare-token-optional).) Without Cloudflare the server must be reachable from the internet on ports 80 and 443, because Let's Encrypt checks the hostname over HTTP.
 
-Running from source, Cloudflare setup and adding your first site are in [docs/install.md](docs/install.md).
+**3. Edit the settings** in `/etc/servanago/servanago.env`:
+
+| Setting | Put |
+|---|---|
+| `SERVANAGO_HOST` | the panel hostname from step 2 |
+| `ACME_EMAIL` | your email address (Let's Encrypt contact, bare address only) |
+| `ADMIN_PASSWORD` | the password for the first administrator (used once, on the first start) |
+| `CLOUDFLARE_API_TOKEN` | leave empty unless you use Cloudflare |
+
+**4. Start it** (helper first):
+
+```sh
+sudo systemctl enable --now servanago-helper servanago
+sudo systemctl status servanago
+```
+
+**5. Sign in** at `https://<SERVANAGO_HOST>` as `admin` with your `ADMIN_PASSWORD`, then add your first site with **Add site**. Set up an authenticator app under your user as soon as you can: until an administrator exists the panel is open to anyone who can reach it.
+
+**If it doesn't start:** `journalctl -u servanago -n 50`. The usual cause is `address already in use`: another program holds port 80, 443 or 8080 (find it with `sudo ss -ltnp | grep -E ':(80|443|8080) '`). Stop that program, or move the panel's internal listener by adding `UI_LISTEN=127.0.0.1:8082` to the env file. Then `sudo systemctl reset-failed servanago && sudo systemctl start servanago`.
+
+Building the package yourself (`make deb`), running from source, Cloudflare setup and a private-network install are in [docs/install.md](docs/install.md).
 
 ## Documentation
 

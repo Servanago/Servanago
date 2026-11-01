@@ -20,6 +20,31 @@ The unit is enabled but not started. Fill in the env file first (`SERVANAGO_HOST
 
 The deb also installs `servanago-helper.service`, a root daemon. The control plane asks it (over a Unix socket, as the `servanago` user) to do privileged work: per-site systemd units, system users and php-fpm pools, and the PHP builds and per-user PHP defaults. It takes a closed set of typed actions only. The PHP page needs it; when you run ServanaGo from source without it, that page says so.
 
+## Before you start
+
+- Ports 80 and 443 must be free on the host. Another web server (nginx, Apache, the distro `frankenphp` service) on them stops ServanaGo from binding: disable it first.
+- The panel's own listener (`UI_LISTEN`, default `127.0.0.1:8080`) must be free too. Caddy proxies to it, so keep it on loopback and on a port nothing else uses (`sudo ss -ltnp | grep -E ':(80|443|8080) '`).
+- `SERVANAGO_HOST_IP` (only used with a Cloudflare token) is the address the panel hostname points at. A private address such as `192.168.x.x` works but makes the panel reachable from your network only. For Let's Encrypt over HTTP-01 (no Cloudflare) the host needs a public address with 80 and 443 forwarded to it.
+- `ADMIN_PASSWORD` creates the first administrator once; later changes go through the Users page. `ADMIN_USER` defaults to `admin`.
+
+## Start and check
+
+```sh
+sudo systemctl enable --now servanago-helper servanago
+systemctl is-active servanago-helper servanago     # both: active
+journalctl -u servanago -n 50 --no-pager
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8080/login      # 200 (use your UI_LISTEN)
+```
+
+Troubleshooting:
+
+| Symptom | Cause and fix |
+|---|---|
+| `Start request repeated too quickly`, service `failed` | systemd gave up after repeated crashes. Fix the cause from the journal, then `sudo systemctl reset-failed servanago && sudo systemctl start servanago`. |
+| `listen tcp 127.0.0.1:8080: bind: address already in use` | Another program holds the panel port. Set `UI_LISTEN=127.0.0.1:<free port>` in the env file. Keep a single `UI_LISTEN` line. |
+| Certificate not issued | The hostname must resolve to this server (HTTP-01) or the Cloudflare token must have `Zone:Read` and `DNS:Edit` (DNS-01). Set `ACME_STAGING=true` while testing. |
+| PHP page says the helper is missing | `sudo systemctl start servanago-helper`. |
+
 ## Run from source
 
 For development or a try-out without the package (there is no container image). ServanaGo reads its configuration from the process environment only; it does not load `.env` itself.
