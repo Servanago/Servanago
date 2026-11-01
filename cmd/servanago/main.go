@@ -44,6 +44,8 @@ func main() {
 			cmd = runHelper
 		case "php-job":
 			cmd = func() error { return runPHPJob(os.Args[2:]) }
+		case "update":
+			cmd = func() error { return runUpdate(os.Args[2:], os.Stdin, os.Stdout) }
 		case "update-job":
 			cmd = func() error { return runUpdateJob(os.Args[2:]) }
 		case "backup-job":
@@ -170,6 +172,7 @@ func run() error {
 	}()
 	go ui.RunPHPChecks(ctx)
 	go ui.RunUpdateChecks(ctx)
+	go ui.ResumeUpdate(ctx)     // an upgrade job's outcome becomes an audit row
 	go ui.RunScans(ctx)         // close interrupted run rows first, then the daily sweep
 	go ui.ReconcilePHP(ctx)     // SQLite is the desired state: write each user's default PHP files again
 	go ui.ReconcileRuntime(ctx) // site units and users follow the stored sites

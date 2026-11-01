@@ -20,6 +20,18 @@ The unit is enabled but not started. Fill in the env file first (`SERVANAGO_HOST
 
 The deb also installs `servanago-helper.service`, a root daemon. The control plane asks it (over a Unix socket, as the `servanago` user) to do privileged work: per-site systemd units, system users and php-fpm pools, and the PHP builds and per-user PHP defaults. It takes a closed set of typed actions only. The PHP page needs it; when you run ServanaGo from source without it, that page says so.
 
+## Updating
+
+From 0.19.0 on, a release upgrades itself. ServanaGo checks GitHub once a week for a newer signed release (turn this off with `SERVANAGO_UPDATE_CHECK=false`). Three ways to install it:
+
+- **Updates page** (menu): shows the running and the latest version, then **Upgrade to X** after your password. A release that changes the database or is marked breaking also asks you to tick that you read the release notes.
+- **Command line**: `sudo servanago update` (or `--check` to only look, `--yes` to skip the question).
+- **MCP**: `check_update`, then `start_upgrade` (see [MCP](mcp.md)).
+
+The upgrade downloads the signed package, copies the database to `servanago.db.pre-<version>`, installs the package, restarts both services and waits up to a minute for the panel to answer. If it does not, the previous version and the database copy are put back. Sites keep running; the panel is unavailable for about a minute. The Audit page records `update.start` and then `update.completed`, `update.rolledback`, `update.failed` or `update.needs_hands`.
+
+It refuses when a PHP build or a backup is running, when you run a build from source, and when the release is not newer. If the rollback fails too, the services stay stopped and `/var/lib/servanago-update/NEEDS_HANDS.txt` lists the commands to run. Older than 0.19.0, or no network: download the package yourself, compare its sha256 and install it with `sudo dpkg --force-confold -i`, as in [Releasing](RELEASING.md).
+
 ## Before you start
 
 - Ports 80 and 443 must be free on the host. Another web server (nginx, Apache, the distro `frankenphp` service) on them stops ServanaGo from binding: disable it first.

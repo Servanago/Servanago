@@ -24,7 +24,7 @@ One server-wide token, read and write, no scopes. A holder can create, change an
 ## Tools
 
 Read (safe, no side effects):
-- `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `list_snippets`, `backup_status`, `list_backups`, `plan_restore`, and since 0.12.0 `list_dns_zones`, `list_dns_records`, and since 0.13.0 `list_scan`.
+- `list_sites`, `get_site`, `list_domains`, `runtime_report`, `unit_status`, `audit_tail`, `list_snippets`, `backup_status`, `list_backups`, `plan_restore`, and since 0.12.0 `list_dns_zones`, `list_dns_records`, and since 0.13.0 `list_scan`, and since 0.19.0 `check_update`.
 
 Write (each runs the UI's own handlers: same validation, apply path, DNS, runtime setup, audit):
 - Sites: `create_site`, `update_site`, `set_site_enabled`, `delete_site` (see `servanago-sites`).
@@ -34,11 +34,12 @@ Write (each runs the UI's own handlers: same validation, apply path, DNS, runtim
 - Virus scanning (since 0.13.0): `run_scan {id}` starts a site scan in the background; `quarantine_hit {id}`, `restore_hit {id}`, `ignore_hit {id}` act on one hit (see `servanago-sites`).
 - Snippets: `create_snippet`, `update_snippet`, `delete_snippet` (see `servanago-snippets`).
 - Backups: `run_backup`, `restore_site` (see `servanago-backups`).
+- Upgrades (since 0.19.0): `start_upgrade {version, ack_breaking?}` installs the latest signed release as root and restarts the panel; `version` must be the latest from `check_update`, and `ack_breaking` is required when it reports `schema_change` or `breaking`. Poll `check_update` (`busy`, `last_result`) afterwards; the panel is unreachable for about a minute. See `servanago-setup`.
 
 ## Working rules
 
 1. Read before you write: `list_sites` or `get_site` first, and `runtime_report` before choosing a runtime kind.
 2. A failed write is rolled back and the exact error is returned; read it, fix the input, do not blindly retry.
 3. Results may carry `warnings` (runtime setup problems). The site is saved anyway; report the warning to the user.
-4. Ask the user before `delete_site`, `restore_site` and any change to a site that is serving traffic.
+4. Ask the user before `delete_site`, `restore_site`, `start_upgrade` and any change to a site that is serving traffic.
 5. After changes, `audit_tail` shows what was recorded.

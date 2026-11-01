@@ -916,5 +916,6 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 		})
 	s.addMailTools(srv, ip, ro)
 	s.addBackupTools(srv, ip, ro)
+	s.addUpdateTools(srv, ip, ro)
 	return srv
 }

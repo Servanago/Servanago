@@ -12,13 +12,13 @@ import (
 
 var (
 	skillName   = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
-	toolLike    = regexp.MustCompile("`((?:list|get|create|update|delete|set|run|plan|restore|backup|audit|runtime|unit|take|resync|scan|quarantine|ignore)_[a-z_]+)`")
+	toolLike    = regexp.MustCompile("`((?:list|get|create|update|delete|set|run|plan|restore|backup|audit|runtime|unit|take|resync|scan|quarantine|ignore|check|start)_[a-z_]+)`")
 	skillNeeds  = regexp.MustCompile(`(?m)^Requires ServanaGo (\d+\.\d+\.\d+) or newer\.$`)
 	versionLine = regexp.MustCompile(`(?m)^Version: (\S+)$`)
 )
 
 // toolArgs are tool arguments whose names look like tools.
-var toolArgs = map[string]bool{"delete_dns": true}
+var toolArgs = map[string]bool{"delete_dns": true, "start_command": true}
 
 // frontmatter returns the name and description of a SKILL.md and its body.
 func frontmatter(t *testing.T, path string) (name, desc, body string) {

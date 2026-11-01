@@ -12,6 +12,7 @@ import (
 
 	"github.com/servanago/servanago/internal/buildinfo"
 	"github.com/servanago/servanago/internal/update"
+	"github.com/servanago/servanago/internal/updatejob"
 )
 
 // updatecheck.go: the weekly look for a newer ServanaGo release. It reads the signed manifest GitHub serves with
@@ -124,6 +125,11 @@ type updatesView struct {
 	Newer, Dev      bool
 	Enabled         bool
 	CheckedAt       string
+	Busy            bool // an upgrade job is in progress
+	State           updatejob.State
+	Last            *updatejob.Result
+	NeedAck         bool
+	NeedCode        bool
 }
 
 func (s *Server) updatesPage(w http.ResponseWriter, r *http.Request) {
@@ -131,6 +137,12 @@ func (s *Server) updatesPage(w http.ResponseWriter, r *http.Request) {
 	v := updatesView{Running: s.runningVersion(), Manifest: res.Manifest, Latest: res.Manifest.Version, Enabled: s.deps.Cfg.UpdateCheck}
 	v.Dev = v.Running == "dev"
 	v.Newer = update.Newer(v.Running, v.Latest)
+	v.NeedAck = res.Manifest.SchemaChange || res.Manifest.Breaking
+	v.NeedCode = s.needCode(r)
+	v.State, v.Busy = s.upgradeState()
+	if last, ok := s.lastUpgrade(); ok {
+		v.Last = &last
+	}
 	if at > 0 {
 		v.CheckedAt = time.Unix(at, 0).UTC().Format("2006-01-02 15:04 UTC")
 	}

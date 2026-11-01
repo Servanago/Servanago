@@ -1,17 +1,40 @@
+{{define "reauth"}}<input type="password" name="password" placeholder="Your password" aria-label="Your password to confirm" autocomplete="current-password" required>
+{{if .}}<input type="text" name="code" placeholder="Your code" aria-label="Your code to confirm" autocomplete="one-time-code" required>{{end}}{{end}}
+
 {{define "content"}}
 <h1>Updates</h1>
 <article>
 {{with .Data}}
 <p>This host runs <strong>{{.Running}}</strong>{{if .Dev}} (a build from source: it is never upgraded from here){{end}}.</p>
+{{if .Busy}}
+<div id="upgrade-progress" hx-get="/updates" hx-trigger="every 3s" hx-select="#upgrade-progress" hx-target="#upgrade-progress" hx-swap="outerHTML">
+<p><strong>Upgrading to {{.State.To}}:</strong> {{.State.Phase}}{{with .State.Message}} ({{.}}){{end}}. The panel restarts during this; the page keeps trying.</p>
+</div>
+{{else}}
+{{with .Last}}{{if .OK}}<p>The last upgrade, {{.From}} to {{.To}}, finished {{.At}}.</p>
+{{else if .NeedsHands}}<p><strong>The last upgrade failed and so did putting the old version back.</strong> ServanaGo is stopped. Recovery steps are in <code>/var/lib/servanago-update/NEEDS_HANDS.txt</code> on the server.</p>
+{{else if .RolledBack}}<p><strong>The last upgrade to {{.To}} failed and {{.From}} was put back</strong> ({{.At}}): {{.Error}}</p>
+{{else}}<p>The last upgrade to {{.To}} did not start ({{.At}}); nothing was changed: {{.Error}}</p>{{end}}{{end}}
 {{if not .Enabled}}<p>The update check is turned off (<code>SERVANAGO_UPDATE_CHECK=false</code>). ServanaGo makes no request to GitHub.</p>
 {{else if not .Latest}}<p>No release has been checked yet.</p>
 {{else if .Newer}}<p><strong>{{.Latest}}</strong> is available, released {{.Manifest.Released}}. <a href="{{.Manifest.NotesURL}}" rel="noopener noreferrer">Release notes</a></p>
 {{if .Manifest.SchemaChange}}<p>This release applies a new database migration on start.</p>{{end}}
 {{if .Manifest.Breaking}}<p><strong>Read the release notes first:</strong> this release needs an action from you.</p>{{end}}
-<p>To upgrade, follow the upgrade steps in the documentation: download the package from the release page, compare its sha256 with <code>{{with index .Manifest.Debs "amd64"}}{{.SHA256}}{{end}}</code>, and install it with <code>dpkg --force-confold -i</code>.</p>
+{{if .Dev}}<p>To upgrade, install the package from the release page, or build from source again.</p>
+{{else}}
+<form hx-post="/updates/upgrade" hx-target="#update-msg">
+<input type="hidden" name="version" value="{{.Latest}}">
+<p>The upgrade downloads the signed package, copies the database, installs it and checks that the panel answers. If it does not, the old version and the database copy are put back. Sites keep running; the panel is unavailable for a minute.</p>
+{{if .NeedAck}}<label><input type="checkbox" name="ack" value="1" required> I read the release notes and accept the database change or the action they describe.</label>{{end}}
+{{template "reauth" .NeedCode}}
+<button type="submit">Upgrade to {{.Latest}}</button>
+<p id="update-msg" role="alert"></p>
+</form>
+{{end}}
 {{else}}<p>ServanaGo is up to date (latest release {{.Latest}}).</p>{{end}}
 {{if .CheckedAt}}<p>Last checked {{.CheckedAt}}.</p>{{end}}
 {{if .Enabled}}<p><button hx-post="/updates/check">Check now</button></p>{{end}}
+{{end}}
 {{end}}
 </article>
 {{end}}

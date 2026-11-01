@@ -86,6 +86,7 @@ Write tools:
 - Site country filter (0.14.0): `country_mode` (deny | allow) + `countries` (ISO 3166-1 two-letter codes) on `create_site`/`update_site`; `get_site` returns both. The panel's own rule is Settings-only.
 - `create_snippet {name, body}`, `update_snippet {name, body}`, `delete_snippet {name}` (only if no site uses it). Body is Caddyfile directives: named matchers with respond, error, redir, header, request_header, request_body, encode.
 - Mail bridge (0.15.0): `create_mail_domain {domain, adopt?, lmtp_addr?, hook_user?, hook_pass?}` provisions a domain end to end and refuses to overwrite an existing Postmark server/domain without `adopt`; `update_mail_domain {domain, lmtp_addr?}` re-pushes the configuration, reconciles the DNS rows and re-verifies; `delete_mail_domain {domain}` forgets the local state only (Postmark and DNS stay). Generated webhook credentials land in the result's `warnings` exactly once.
+- `check_update {refresh?}` (read): running and latest signed release, schema/breaking flags, busy, last result. `start_upgrade {version, ack_breaking?}` (0.19.0): installs the latest release as root and restarts the panel; `version` must be the latest from `check_update`; ask the admin first.
 - `run_backup {scope}` (`all`, `panel` or a site's short name), `restore_site {id, archive, files?, dumps?, volumes?, confirm}`: overwrites data after taking a backup of the current state; `confirm` must be the site's exact short name; run `plan_restore` first. The panel is never restored over MCP.
 
 ## Behavior and constraints

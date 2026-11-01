@@ -30,6 +30,8 @@ Clients and tools: `servanago-mcp`.
 
 ## Upgrade
 
+Since 0.19.0 a host upgrades itself from a signed release: the Updates page (Upgrade button), `sudo servanago update`, or the MCP tools `check_update` and `start_upgrade` (see `servanago-mcp`). The job copies the database, installs the package and puts the old version back if the panel does not come up. Ask the user before starting one; never while a PHP build runs. The steps below are for hosts older than 0.19.0, source builds, and recovery when the result says `needs_hands` (the exact commands are in `/var/lib/servanago-update/NEEDS_HANDS.txt`).
+
 1. Copy the new `.deb` to the host and compare sha256.
 2. Do not upgrade while a PHP build runs (the install watcher dies on restart).
 3. `sudo systemctl stop servanago servanago-helper`

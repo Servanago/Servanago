@@ -53,6 +53,7 @@ type Deps struct {
 	// Version and UpdateKeys are test seams for the update check (empty = the build's version, the compiled-in keys).
 	Version    string
 	UpdateKeys []ed25519.PublicKey
+	UpdateDir  string // the upgrade job's state directory (empty = helper.UpdateJobDir). A test seam.
 }
 
 type Server struct {
@@ -244,6 +245,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /php/composer", s.protected(s.phpComposer))
 	mux.Handle("GET /updates", s.protected(s.updatesPage))
 	mux.Handle("POST /updates/check", s.protected(s.updatesCheckNow))
+	mux.Handle("POST /updates/upgrade", s.protected(s.upgradeNow))
 	mux.Handle("GET /logs", s.protected(s.logsPage))
 	mux.Handle("GET /logs/rows", s.protected(s.logRows))
 	mux.Handle("GET /domains", s.protected(s.domainsPage))
