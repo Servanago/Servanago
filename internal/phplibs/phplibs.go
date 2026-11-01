@@ -83,6 +83,46 @@ var names = []string{"zlib", "openssl", "curl", "libxml2", "libpng", "libjpeg-tu
 // Names returns the build order, dependencies first.
 func Names() []string { return append([]string(nil), names...) }
 
+// baseLibs are always built: PHP itself links openssl, libxml2 and zlib.
+var baseLibs = []string{"zlib", "openssl", "libxml2"}
+
+// libNeeds is what each recipe links against (see Recipe); Needed closes a selection over it.
+var libNeeds = map[string][]string{
+	"curl":        {"openssl", "zlib"},
+	"libxml2":     {"zlib"},
+	"libpng":      {"zlib"},
+	"freetype":    {"zlib", "libpng"},
+	"libzip":      {"openssl"},
+	"libpq":       {"openssl"},
+	"imagemagick": {"zlib", "libxml2", "libpng", "libjpeg-turbo", "freetype", "libwebp"},
+}
+
+// Needed returns the libraries to build for a selection: the base ones, the named ones and everything they link,
+// in build order.
+func Needed(libs []string) []string {
+	want := map[string]bool{}
+	var add func(n string)
+	add = func(n string) {
+		if want[n] {
+			return
+		}
+		want[n] = true
+		for _, d := range libNeeds[n] {
+			add(d)
+		}
+	}
+	for _, n := range append(append([]string(nil), baseLibs...), libs...) {
+		add(n)
+	}
+	var out []string
+	for _, n := range names {
+		if want[n] {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
 var (
 	versionRE = regexp.MustCompile(`^[0-9]+(\.[0-9]+){1,3}(-[0-9]+)?$`) // checked before a version reaches a URL or a path; ImageMagick adds -N
 	sumRE     = regexp.MustCompile(`^[0-9a-f]{64}$`)

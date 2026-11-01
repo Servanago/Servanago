@@ -29,6 +29,11 @@
 <label>PHP version
 {{if .Releases}}<select name="version">{{range .Releases}}<option value="{{.Version}}">{{.Version}}{{if .Security}} (security){{end}}</option>{{end}}</select>
 {{else}}<input name="version" placeholder="8.4.27" pattern="[0-9]+\.[0-9]+\.[0-9]+" autocomplete="off" required>{{end}}</label>
+<details open><summary>Extensions in this build</summary>
+<input type="hidden" name="exts_form" value="1">
+<p class="explain">Only what you tick is compiled, and only the libraries those need. A site can then switch on any of them in its own settings. The boxes start from what the newest build holds.</p>
+{{range .Exts}}<label><input type="checkbox" name="ext" value="{{.Name}}"{{if .On}} checked{{end}}> {{.Name}} <small>{{.Group}}</small></label>
+{{end}}</details>
 <label><input type="checkbox" name="switch"> Switch the sites that follow this branch when it is installed</label>
 {{template "reauth" .NeedCode}}
 <button type="submit"{{if .Job.Active}} disabled{{end}}>Build</button>

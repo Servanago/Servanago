@@ -3,6 +3,8 @@
 // (which starts the job and installs its output) and the job (which does the work) share.
 package phpbuild
 
+import "github.com/servanago/servanago/internal/runtimes"
+
 // Dir is the job's work directory: job.json (input), state.json (progress), src/ and work/ (downloads and
 // compilation), root/ (bind-mounted at /opt/servanago/php while the build runs, so every prefix is its final path).
 // It is outside /var/lib/servanago, which is 0750 servanago:servanago: the job runs as sg-phpbuild and could not reach it.
@@ -19,6 +21,17 @@ type Job struct {
 	Version string `json:"version"` // 8.4.27
 	N       int    `json:"n"`
 	Jobs    int    `json:"jobs"` // make -j
+	// Exts are the extensions to build (already validated and closed over Needs by the helper). Empty means every
+	// extension builds contained before extensions were a choice.
+	Exts []string `json:"exts,omitempty"`
+}
+
+// Selection is the extensions this job builds.
+func (j Job) Selection() []string {
+	if len(j.Exts) == 0 {
+		return runtimes.LegacyExtensions
+	}
+	return j.Exts
 }
 
 // Label is the build directory name: 8.4.27-1.

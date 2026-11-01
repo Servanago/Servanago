@@ -51,14 +51,15 @@ func (e phpExec) Glob(p string) ([]string, error) {
 
 // phpHost is a fake helper that records every call and can be told to misbehave.
 type phpHost struct {
-	mu        sync.Mutex
-	calls     []string
-	installs  []helper.Spec
-	unitState map[string]string // slug -> active state a unit-status reports
-	phase     string            // php-status phase
-	phaseVer  string
-	buildErr  string
-	installed chan string
+	mu         sync.Mutex
+	calls      []string
+	installs   []helper.Spec
+	buildSpecs []helper.Spec
+	unitState  map[string]string // slug -> active state a unit-status reports
+	phase      string            // php-status phase
+	phaseVer   string
+	buildErr   string
+	installed  chan string
 }
 
 func (h *phpHost) rec(format string, a ...any) {
@@ -103,6 +104,9 @@ func (h *phpHost) actions() map[string]helper.Action {
 		},
 		helper.ActionPHPBuild: func(r helper.Request) helper.Response {
 			h.rec("php-build %s", r.Vals.PHPVersion)
+			h.mu.Lock()
+			h.buildSpecs = append(h.buildSpecs, r.Vals)
+			h.mu.Unlock()
 			if h.buildErr != "" {
 				return helper.Response{Error: h.buildErr}
 			}
@@ -217,6 +221,85 @@ func TestPHPBuildRefusals(t *testing.T) {
 	code, body, _ := post(s, "/php/builds", "version", "8.4.27")
 	if code != 422 || !strings.Contains(body, "sudo apt install cmake") {
 		t.Errorf("a helper refusal must reach the admin: %d %q", code, body)
+	}
+}
+
+func postExts(s *Server, version string, exts ...string) (code int, body string) {
+	f := form("version", version, "exts_form", "1")
+	f["ext"] = exts // a repeated field: form() would keep only one value
+	w := s.do(req{method: "POST", path: "/php/builds", body: f.Encode(), hdr: htmxPost})
+	return w.Code, w.Body.String()
+}
+
+// The ticked extensions travel to the helper, in load order and closed over what they need.
+func TestPHPBuildSendsTheSelection(t *testing.T) {
+	s, host := phpServer(t)
+	if code, body := postExts(s, "8.4.28", "gd", "curl"); code != 204 {
+		t.Fatalf("%d %s", code, body)
+	}
+	host.mu.Lock()
+	defer host.mu.Unlock()
+	if len(host.buildSpecs) != 1 || strings.Join(host.buildSpecs[0].PHPExts, ",") != "curl,gd" {
+		t.Errorf("specs %+v", host.buildSpecs)
+	}
+}
+
+func TestPHPBuildRefusesABadSelection(t *testing.T) {
+	s, host := phpServer(t)
+	for name, tt := range map[string]struct {
+		exts []string
+		want string
+	}{
+		"nothing ticked": {nil, "Tick at least one extension"},
+		"unknown":        {[]string{"evil"}, "not one of the available extensions"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			code, body := postExts(s, "8.4.28", tt.exts...)
+			if code != 422 || !strings.Contains(body, tt.want) {
+				t.Fatalf("%d %q", code, body)
+			}
+		})
+	}
+	if strings.Contains(host.log(), "php-build") {
+		t.Errorf("the helper was asked to build: %s", host.log())
+	}
+}
+
+// The checklist starts from what the newest build holds; a build from before extensions were chosen holds the old set.
+func TestPHPPageOffersTheExtensionChecklist(t *testing.T) {
+	s, _ := phpServer(t)
+	body := s.do(req{method: "GET", path: "/php"}).Body.String()
+	for _, want := range []string{`name="ext" value="mbstring" checked`, `name="ext" value="imagick" checked`, `name="exts_form"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page missing %q", want)
+		}
+	}
+	if !strings.Contains(body, "</form>") || !strings.Contains(body, ">Build</button>") {
+		t.Error("the page is truncated")
+	}
+}
+
+// A site can only tick what its build holds: a lean build offers its own extensions, a legacy build the old set.
+func TestSiteFormOffersOnlyWhatTheBuildHolds(t *testing.T) {
+	old := runtimes.PHPRoot
+	runtimes.PHPRoot = t.TempDir()
+	t.Cleanup(func() { runtimes.PHPRoot = old })
+	if err := os.MkdirAll(filepath.Join(runtimes.PHPRoot, "8.4.27-1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(runtimes.PHPRoot, "8.4.27-1", "exts.txt"), []byte("mbstring\ncurl\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	s, _ := phpServer(t, runtimes.PHPRoot+"/8.4.27-1/sbin/php-fpm", runtimes.PHPRoot+"/8.4.26-1/sbin/php-fpm")
+	lean := addPHPSite(t, s, "lean.example.com", "8.4.27-1", "")
+	legacy := addPHPSite(t, s, "legacy.example.com", "8.4.26-1", "")
+	body := s.do(req{method: "GET", path: fmt.Sprintf("/sites/%d", lean.ID)}).Body.String()
+	if !strings.Contains(body, `value="curl"`) || strings.Contains(body, `value="imagick"`) || strings.Contains(body, `value="gd"`) {
+		t.Errorf("a lean build must offer only mbstring and curl:\n%s", body)
+	}
+	body = s.do(req{method: "GET", path: fmt.Sprintf("/sites/%d", legacy.ID)}).Body.String()
+	if !strings.Contains(body, `value="imagick"`) || !strings.Contains(body, ">Save</button>") {
+		t.Error("a legacy build offers the old set")
 	}
 }
 

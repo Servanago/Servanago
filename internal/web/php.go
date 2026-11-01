@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -65,6 +66,7 @@ type phpPageData struct {
 	Users      []string
 	ComposerOK bool
 	NeedCode   bool
+	Exts       []extOpt // the build form's checklist: every extension, ticked as the newest build holds them
 }
 
 // confirm asks for the signed-in admin's password (and code) before a sensitive change. In open mode (no
@@ -205,6 +207,11 @@ func (s *Server) phpPage(w http.ResponseWriter, r *http.Request) {
 	sort.Slice(d.Releases, func(i, j int) bool { return runtimes.Newer(d.Releases[i].Version, d.Releases[j].Version) })
 	_, err = os.Stat(composerFilePath)
 	d.ComposerOK = err == nil
+	held := runtimes.LegacyExtensions // no build yet: offer what builds always held
+	if src := rep.PHPFrom(true); len(src) > 0 && src[0].Exts != nil {
+		held = src[0].Exts
+	}
+	d.Exts = extOpts(strings.Join(held, " "))
 	s.render(w, "php", http.StatusOK, page{Title: "PHP", Data: d})
 }
 
@@ -260,15 +267,41 @@ func (s *Server) phpBuild(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, fmt.Sprintf("PHP %s no longer gets security fixes, so it cannot be built.", runtimes.Branch(ver)))
 		return
 	}
+	var exts []string // the build form always posts exts_form; a client that does not gets the default set
+	if r.PostFormValue("exts_form") != "" {
+		picked, err := runtimes.ParseExtensions(r.PostForm["ext"])
+		if err != nil {
+			fail(w, http.StatusUnprocessableEntity, err.Error())
+			return
+		}
+		if len(picked) == 0 {
+			fail(w, http.StatusUnprocessableEntity, "Tick at least one extension.")
+			return
+		}
+		if exts = runtimes.Close(picked); len(exts) > len(picked) {
+			s.flash("Also building the extensions the ones you ticked need: " + strings.Join(missingFrom(exts, picked), ", ") + ".")
+		}
+	}
 	bctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
-	if _, err := s.helperClient().Call(bctx, helper.ActionPHPBuild, helper.Spec{PHPVersion: ver}); err != nil {
+	if _, err := s.helperClient().Call(bctx, helper.ActionPHPBuild, helper.Spec{PHPVersion: ver, PHPExts: exts}); err != nil {
 		fail(w, http.StatusUnprocessableEntity, strings.TrimPrefix(err.Error(), "helper: "))
 		return
 	}
 	s.audit(r, "php.build.start", ver)
 	go s.watchBuild(ver, r.PostFormValue("switch") != "", s.auditorFor(r))
 	hxRedirect(w, "/php")
+}
+
+// missingFrom lists what all has that some does not.
+func missingFrom(all, some []string) []string {
+	var out []string
+	for _, n := range all {
+		if !slices.Contains(some, n) {
+			out = append(out, n)
+		}
+	}
+	return out
 }
 
 // auditorFor keeps who started a build, for the audit rows the background watcher writes after the request is gone.

@@ -77,6 +77,7 @@ type Spec struct {
 	FCGIBin    string `json:"fcgi_bin,omitempty"`    // cgi: detected fcgiwrap (one of a fixed set)
 
 	Extensions []string `json:"extensions,omitempty"`  // php (source build): shared extensions from the allowlist; none = the core set
+	PHPExts    []string `json:"php_exts,omitempty"`    // php-build: the extensions to build (allowlist, closed over Needs); none = the default set
 	PHPVersion string   `json:"php_version,omitempty"` // php-build/php-install: 8.4.27; php-user-default: a label (8.4 or 8.4.27-1), "" clears
 	User       string   `json:"user,omitempty"`        // php-user-default: an existing login user; unit-install and user-add: the site's named user ("" = generated sg-<slug>)
 	Build      string   `json:"build,omitempty"`       // php-prune: a build directory name such as 8.4.27-1

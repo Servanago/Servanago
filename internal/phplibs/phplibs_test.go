@@ -193,6 +193,23 @@ func TestDirNamesTheRecipeRevision(t *testing.T) {
 	}
 }
 
+// A selection builds the base libraries, what it names, and what those link, in build order; nothing else.
+func TestNeeded(t *testing.T) {
+	for _, tt := range []struct {
+		libs []string
+		want string
+	}{
+		{nil, "zlib,openssl,libxml2"},
+		{[]string{"curl"}, "zlib,openssl,curl,libxml2"},
+		{[]string{"freetype"}, "zlib,openssl,libxml2,libpng,freetype"},
+		{[]string{"imagemagick"}, "zlib,openssl,libxml2,libpng,libjpeg-turbo,freetype,libwebp,imagemagick"},
+	} {
+		if got := strings.Join(Needed(tt.libs), ","); got != tt.want {
+			t.Errorf("Needed(%v) = %s, want %s", tt.libs, got, tt.want)
+		}
+	}
+}
+
 func TestResolveCarriesTheRecipeRevision(t *testing.T) {
 	get := fixtureGetter(t)
 	r, err := Resolve(context.Background(), get, "zlib")

@@ -295,6 +295,65 @@ func TestPHPBuildRejections(t *testing.T) {
 	}
 }
 
+func TestPHPBuildPassesTheSelection(t *testing.T) {
+	seam := newPHPSeam()
+	resp := NewActions(seam).PHPBuild(req(t, ActionPHPBuild, `{"php_version":"8.4.27","php_exts":["gd","curl","gd"]}`))
+	if !resp.OK {
+		t.Fatalf("build: %+v", resp)
+	}
+	var job phpbuild.Job
+	if err := json.Unmarshal(seam.written[phpbuild.Dir+"/job.json"], &job); err != nil || !slices.Equal(job.Exts, []string{"curl", "gd"}) {
+		t.Errorf("job.json %+v (%v): want the selection deduplicated in load order", job, err)
+	}
+	// No selection = the job's default (every extension builds had before extensions were a choice).
+	seam = newPHPSeam()
+	NewActions(seam).PHPBuild(req(t, ActionPHPBuild, `{"php_version":"8.4.27"}`))
+	var plain phpbuild.Job // a fresh struct: Unmarshal into a used one keeps fields the JSON omits
+	if err := json.Unmarshal(seam.written[phpbuild.Dir+"/job.json"], &plain); err != nil || plain.Exts != nil {
+		t.Errorf("job.json %+v (%v)", plain, err)
+	}
+}
+
+func TestPHPBuildRefusesABadSelection(t *testing.T) {
+	old := runtimes.PHPExtensions
+	t.Cleanup(func() { runtimes.PHPExtensions = old })
+	runtimes.PHPExtensions = append(append([]runtimes.Ext(nil), old...), runtimes.Ext{Name: "needy", Group: "extra", Needs: []string{"mbstring"}})
+	for _, tt := range []struct{ name, spec, want string }{
+		{"unknown", `{"php_version":"8.4.27","php_exts":["evil"]}`, "not one of the available extensions"},
+		{"injection", `{"php_version":"8.4.27","php_exts":["curl;id"]}`, "not one of the available extensions"},
+		{"not closed", `{"php_version":"8.4.27","php_exts":["needy"]}`, "needy needs mbstring"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			seam := newPHPSeam()
+			resp := NewActions(seam).PHPBuild(req(t, ActionPHPBuild, tt.spec))
+			if resp.OK || !strings.Contains(resp.Error, tt.want) {
+				t.Fatalf("%+v, want an error mentioning %q", resp, tt.want)
+			}
+			if seam.started != "" || len(seam.written) != 0 {
+				t.Errorf("the host was touched: %v", keys(seam.written))
+			}
+		})
+	}
+}
+
+// "Installed" means every extension the build says it holds is there, not every extension the allowlist knows.
+func TestPHPInstallChecksTheRecordedExtensions(t *testing.T) {
+	final := runtimes.PHPRoot + "/8.4.27-1"
+	extDir := final + "/lib/php/extensions/no-debug-non-zts-20240924"
+	seam := installedSeam()
+	seam.dirs[extDir] = []string{"mbstring.so"}
+	seam.files[final+"/exts.txt"] = []byte("mbstring\n")
+	if resp := NewActions(seam).PHPInstall(req(t, ActionPHPInstall, `{"php_version":"8.4.27"}`)); !resp.OK {
+		t.Fatalf("a lean build that holds what it says must install: %+v", resp)
+	}
+	seam = installedSeam()
+	seam.dirs[extDir] = []string{"mbstring.so"}
+	seam.files[final+"/exts.txt"] = []byte("mbstring\ncurl\n")
+	if resp := NewActions(seam).PHPInstall(req(t, ActionPHPInstall, `{"php_version":"8.4.27"}`)); resp.OK || !strings.Contains(resp.Error, "extensions not built: curl") {
+		t.Fatalf("a recorded extension that is missing must fail: %+v", resp)
+	}
+}
+
 func TestPHPStatus(t *testing.T) {
 	seam := newPHPSeam()
 	a := NewActions(seam)

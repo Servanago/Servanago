@@ -11,10 +11,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/servanago/servanago/internal/phplibs"
+	"github.com/servanago/servanago/internal/runtimes"
 )
 
 type fixture struct {
@@ -28,6 +30,8 @@ type fixture struct {
 	runErr   func(c phplibs.Cmd) error
 	libs     []phplibs.Resolved
 	exts     []phplibs.ExtSource
+
+	libsAsked, extsAsked []string // what Fetch asked the seams to resolve
 }
 
 // zipOf builds a zip in memory from name -> content.
@@ -112,8 +116,14 @@ func (f *fixture) env() Env {
 			f.verified = append(f.verified, filepath.Base(file))
 			return f.verr
 		},
-		Libs: func(ctx context.Context) ([]phplibs.Resolved, error) { return f.libs, nil },
-		Exts: func(ctx context.Context) ([]phplibs.ExtSource, error) { return f.exts, nil },
+		Libs: func(ctx context.Context, names []string) ([]phplibs.Resolved, error) {
+			f.libsAsked = names
+			return f.libs, nil
+		},
+		Exts: func(ctx context.Context, names []string) ([]phplibs.ExtSource, error) {
+			f.extsAsked = names
+			return f.exts, nil
+		},
 	}
 }
 
@@ -476,8 +486,90 @@ func TestBuildNeedsAPlan(t *testing.T) {
 	}
 }
 
+// Every extension builds contained before extensions were a choice must configure byte for byte as it did then
+// (as a set: configure does not care about order). This is the no-behaviour-change anchor for the whole feature.
+func TestPHPConfigureLegacySetIsUnchanged(t *testing.T) {
+	deps := map[string]string{"gmp": "/g"}
+	want := []string{
+		"--prefix=/p", "--with-config-file-path=/p/etc", "--with-config-file-scan-dir=/p/etc/conf.d",
+		"--enable-fpm", "--disable-cgi", "--disable-phpdbg", "--without-pear", "--with-openssl", "--with-libxml", "--with-zlib",
+		"--enable-mbstring=shared", "--with-sqlite3=shared", "--with-pdo-sqlite=shared",
+		"--enable-dom=shared", "--enable-simplexml=shared", "--enable-xml=shared", "--enable-xmlreader=shared", "--enable-xmlwriter=shared",
+		"--with-curl=shared", "--with-zip=shared", "--enable-intl=shared",
+		"--enable-gd=shared", "--with-jpeg", "--with-freetype", "--with-webp",
+		"--with-mysqli=shared,mysqlnd", "--with-pdo-mysql=shared,mysqlnd", "--with-pgsql=shared", "--with-pdo-pgsql=shared",
+		"--enable-bcmath=shared", "--enable-soap=shared", "--with-gmp=shared,/g", "--enable-opcache=shared",
+	}
+	got, _ := PHPConfigure("8.4.27", "/p", deps, runtimes.LegacyExtensions)
+	slices.Sort(got)
+	slices.Sort(want)
+	if !slices.Equal(got, want) {
+		t.Errorf("legacy configure changed:\n got %v\nwant %v", got, want)
+	}
+}
+
+// A leaner selection leaves out what it does not name, and switches off what PHP would build on its own.
+func TestPHPConfigureSelection(t *testing.T) {
+	args, _ := PHPConfigure("8.4.27", "/p", nil, []string{"mbstring", "sockets"})
+	got := strings.Join(args, " ") + " "
+	for _, want := range []string{"--enable-mbstring=shared ", "--without-sqlite3 ", "--without-pdo-sqlite ", "--disable-dom ", "--disable-xml ", "--disable-opcache "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %s", want, got)
+		}
+	}
+	for _, bad := range []string{"--with-curl", "--enable-gd", "--with-gmp", "--with-mysqli", "--enable-intl", "--enable-soap"} {
+		if strings.Contains(got, bad) {
+			t.Errorf("%q must not be configured: %s", bad, got)
+		}
+	}
+	args85, _ := PHPConfigure("8.5.1", "/p", nil, nil)
+	if strings.Contains(strings.Join(args85, " "), "opcache") {
+		t.Error("8.5 builds opcache in: no flag, on or off")
+	}
+}
+
+// Fetch asks for exactly the libraries and PECL extensions the selection links, and Build records what it built.
+func TestSelectionDecidesWhatIsFetchedAndRecorded(t *testing.T) {
+	f := newFixture(t)
+	job, _ := json.Marshal(Job{Version: "8.4.27", N: 2, Jobs: 4, Exts: []string{"curl", "imagick"}})
+	if err := os.WriteFile(filepath.Join(f.dir, JobFile), job, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	f.exts = f.exts[1:] // the fake resolves only what it is asked for
+	if err := Fetch(context.Background(), f.env(), f.dir); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(f.libsAsked, ","); got != "zlib,openssl,curl,libxml2,libpng,libjpeg-turbo,freetype,libwebp,imagemagick" {
+		t.Errorf("libraries asked for: %s", got)
+	}
+	if got := strings.Join(f.extsAsked, ","); got != "imagick" {
+		t.Errorf("PECL extensions asked for: %s", got)
+	}
+	if err := os.MkdirAll(filepath.Join(f.root, "8.4.27-2"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := Build(context.Background(), f.env(), f.dir); err != nil {
+		t.Fatal(err)
+	}
+	rec, err := os.ReadFile(filepath.Join(f.root, "8.4.27-2", "exts.txt"))
+	if err != nil || string(rec) != "curl\nimagick 3.8.1 819fce90c469a5666b1706036cd66120af419f1f\n" {
+		t.Errorf("exts.txt %q (%v)", rec, err)
+	}
+}
+
+func TestFetchRejectsAnUnknownExtension(t *testing.T) {
+	f := newFixture(t)
+	job, _ := json.Marshal(Job{Version: "8.4.27", N: 2, Exts: []string{"evil"}})
+	if err := os.WriteFile(filepath.Join(f.dir, JobFile), job, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := Fetch(context.Background(), f.env(), f.dir); err == nil || !strings.Contains(err.Error(), "not one of the available extensions") {
+		t.Fatalf("err %v", err)
+	}
+}
+
 func TestPHPConfigure(t *testing.T) {
-	args, env := PHPConfigure("8.4.27", "/opt/servanago/php/8.4.27-1", map[string]string{"openssl": "/opt/servanago/php/libs/openssl-3.5.0", "gmp": "/opt/servanago/php/libs/gmp-6.3.0"})
+	args, env := PHPConfigure("8.4.27", "/opt/servanago/php/8.4.27-1", map[string]string{"openssl": "/opt/servanago/php/libs/openssl-3.5.0", "gmp": "/opt/servanago/php/libs/gmp-6.3.0"}, runtimes.LegacyExtensions)
 	got := strings.Join(args, " ")
 	for _, want := range []string{"--enable-bcmath=shared", "--enable-soap=shared", "--with-gmp=shared,/opt/servanago/php/libs/gmp-6.3.0", "--prefix=/opt/servanago/php/8.4.27-1", "--enable-fpm", "--disable-cgi", "--without-pear", "--with-openssl ", "--enable-opcache=shared",
 		"--enable-mbstring=shared", "--with-curl=shared", "--with-mysqli=shared,mysqlnd", "--with-pdo-pgsql=shared"} {
@@ -489,7 +581,7 @@ func TestPHPConfigure(t *testing.T) {
 		t.Errorf("no RUNPATH to the library in %v", env)
 	}
 	// PHP 8.5 builds opcache in and dropped the flag.
-	args85, _ := PHPConfigure("8.5.12", "/p", nil)
+	args85, _ := PHPConfigure("8.5.12", "/p", nil, runtimes.LegacyExtensions)
 	if strings.Contains(strings.Join(args85, " "), "opcache") {
 		t.Errorf("8.5 configure still names opcache: %v", args85)
 	}

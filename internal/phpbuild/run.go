@@ -16,6 +16,7 @@ import (
 	"strings"
 
 	"github.com/servanago/servanago/internal/phplibs"
+	"github.com/servanago/servanago/internal/runtimes"
 )
 
 // Env is what the job needs from outside: HTTP, running commands, checking a signature, and where trees live.
@@ -23,11 +24,11 @@ import (
 // points both at a temp directory.
 type Env struct {
 	Get    phplibs.Getter
-	Run    func(ctx context.Context, c phplibs.Cmd) error         // c.Dir is absolute
-	Verify func(ctx context.Context, file, sig string) error      // GPG: a good signature from a key in the PHP keyring
-	Libs   func(ctx context.Context) ([]phplibs.Resolved, error)  // nil = resolve every library from its feed
-	Exts   func(ctx context.Context) ([]phplibs.ExtSource, error) // nil = resolve every PECL extension from Packagist
-	Copy   func(ctx context.Context, from, to string) error       // seeds an installed library into the stage; nil = cp -a
+	Run    func(ctx context.Context, c phplibs.Cmd) error                         // c.Dir is absolute
+	Verify func(ctx context.Context, file, sig string) error                      // GPG: a good signature from a key in the PHP keyring
+	Libs   func(ctx context.Context, names []string) ([]phplibs.Resolved, error)  // nil = resolve the named libraries from their feeds
+	Exts   func(ctx context.Context, names []string) ([]phplibs.ExtSource, error) // nil = resolve the named PECL extensions from Packagist
+	Copy   func(ctx context.Context, from, to string) error                       // seeds an installed library into the stage; nil = cp -a
 	Root   string
 	Stage  string
 	Log    io.Writer
@@ -127,6 +128,10 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 	if !versionRE.MatchString(job.Version) || job.N < 1 {
 		return fmt.Errorf("job %+v is not a valid build", job)
 	}
+	exts, err := runtimes.ParseExtensions(job.Selection())
+	if err != nil {
+		return fmt.Errorf("job %+v is not a valid build: %w", job, err)
+	}
 	if err := SetState(dir, State{Phase: PhaseFetching, Version: job.Version, N: job.N}); err != nil {
 		return err
 	}
@@ -140,10 +145,10 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 		return err
 	}
 	p := plan{PHPFile: phpFile}
-	if p.Libs, err = e.fetchLibs(ctx, dir, src); err != nil {
+	if p.Libs, err = e.fetchLibs(ctx, dir, src, phplibs.Needed(runtimes.LibsFor(exts))); err != nil {
 		return err
 	}
-	if p.Exts, err = e.fetchExts(ctx, src); err != nil {
+	if p.Exts, err = e.fetchExts(ctx, src, peclOf(exts)); err != nil {
 		return err
 	}
 	pb, _ := json.Marshal(p)
@@ -199,14 +204,25 @@ func (e Env) fetchPHP(ctx context.Context, src, version string) (string, error) 
 	return phpFile, nil
 }
 
-// fetchLibs resolves every library, reuses (and seeds into the stage) the ones already installed under the same
-// directory name, and downloads and checksums the rest into src.
-func (e Env) fetchLibs(ctx context.Context, dir, src string) ([]planLib, error) {
+// peclOf is the part of a selection that builds from a Packagist source after PHP.
+func peclOf(exts []string) []string {
+	var out []string
+	for _, n := range exts {
+		if x, ok := runtimes.Lookup(n); ok && x.PECL {
+			out = append(out, n)
+		}
+	}
+	return out
+}
+
+// fetchLibs resolves the named libraries, reuses (and seeds into the stage) the ones already installed under the
+// same directory name, and downloads and checksums the rest into src.
+func (e Env) fetchLibs(ctx context.Context, dir, src string, names []string) ([]planLib, error) {
 	libs := e.Libs
 	if libs == nil {
-		libs = func(ctx context.Context) ([]phplibs.Resolved, error) {
+		libs = func(ctx context.Context, names []string) ([]phplibs.Resolved, error) {
 			var out []phplibs.Resolved
-			for _, n := range phplibs.Names() {
+			for _, n := range names {
 				r, err := phplibs.Resolve(ctx, e.Get, n)
 				if err != nil {
 					return nil, err
@@ -216,7 +232,7 @@ func (e Env) fetchLibs(ctx context.Context, dir, src string) ([]planLib, error) 
 			return out, nil
 		}
 	}
-	resolved, err := libs(ctx)
+	resolved, err := libs(ctx, names)
 	if err != nil {
 		return nil, err
 	}
@@ -271,12 +287,12 @@ func (e Env) fetchLibs(ctx context.Context, dir, src string) ([]planLib, error) 
 // fetchExts downloads the PECL extension sources. Packagist and GitHub publish no checksum for these (decided: trust
 // them over HTTPS at the commit Packagist names), so the log records the commit and the zipball's sha256 for anyone
 // who wants to audit a build.
-func (e Env) fetchExts(ctx context.Context, src string) ([]planExt, error) {
+func (e Env) fetchExts(ctx context.Context, src string, names []string) ([]planExt, error) {
 	exts := e.Exts
 	if exts == nil {
-		exts = func(ctx context.Context) ([]phplibs.ExtSource, error) {
+		exts = func(ctx context.Context, names []string) ([]phplibs.ExtSource, error) {
 			var out []phplibs.ExtSource
-			for _, n := range phplibs.ExtNames() {
+			for _, n := range names {
 				x, err := phplibs.ResolveExt(ctx, e.Get, n)
 				if err != nil {
 					return nil, err
@@ -286,7 +302,7 @@ func (e Env) fetchExts(ctx context.Context, src string) ([]planExt, error) {
 			return out, nil
 		}
 	}
-	extSrc, err := exts(ctx)
+	extSrc, err := exts(ctx, names)
 	if err != nil {
 		return nil, err
 	}
@@ -340,7 +356,8 @@ func Build(ctx context.Context, e Env, dir string) (err error) {
 	if err != nil {
 		return err
 	}
-	prefix, err := b.php(ctx, job, p.PHPFile, deps)
+	selected := job.Selection()
+	prefix, err := b.php(ctx, job, p.PHPFile, deps, selected)
 	if err != nil {
 		return err
 	}
@@ -354,7 +371,25 @@ func Build(ctx context.Context, e Env, dir string) (err error) {
 	if err := os.WriteFile(filepath.Join(prefix, "libs.txt"), []byte(strings.Join(used, "\n")+"\n"), 0o644); err != nil {
 		return fmt.Errorf("record the libraries: %w", err)
 	}
+	if err := os.WriteFile(filepath.Join(prefix, "exts.txt"), []byte(extsRecord(selected, p.Exts)), 0o644); err != nil {
+		return fmt.Errorf("record the extensions: %w", err)
+	}
 	return SetState(dir, State{Phase: PhaseBuilt, Version: job.Version, N: job.N})
+}
+
+// extsRecord is exts.txt: one extension per line, in load order; a PECL one also names the version and commit built.
+func extsRecord(selected []string, pecl []planExt) string {
+	var b strings.Builder
+	for _, n := range selected {
+		b.WriteString(n)
+		for _, x := range pecl {
+			if x.Name == n {
+				b.WriteString(" " + x.Version + " " + x.Commit)
+			}
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 // builder is one Build run: the Env plus the directories Fetch filled (src) and compilation uses (work).
@@ -400,14 +435,14 @@ func (b builder) libs(ctx context.Context, libs []planLib, jobs int) (map[string
 }
 
 // php compiles and installs PHP itself against deps and returns its prefix.
-func (b builder) php(ctx context.Context, job Job, phpFile string, deps map[string]string) (string, error) {
+func (b builder) php(ctx context.Context, job Job, phpFile string, deps map[string]string, exts []string) (string, error) {
 	b.logf("== building PHP %s", job.Version)
 	if err := b.unpack(ctx, phpFile, b.work); err != nil {
 		return "", fmt.Errorf("unpack php: %w", err)
 	}
 	srcDir := filepath.Join(b.work, "php-"+job.Version)
 	prefix := filepath.Join(b.Root, job.Label())
-	args, env := PHPConfigure(job.Version, prefix, deps)
+	args, env := PHPConfigure(job.Version, prefix, deps, exts)
 	jobs := fmt.Sprintf("-j%d", max(job.Jobs, 1))
 	for _, c := range []phplibs.Cmd{
 		{Dir: srcDir, Env: env, Name: "./configure", Args: args},

@@ -22,9 +22,10 @@ var BuildRE = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+-[0-9]+$`)
 // PHPVersion is one installed php-fpm binary, as a label a site can pin: a distro version ("8.2"), a
 // source build ("8.4.27-1") or a branch of source builds ("8.4", following the newest build there).
 type PHPVersion struct {
-	Version string // the label: php-fpm8.2 -> "8.2"; a source build keeps its directory name
-	Path    string // the executable; the pool's binary when a site picks this version
-	Source  bool   // built by ServanaGo under PHPRoot
+	Version string   // the label: php-fpm8.2 -> "8.2"; a source build keeps its directory name
+	Path    string   // the executable; the pool's binary when a site picks this version
+	Source  bool     // built by ServanaGo under PHPRoot
+	Exts    []string // a source build's extensions (its exts.txt); nil = a build from before extensions were chosen
 }
 
 // Opt is a pick-list entry: one version, marked when it is the stored one.
@@ -147,7 +148,7 @@ func sourceBuilds(ex RunExec) []PHPVersion {
 	for _, p := range m {
 		label := filepath.Base(filepath.Dir(filepath.Dir(p)))
 		if BuildRE.MatchString(label) {
-			builds = append(builds, PHPVersion{Version: label, Path: p, Source: true})
+			builds = append(builds, PHPVersion{Version: label, Path: p, Source: true, Exts: BuildExts(label)})
 		}
 	}
 	sort.SliceStable(builds, func(i, j int) bool { return newest(builds[i].Version, builds[j].Version) })
@@ -156,7 +157,7 @@ func sourceBuilds(ex RunExec) []PHPVersion {
 	for _, b := range builds {
 		if br := Branch(b.Version); !seen[br] {
 			seen[br] = true
-			out = append(out, PHPVersion{Version: br, Path: b.Path, Source: true})
+			out = append(out, PHPVersion{Version: br, Path: b.Path, Source: true, Exts: b.Exts})
 		}
 	}
 	return out

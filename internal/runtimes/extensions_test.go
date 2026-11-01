@@ -35,3 +35,37 @@ func TestOpcacheIsBuiltInFromPHP85(t *testing.T) {
 		t.Errorf("only opcache differs, got %d", n)
 	}
 }
+
+// A selection is closed over Needs, in load order; with Needs empty it is just the sorted selection.
+func TestCloseAddsWhatIsNeeded(t *testing.T) {
+	old := PHPExtensions
+	t.Cleanup(func() { PHPExtensions = old })
+	PHPExtensions = append(append([]Ext(nil), old...), Ext{Name: "needy", Group: "extra", Needs: []string{"mbstring"}})
+	if got := strings.Join(Close([]string{"needy", "curl"}), ","); got != "mbstring,curl,needy" {
+		t.Errorf("got %s", got)
+	}
+	if got := strings.Join(Close([]string{"gd"}), ","); got != "gd" {
+		t.Errorf("got %s", got)
+	}
+}
+
+func TestLibsFor(t *testing.T) {
+	if got := strings.Join(LibsFor([]string{"gd", "imagick", "sqlite3", "pdo_sqlite", "bcmath"}), ","); got != "libpng,libjpeg-turbo,freetype,libwebp,imagemagick,sqlite" {
+		t.Errorf("got %s", got)
+	}
+}
+
+// A build with no exts.txt holds what builds held before extensions were a choice; one with it holds exactly its list.
+func TestPHPVersionHas(t *testing.T) {
+	legacy := PHPVersion{Version: "8.4.1-1", Source: true}
+	if !legacy.Has("imagick") || legacy.Has("redis") {
+		t.Error("a legacy build holds LegacyExtensions only")
+	}
+	chosen := PHPVersion{Version: "8.4.2-1", Source: true, Exts: []string{"mbstring"}}
+	if !chosen.Has("mbstring") || chosen.Has("curl") {
+		t.Error("a build holds exactly its exts.txt")
+	}
+	if !(PHPVersion{Version: "8.2"}).Has("anything") {
+		t.Error("a distro php-fpm is not judged")
+	}
+}

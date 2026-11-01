@@ -122,6 +122,18 @@ func (a Actions) PHPBuild(r Request) Response {
 	if !versionRE.MatchString(ver) {
 		return Response{Error: fmt.Sprintf("php version %q must look like 8.4.27", ver)}
 	}
+	exts, err := runtimes.ParseExtensions(r.Vals.PHPExts)
+	if err != nil {
+		return Response{Error: err.Error()}
+	}
+	for _, n := range exts {
+		e, _ := runtimes.Lookup(n)
+		for _, d := range e.Needs {
+			if !slices.Contains(exts, d) {
+				return Response{Error: fmt.Sprintf("%s needs %s, which is not selected", n, d)}
+			}
+		}
+	}
 	var tools []string
 	for _, t := range phpTools {
 		tools = append(tools, t.tool)
@@ -152,7 +164,7 @@ func (a Actions) PHPBuild(r Request) Response {
 	if err := validateRoot(exe, false); err != nil { // it is written into a unit file
 		return Response{Error: fmt.Sprintf("servanago binary path: %v", err)}
 	}
-	job := phpbuild.Job{Version: ver, N: a.nextBuildN(ver), Jobs: max(1, runtime.NumCPU()/2)}
+	job := phpbuild.Job{Version: ver, N: a.nextBuildN(ver), Jobs: max(1, runtime.NumCPU()/2), Exts: exts}
 	if err := a.s.UserAdd(buildUser, phpbuild.Dir); err != nil {
 		return Response{Error: fmt.Sprintf("useradd %s: %v", buildUser, err)}
 	}
@@ -353,7 +365,11 @@ func (a Actions) verifyBuild(dir, ver string) error {
 		return fmt.Errorf("read the extension directory: %w", err)
 	}
 	var missing []string
+	built := a.builtExts(dir)
 	for _, e := range runtimes.SharedExtensions(runtimes.Branch(ver)) {
+		if !slices.Contains(built, e.Name) {
+			continue
+		}
 		found := false
 		for _, h := range have {
 			found = found || h == e.Name+".so"
@@ -366,6 +382,22 @@ func (a Actions) verifyBuild(dir, ver string) error {
 		return fmt.Errorf("extensions not built: %s", strings.Join(missing, ", "))
 	}
 	return nil
+}
+
+// builtExts is the extensions a build says it holds (the first word of each line of its exts.txt); a build without the
+// file predates extension choice and holds runtimes.LegacyExtensions.
+func (a Actions) builtExts(dir string) []string {
+	b, err := a.s.ReadFile(dir + "/exts.txt")
+	if err != nil {
+		return runtimes.LegacyExtensions
+	}
+	var out []string
+	for _, l := range strings.Split(string(b), "\n") {
+		if f := strings.Fields(l); len(f) > 0 {
+			out = append(out, f[0])
+		}
+	}
+	return out
 }
 
 // checkBuildHas refuses a site whose extensions its build does not contain (a build made before apcu or imagick were

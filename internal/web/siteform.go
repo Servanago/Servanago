@@ -717,13 +717,23 @@ func phpVersionOpts(versions []runtimes.PHPVersion, selected string) []runtimes.
 	return out
 }
 
+// pinnedBuild is the installed build a site's label resolves to (zero when it has none).
+func pinnedBuild(rep runtimes.Report, label string) runtimes.PHPVersion {
+	v, _, _ := runtimes.Resolve(label, rep.PHP)
+	return v
+}
+
 // extOpt is one checklist row: an extension and whether the site loads it (the core set when the site chose none).
 type extOpt struct {
 	Name, Group string
 	On          bool
 }
 
-func extOpts(selected string) []extOpt {
+func extOpts(selected string) []extOpt { return extOptsIn(selected, runtimes.PHPVersion{}) }
+
+// extOptsIn is the checklist for a site pinned to build: only what that build holds is offered. A zero build (no
+// pin, or one that no longer resolves) offers everything.
+func extOptsIn(selected string, build runtimes.PHPVersion) []extOpt {
 	on := map[string]bool{}
 	for _, n := range strings.Fields(selected) {
 		on[n] = true
@@ -735,6 +745,9 @@ func extOpts(selected string) []extOpt {
 	}
 	var out []extOpt
 	for _, e := range runtimes.PHPExtensions {
+		if build.Source && !build.Has(e.Name) {
+			continue
+		}
 		out = append(out, extOpt{Name: e.Name, Group: e.Group, On: on[e.Name]})
 	}
 	return out
@@ -744,7 +757,7 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 	title := "Add site"
 	rep := s.detect(r.Context())
 	form := siteEditForm{Site: rt, Edit: edit, Active: "settings", HostLines: strings.Join(rt.Hostnames, "\n"), DNSOn: s.dnsOn(),
-		MailOK: s.gateUsable(), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOpts(rt.PHPExtensions), Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
+		MailOK: s.gateUsable(), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOptsIn(rt.PHPExtensions, pinnedBuild(rep, rt.FPMVersion)), Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
 	}

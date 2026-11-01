@@ -151,8 +151,8 @@ func TestDetectSourceBuilds(t *testing.T) {
 
 func TestResolve(t *testing.T) {
 	inst := []PHPVersion{
-		{"8.4.27-1", "/b/8.4.27-1", true}, {"8.4.9-1", "/b/8.4.9-1", true}, {"8.4", "/b/8.4.27-1", true},
-		{"8.2", "/usr/sbin/php-fpm8.2", false},
+		{Version: "8.4.27-1", Path: "/b/8.4.27-1", Source: true}, {Version: "8.4.9-1", Path: "/b/8.4.9-1", Source: true}, {Version: "8.4", Path: "/b/8.4.27-1", Source: true},
+		{Version: "8.2", Path: "/usr/sbin/php-fpm8.2"},
 	}
 	tests := []struct {
 		label, path string
