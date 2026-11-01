@@ -1,0 +1,17 @@
+{{define "content"}}
+<h1>Updates</h1>
+<article>
+{{with .Data}}
+<p>This host runs <strong>{{.Running}}</strong>{{if .Dev}} (a build from source: it is never upgraded from here){{end}}.</p>
+{{if not .Enabled}}<p>The update check is turned off (<code>SERVANAGO_UPDATE_CHECK=false</code>). ServanaGo makes no request to GitHub.</p>
+{{else if not .Latest}}<p>No release has been checked yet.</p>
+{{else if .Newer}}<p><strong>{{.Latest}}</strong> is available, released {{.Manifest.Released}}. <a href="{{.Manifest.NotesURL}}" rel="noopener noreferrer">Release notes</a></p>
+{{if .Manifest.SchemaChange}}<p>This release applies a new database migration on start.</p>{{end}}
+{{if .Manifest.Breaking}}<p><strong>Read the release notes first:</strong> this release needs an action from you.</p>{{end}}
+<p>To upgrade, follow the upgrade steps in the documentation: download the package from the release page, compare its sha256 with <code>{{with index .Manifest.Debs "amd64"}}{{.SHA256}}{{end}}</code>, and install it with <code>dpkg --force-confold -i</code>.</p>
+{{else}}<p>ServanaGo is up to date (latest release {{.Latest}}).</p>{{end}}
+{{if .CheckedAt}}<p>Last checked {{.CheckedAt}}.</p>{{end}}
+{{if .Enabled}}<p><button hx-post="/updates/check">Check now</button></p>{{end}}
+{{end}}
+</article>
+{{end}}

@@ -4,6 +4,7 @@ package web
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
 	"embed"
 	"html/template"
 	"io/fs"
@@ -49,6 +50,9 @@ type Deps struct {
 	Exec         runtimes.RunExec
 	// HTTPGet fetches the php.net release feed (nil = a plain https client). A test seam.
 	HTTPGet func(ctx context.Context, url string) ([]byte, error)
+	// Version and UpdateKeys are test seams for the update check (empty = the build's version, the compiled-in keys).
+	Version    string
+	UpdateKeys []ed25519.PublicKey
 }
 
 type Server struct {
@@ -99,7 +103,7 @@ func (s *Server) takeFlashes() []string {
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second, geo: geoip.New(), mailTries: 15}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "mail", "scan", "scanrun", "siteedit", "siteview", "snippets", "logs", "help", "php", "reference", "backups"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "mail", "scan", "scanrun", "siteedit", "siteview", "snippets", "logs", "help", "php", "reference", "backups", "updates"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -238,6 +242,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /php/defaults", s.protected(s.phpDefault))
 	mux.Handle("POST /php/check", s.protected(s.phpCheckNow))
 	mux.Handle("POST /php/composer", s.protected(s.phpComposer))
+	mux.Handle("GET /updates", s.protected(s.updatesPage))
+	mux.Handle("POST /updates/check", s.protected(s.updatesCheckNow))
 	mux.Handle("GET /logs", s.protected(s.logsPage))
 	mux.Handle("GET /logs/rows", s.protected(s.logRows))
 	mux.Handle("GET /domains", s.protected(s.domainsPage))

@@ -167,6 +167,7 @@ func run() error {
 		ui.VerifyToken(ctx)
 	}()
 	go ui.RunPHPChecks(ctx)
+	go ui.RunUpdateChecks(ctx)
 	go ui.RunScans(ctx)         // close interrupted run rows first, then the daily sweep
 	go ui.ReconcilePHP(ctx)     // SQLite is the desired state: write each user's default PHP files again
 	go ui.ReconcileRuntime(ctx) // site units and users follow the stored sites

@@ -39,6 +39,7 @@ type Config struct {
 	MCPPublic          bool           // SERVANAGO_MCP_PUBLIC: /mcp also answers via Caddy / non-loopback peers; off = the local stdio relay only
 	MCPAllowlist       []netip.Prefix // SERVANAGO_MCP_ALLOWLIST: public /mcp callers must sit in one of these; empty = any address
 	Require2FA         bool
+	UpdateCheck        bool   // SERVANAGO_UPDATE_CHECK=false: never ask GitHub for a newer release
 	TurnstileSiteKey   string // both set = Turnstile on the password step
 	TurnstileSecret    string
 	TurnstileBaseURL   string // test hook: siteverify endpoint override; empty = Cloudflare
@@ -97,6 +98,7 @@ func Load(getenv func(string) string) (Config, error) {
 
 	c := Config{
 		Require2FA:         true, // REQUIRE_2FA=false opts out
+		UpdateCheck:        true,
 		CFBaseURL:          strings.TrimSpace(getenv("CLOUDFLARE_BASE_URL")),
 		HTTPPort:           port("HTTP_PORT", 80),
 		HTTPSPort:          port("HTTPS_PORT", 443),
@@ -169,6 +171,13 @@ func Load(getenv func(string) string) (Config, error) {
 			errs = append(errs, fmt.Errorf("REQUIRE_2FA: %q is not a boolean", v))
 		}
 		c.Require2FA = b
+	}
+	if v := strings.TrimSpace(getenv("SERVANAGO_UPDATE_CHECK")); v != "" {
+		b, err := strconv.ParseBool(v)
+		if err != nil {
+			errs = append(errs, fmt.Errorf("SERVANAGO_UPDATE_CHECK: %q is not a boolean", v))
+		}
+		c.UpdateCheck = b
 	}
 	if c.SecretKey != "" && len(c.SecretKey) < 32 {
 		errs = append(errs, errors.New("SERVANAGO_SECRET_KEY: must be at least 32 characters (try: openssl rand -hex 32)"))
