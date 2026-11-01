@@ -30,7 +30,12 @@ Also update the version mentioned in `llms.txt` (the status line and the install
 2. Bump the version everywhere above. Schema changes are a new `NNN_*.sql` migration, never an edit of an existing one; bump the hard-coded `user_version` in `TestMigrationsIdempotent`.
 3. `make deb`; commit; fast-forward `main`; push.
 4. `git tag -a vX.Y.Z -m vX.Y.Z && git push origin vX.Y.Z`
-5. `gh release create vX.Y.Z bin/servanago_X.Y.Z_amd64.deb --title vX.Y.Z --notes ...`. Say in the notes anything that changes behavior on upgrade (for example a new opt-in environment variable).
+5. `packaging/release-manifest.sh bin/servanago_X.Y.Z_amd64.deb ~/.config/servanago/release.key [--breaking]` writes and signs `bin/latest.json` (it sets `schema_change` itself when the release adds a migration; pass `--breaking` when the admin must act on the release).
+6. `gh release create vX.Y.Z bin/servanago_X.Y.Z_amd64.deb bin/latest.json bin/latest.json.sig --title vX.Y.Z --notes ...`. Say in the notes anything that changes behavior on upgrade (for example a new opt-in environment variable).
+
+## Signing key
+
+`bin/servanago manifest keygen FILE` creates the Ed25519 key (mode 0600, outside the repo; keep an offline copy) and prints the public half, which goes into `update.Keys` (`internal/update`). Releases are signed only by that key. A rotation ships a release that lists the old and the new public key. A leaked key is revoked the same way: a release signed with the old key that no longer lists it. Until the first key is added to `update.Keys`, no build trusts any manifest.
 
 ## Deploy
 

@@ -15,8 +15,10 @@ e2e: build
 
 check: lint test e2e
 
+VERSION = $(shell sed -n 's/^Version: //p' packaging/DEBIAN/control)
+
 build:
-	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o bin/servanago ./cmd/servanago
+	CGO_ENABLED=0 go build -trimpath -ldflags="-s -w -X github.com/servanago/servanago/internal/buildinfo.Version=$(VERSION)" -o bin/servanago ./cmd/servanago
 
 deb: build
 	packaging/build-deb.sh bin/servanago

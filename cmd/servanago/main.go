@@ -22,6 +22,7 @@ import (
 	"github.com/cloudflare/cloudflare-go/v7/option"
 
 	"github.com/servanago/servanago/internal/apply"
+	"github.com/servanago/servanago/internal/buildinfo"
 	"github.com/servanago/servanago/internal/caddycfg"
 	"github.com/servanago/servanago/internal/caddygate"
 	"github.com/servanago/servanago/internal/caddygeoip"
@@ -57,6 +58,10 @@ func main() {
 			cmd = runMCP
 		case "2fa-reset":
 			cmd = func() error { return runReset(os.Args[2:], os.Stdout) }
+		case "manifest":
+			cmd = func() error { return runManifest(os.Args[2:], os.Stdout) }
+		case "version":
+			cmd = func() error { _, err := fmt.Println(buildinfo.Version); return err }
 		}
 	}
 	if err := cmd(); err != nil {
