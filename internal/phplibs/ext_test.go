@@ -25,7 +25,7 @@ func TestResolveExtRecorded(t *testing.T) {
 		{"imagick", "imagick/imagick", "3.8.1", "70087bab33eab913e99ac77d64d04d1a2fd0b7b0"}, // 3.8.0RC1/RC2 are skipped
 	}
 	for _, tt := range tests {
-		e, err := ResolveExt(context.Background(), fixtureGetter(t), tt.name)
+		e, err := ResolveExt(context.Background(), fixtureGetter(t), tt.name, "8.4.27")
 		if err != nil {
 			t.Fatalf("%s: %v", tt.name, err)
 		}
@@ -34,9 +34,6 @@ func TestResolveExtRecorded(t *testing.T) {
 			!strings.HasPrefix(strings.ToLower(e.URL), "https://api.github.com/repos/") || !strings.HasSuffix(e.URL, "/"+repo+"/zipball/"+tt.commit) && !strings.HasSuffix(strings.ToLower(e.URL), "/"+repo+"/zipball/"+tt.commit) {
 			t.Errorf("%s: %+v", tt.name, e)
 		}
-	}
-	if got := ExtNames(); len(got) != 2 || got[0] != "apcu" || got[1] != "imagick" {
-		t.Errorf("ExtNames %v", got)
 	}
 }
 
@@ -68,7 +65,7 @@ func TestResolveExtStableFilter(t *testing.T) {
 		`{"version":"v5.1.9",`+dist("krakjoe", "apcu", commit)+`}`,
 		`{"version":"v5.1.10",`+dist("krakjoe", "apcu", other)+`}`,
 	)
-	e, err := ResolveExt(context.Background(), func(context.Context, string) ([]byte, error) { return []byte(body), nil }, "apcu")
+	e, err := ResolveExt(context.Background(), func(context.Context, string) ([]byte, error) { return []byte(body), nil }, "apcu", "8.4.27")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -88,7 +85,7 @@ func TestResolveExtRejects(t *testing.T) {
 		{"zipball of a branch, not a commit", feed("apcu/apcu", full("v5.1.0", "php-ext", "apcu", strings.Replace(d, "zipball/"+commit, "zipball/master", 1))), "not a https GitHub zipball"},
 		{"source names another commit", feed("apcu/apcu", full("v5.1.0", "php-ext", "apcu", strings.Replace(d, `"source":{"url":"https://github.com/krakjoe/apcu.git","type":"git","reference":"`+commit, `"source":{"url":"https://github.com/krakjoe/apcu.git","type":"git","reference":"`+strings.Repeat("c", 40), 1))), "do not both name commit"},
 		{"dist reference names another commit", feed("apcu/apcu", full("v5.1.0", "php-ext", "apcu", strings.Replace(d, `"type":"zip","reference":"`+commit, `"type":"zip","reference":"`+strings.Repeat("c", 40), 1))), "do not both name commit"},
-		{"repository is not the package", feed("apcu/apcu", full("v5.1.0", "php-ext", "apcu", dist("krakjoe", "evil", commit))), `repository "evil"`},
+		{"repository is not the package", feed("apcu/apcu", full("v5.1.0", "php-ext", "apcu", dist("krakjoe", "evil", commit))), `repository "krakjoe/evil" is not krakjoe/apcu`},
 		{"only unstable versions", feed("apcu/apcu", full("dev-master", "php-ext", "apcu", d), `{"version":"v6.0.0-beta1"}`, `{"version":"v6.0.0RC2"}`), "no stable release"},
 		{"version is not dotted numbers", feed("apcu/apcu", full("5.1.0.1.1", "php-ext", "apcu", d)), "no stable release"},
 		{"php-ext unset on the stable release", feed("apcu/apcu", full("dev-master", "php-ext", "apcu", d), `{"version":"v5.1.0","php-ext":"__unset"}`), `field "php-ext"`},
@@ -97,17 +94,99 @@ func TestResolveExtRejects(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ResolveExt(context.Background(), func(context.Context, string) ([]byte, error) { return []byte(tt.body), nil }, "apcu")
+			_, err := ResolveExt(context.Background(), func(context.Context, string) ([]byte, error) { return []byte(tt.body), nil }, "apcu", "8.4.27")
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("error %v, want one containing %q", err, tt.want)
 			}
 		})
 	}
-	if _, err := ResolveExt(context.Background(), nil, "redis"); err == nil || !strings.Contains(err.Error(), "unknown extension") {
+	if _, err := ResolveExt(context.Background(), nil, "nosuch", "8.4.27"); err == nil || !strings.Contains(err.Error(), "unknown extension") {
 		t.Errorf("unknown extension: %v", err)
 	}
-	if _, err := ResolveExt(context.Background(), func(context.Context, string) ([]byte, error) { return nil, fmt.Errorf("boom") }, "imagick"); err == nil || !strings.Contains(err.Error(), "boom") {
+	if _, err := ResolveExt(context.Background(), func(context.Context, string) ([]byte, error) { return nil, fmt.Errorf("boom") }, "imagick", "8.4.27"); err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Errorf("feed error: %v", err)
+	}
+}
+
+// release is one complete p2 entry with a php requirement and a php-ext block (a JSON object body, no braces around
+// the extra fields) for the xdebug repository.
+func release(version, typ, phpReq, phpExt string) string {
+	return `{"version":"` + version + `","type":"` + typ + `","require":{"php":"` + phpReq + `"},"php-ext":` + phpExt + `,` + dist("xdebug", "xdebug", commit) + `}`
+}
+
+// The newest release the build's PHP can run is chosen, and the reason is named when there is none.
+func TestResolveExtChoosesByThePHPVersion(t *testing.T) {
+	body := feed("xdebug/xdebug",
+		release("3.5.3", "php-ext-zend", ">=8.0,<8.6", `{"priority":90}`),
+		`{"version":"3.4.0","require":{"php":">=8.0"}}`,
+		`{"version":"3.0.0","require":{"php":">=7.2,<8.0"}}`,
+	)
+	get := func(context.Context, string) ([]byte, error) { return []byte(body), nil }
+	for _, tt := range []struct{ php, want, wantErr string }{
+		{"8.4.27", "3.5.3", ""},
+		{"8.5.2", "3.5.3", ""},
+		{"8.6.0", "3.4.0", ""},
+		{"7.4.33", "3.0.0", ""},
+		{"7.1.0", "", "no release supports PHP 7.1.0 (newest 3.5.3 requires >=8.0,<8.6)"},
+	} {
+		e, err := ResolveExt(context.Background(), get, "xdebug", tt.php)
+		if tt.wantErr != "" {
+			if err == nil || !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("PHP %s: err %v, want %q", tt.php, err, tt.wantErr)
+			}
+			continue
+		}
+		if err != nil || e.Version != tt.want || !e.Zend {
+			t.Errorf("PHP %s: %+v, %v, want %s as a zend extension", tt.php, e, err, tt.want)
+		}
+	}
+}
+
+// Every constraint form seen in the 2026-11-01 Packagist fetch parses and judges correctly.
+func TestPHPConstraintForms(t *testing.T) {
+	for _, tt := range []struct {
+		req, php string
+		ok       bool
+	}{
+		{">= 7.0.0", "8.4.27", true}, {">=8.0,<8.6", "8.5.2", true}, {">=8.0,<8.6", "8.6.0", false},
+		{">= 7.2.0, <= 8.6.0", "8.4.27", true}, {">= 7.2.0, <= 8.6.0", "8.6.1", false},
+		{">=8.1,<9", "8.4.27", true}, {">=8.1,<9", "9.0.0", false}, {">= 8.3.0", "8.2.1", false},
+		{"^7.4 || ^8.0", "8.4.27", true},
+	} {
+		got, err := phpSatisfies(tt.req, tt.php)
+		if err != nil || got != tt.ok {
+			t.Errorf("%q vs PHP %s = %v, %v; want %v", tt.req, tt.php, got, err, tt.ok)
+		}
+	}
+	if _, err := phpSatisfies("what", "8.4.27"); err == nil {
+		t.Error("an unreadable constraint must be an error, not a pass")
+	}
+}
+
+// The package's own declarations are checked, not only its type and name.
+func TestResolveExtChecksThePackageBlock(t *testing.T) {
+	d := dist("krakjoe", "apcu", commit)
+	pkg := func(phpExt string) string {
+		return feed("apcu/apcu", `{"version":"5.1.0","type":"php-ext","php-ext":`+phpExt+`,`+d+`}`)
+	}
+	for _, tt := range []struct{ name, body, want string }{
+		{"no thread-safe-less support", pkg(`{"extension-name":"apcu","support-nts":false}`), "does not support non-thread-safe"},
+		{"windows only", pkg(`{"extension-name":"apcu","os-families":["windows"]}`), "not for linux"},
+		{"linux excluded", pkg(`{"extension-name":"apcu","os-families-exclude":["linux"]}`), "not for linux"},
+		{"pre-packaged source", pkg(`{"extension-name":"apcu","download-url-method":"pre-packaged-source"}`), "download-url-method"},
+		{"flag the package no longer declares", pkg(`{"extension-name":"apcu","configure-options":[{"name":"enable-something-else"}]}`), `declares no "enable-apcu"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := ResolveExt(context.Background(), func(context.Context, string) ([]byte, error) { return []byte(tt.body), nil }, "apcu", "8.4.27")
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err %v, want %q", err, tt.want)
+			}
+		})
+	}
+	// A package that declares no options (xdebug, mailparse) is not held to any; a missing php-ext name falls back to the package's.
+	ok := feed("xdebug/xdebug", `{"version":"3.5.3","type":"php-ext-zend","php-ext":{"priority":90},`+dist("xdebug", "xdebug", commit)+`}`)
+	if _, err := ResolveExt(context.Background(), func(context.Context, string) ([]byte, error) { return []byte(ok), nil }, "xdebug", "8.4.27"); err != nil {
+		t.Errorf("xdebug: %v", err)
 	}
 }
 
@@ -146,7 +225,7 @@ func TestExtRecipeErrors(t *testing.T) {
 	deps := map[string]string{"zlib": "/z"}
 	for _, tt := range []struct{ name, ext, want string }{
 		{"library not built", "imagick", "imagick needs imagemagick, which was not built"},
-		{"unknown extension", "redis", `no build recipe for extension "redis"`},
+		{"unknown extension", "nosuch", `no build recipe for extension "nosuch"`},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			got, err := ExtRecipe(ExtSource{Name: tt.ext}, "/opt/php/8.4.27-1", deps, 2)

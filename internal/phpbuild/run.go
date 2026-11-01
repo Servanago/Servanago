@@ -24,11 +24,11 @@ import (
 // points both at a temp directory.
 type Env struct {
 	Get    phplibs.Getter
-	Run    func(ctx context.Context, c phplibs.Cmd) error                         // c.Dir is absolute
-	Verify func(ctx context.Context, file, sig string) error                      // GPG: a good signature from a key in the PHP keyring
-	Libs   func(ctx context.Context, names []string) ([]phplibs.Resolved, error)  // nil = resolve the named libraries from their feeds
-	Exts   func(ctx context.Context, names []string) ([]phplibs.ExtSource, error) // nil = resolve the named PECL extensions from Packagist
-	Copy   func(ctx context.Context, from, to string) error                       // seeds an installed library into the stage; nil = cp -a
+	Run    func(ctx context.Context, c phplibs.Cmd) error                                            // c.Dir is absolute
+	Verify func(ctx context.Context, file, sig string) error                                         // GPG: a good signature from a key in the PHP keyring
+	Libs   func(ctx context.Context, names []string) ([]phplibs.Resolved, error)                     // nil = resolve the named libraries from their feeds
+	Exts   func(ctx context.Context, names []string, phpVersion string) ([]phplibs.ExtSource, error) // nil = resolve the named PECL extensions from Packagist, for that PHP
+	Copy   func(ctx context.Context, from, to string) error                                          // seeds an installed library into the stage; nil = cp -a
 	Root   string
 	Stage  string
 	Log    io.Writer
@@ -148,7 +148,7 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 	if p.Libs, err = e.fetchLibs(ctx, dir, src, phplibs.Needed(runtimes.LibsFor(exts))); err != nil {
 		return err
 	}
-	if p.Exts, err = e.fetchExts(ctx, src, peclOf(exts)); err != nil {
+	if p.Exts, err = e.fetchExts(ctx, src, peclOf(exts), job.Version); err != nil {
 		return err
 	}
 	pb, _ := json.Marshal(p)
@@ -202,6 +202,13 @@ func (e Env) fetchPHP(ctx context.Context, src, version string) (string, error) 
 	}
 	e.logf("%s: sha256 and GPG signature verified", phpFile)
 	return phpFile, nil
+}
+
+func kindOf(zend bool) string {
+	if zend {
+		return "a zend extension"
+	}
+	return "a regular extension"
 }
 
 // peclOf is the part of a selection that builds from a Packagist source after PHP.
@@ -287,13 +294,13 @@ func (e Env) fetchLibs(ctx context.Context, dir, src string, names []string) ([]
 // fetchExts downloads the PECL extension sources. Packagist and GitHub publish no checksum for these (decided: trust
 // them over HTTPS at the commit Packagist names), so the log records the commit and the zipball's sha256 for anyone
 // who wants to audit a build.
-func (e Env) fetchExts(ctx context.Context, src string, names []string) ([]planExt, error) {
+func (e Env) fetchExts(ctx context.Context, src string, names []string, phpVersion string) ([]planExt, error) {
 	exts := e.Exts
 	if exts == nil {
-		exts = func(ctx context.Context, names []string) ([]phplibs.ExtSource, error) {
+		exts = func(ctx context.Context, names []string, phpVersion string) ([]phplibs.ExtSource, error) {
 			var out []phplibs.ExtSource
 			for _, n := range names {
-				x, err := phplibs.ResolveExt(ctx, e.Get, n)
+				x, err := phplibs.ResolveExt(ctx, e.Get, n, phpVersion)
 				if err != nil {
 					return nil, err
 				}
@@ -302,12 +309,15 @@ func (e Env) fetchExts(ctx context.Context, src string, names []string) ([]planE
 			return out, nil
 		}
 	}
-	extSrc, err := exts(ctx, names)
+	extSrc, err := exts(ctx, names, phpVersion)
 	if err != nil {
 		return nil, err
 	}
 	var out []planExt
 	for _, x := range extSrc {
+		if reg, ok := runtimes.Lookup(x.Name); ok && reg.Zend != x.Zend {
+			return nil, fmt.Errorf("%s %s: the package is %s, ServanaGo loads it as %s", x.Name, x.Version, kindOf(x.Zend), kindOf(reg.Zend))
+		}
 		e.logf("downloading %s", x.URL)
 		data, err := e.Get(ctx, x.URL)
 		if err != nil {

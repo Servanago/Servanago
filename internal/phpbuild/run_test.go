@@ -32,6 +32,7 @@ type fixture struct {
 	exts     []phplibs.ExtSource
 
 	libsAsked, extsAsked []string // what Fetch asked the seams to resolve
+	phpAsked             string   // the PHP version the extensions had to run on
 }
 
 // zipOf builds a zip in memory from name -> content.
@@ -120,8 +121,8 @@ func (f *fixture) env() Env {
 			f.libsAsked = names
 			return f.libs, nil
 		},
-		Exts: func(ctx context.Context, names []string) ([]phplibs.ExtSource, error) {
-			f.extsAsked = names
+		Exts: func(ctx context.Context, names []string, phpVersion string) ([]phplibs.ExtSource, error) {
+			f.extsAsked, f.phpAsked = names, phpVersion
 			return f.exts, nil
 		},
 	}
@@ -542,8 +543,8 @@ func TestSelectionDecidesWhatIsFetchedAndRecorded(t *testing.T) {
 	if got := strings.Join(f.libsAsked, ","); got != "zlib,openssl,curl,libxml2,libpng,libjpeg-turbo,freetype,libwebp,imagemagick" {
 		t.Errorf("libraries asked for: %s", got)
 	}
-	if got := strings.Join(f.extsAsked, ","); got != "imagick" {
-		t.Errorf("PECL extensions asked for: %s", got)
+	if got := strings.Join(f.extsAsked, ","); got != "imagick" || f.phpAsked != "8.4.27" {
+		t.Errorf("PECL extensions asked for: %s on PHP %s", got, f.phpAsked)
 	}
 	if err := os.MkdirAll(filepath.Join(f.root, "8.4.27-2"), 0o755); err != nil {
 		t.Fatal(err)
