@@ -1,8 +1,12 @@
 package helper
 
 import (
+	"crypto/ed25519"
 	"fmt"
 	"io/fs"
+
+	"github.com/servanago/servanago/internal/buildinfo"
+	"github.com/servanago/servanago/internal/update"
 )
 
 // unit.go: the shared helper plumbing.
@@ -51,9 +55,13 @@ type Seam interface {
 	EvalSymlinks(path string) (string, error)
 }
 
-type Actions struct{ s Seam }
+type Actions struct {
+	s       Seam
+	keys    []ed25519.PublicKey // update-start: the keys a release manifest may be signed with
+	version string              // update-start: the running version
+}
 
-func NewActions(s Seam) Actions { return Actions{s} }
+func NewActions(s Seam) Actions { return Actions{s: s, keys: update.Keys, version: buildinfo.Version} }
 
 // defaultLogLines bounds the unit-logs tail.
 const defaultLogLines, maxLogLines = 20, 500

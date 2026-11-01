@@ -47,3 +47,7 @@ The user running ServanaGo must be able to write `DATA_DIR` (the database and Ca
 ## PHP builds
 
 What is verified and what is trusted: see [PHP built from source](php.md#what-is-verified-and-what-is-trusted).
+
+## Upgrades
+
+The helper has one action that installs software as root: `update-start`. It takes a version number and a user name, nothing else. The helper downloads the release manifest (`latest.json`) and its signature from the project's GitHub release itself, checks the Ed25519 signature against the public keys compiled into the binary, and refuses a manifest that is unsigned, signed by another key, for a different version than the one asked for, not newer than the running version, or whose package address is anything other than the release's own. A build from source (no version) never upgrades. A leaked release key is revoked by shipping a release, signed with that key, that no longer lists it. See [Releasing](RELEASING.md#signing-key).

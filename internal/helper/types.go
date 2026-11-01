@@ -37,6 +37,8 @@ const (
 	ActionBackupStart   = "backup-start"
 	ActionBackupRestore = "backup-restore"
 	ActionBackupStatus  = "backup-status"
+
+	ActionUpdateStart = "update-start"
 )
 
 // MaxRequestSize bounds one request; larger input is refused before parsing.
@@ -90,7 +92,9 @@ type Spec struct {
 	Archive      string `json:"archive,omitempty"`       // backup-restore: an archive file name of the site
 	RestoreFiles bool   `json:"restore_files,omitempty"` // backup-restore
 	RestoreDumps bool   `json:"restore_dumps,omitempty"` // backup-restore
-	Actor        string `json:"actor,omitempty"`         // backup-start|restore: the signed-in user, for the audit row
+	Actor        string `json:"actor,omitempty"`         // backup-start|restore, update-start: the signed-in user, for the audit row
+
+	UpdateVersion string `json:"update_version,omitempty"` // update-start: the release the admin saw (must equal the latest signed one)
 
 	RestoreVolumes []string `json:"restore_volumes,omitempty"` // backup-restore: docker volume names (at most 20); the job stops their containers
 }
@@ -126,7 +130,7 @@ func DecodeRequest(b []byte) (Request, error) {
 	case ActionPing, ActionUnitInstall, ActionUnitStatus, ActionUnitLogs,
 		ActionUserAdd, ActionUserCheck, ActionUserRemove, ActionUnitRemove, ActionUnitStart, ActionUnitStop, ActionDockerList,
 		ActionPHPBuild, ActionPHPStatus, ActionPHPInstall, ActionPHPPrune, ActionPHPUserDefault, ActionComposer,
-		ActionBackupEnable, ActionBackupStart, ActionBackupRestore, ActionBackupStatus:
+		ActionBackupEnable, ActionBackupStart, ActionBackupRestore, ActionBackupStatus, ActionUpdateStart:
 	default:
 		return Request{}, fmt.Errorf("unknown action %q", r.Action)
 	}

@@ -44,6 +44,8 @@ func runHelper() error {
 		helper.ActionBackupStart:   a.BackupStart,
 		helper.ActionBackupRestore: a.BackupRestore,
 		helper.ActionBackupStatus:  a.BackupStatus,
+
+		helper.ActionUpdateStart: a.UpdateStart,
 	}
 	slog.Info("helper listening", "socket", helper.SocketPath, "servanago_user", hasUser)
 	helper.Serve(ln, helper.NewAuthorizer(uid), acts)
