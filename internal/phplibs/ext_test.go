@@ -120,23 +120,42 @@ func TestExtRecipe(t *testing.T) {
 		}
 		return b.String()
 	}
-	apcu := ExtRecipe(ExtSource{Name: "apcu"}, "/opt/php/8.4.27-1", nil, 4)
+	apcu, err := ExtRecipe(ExtSource{Name: "apcu"}, "/opt/php/8.4.27-1", nil, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(apcu) != 4 || apcu[0].Name != "/opt/php/8.4.27-1/bin/phpize" || apcu[0].Dir != "" ||
 		!strings.Contains(join(apcu), "./configure --with-php-config=/opt/php/8.4.27-1/bin/php-config --enable-apcu") ||
 		!strings.Contains(join(apcu), "make -j4") || !strings.Contains(join(apcu), "make install") {
 		t.Errorf("apcu:\n%s", join(apcu))
 	}
-	im := ExtRecipe(ExtSource{Name: "imagick"}, "/opt/php/8.4.27-1", deps, 0)
+	im, err := ExtRecipe(ExtSource{Name: "imagick"}, "/opt/php/8.4.27-1", deps, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(im) != 4 || !strings.Contains(join(im), "--with-imagick=/opt/p/libs/imagemagick-7.1.2-34") || !strings.Contains(join(im), "make -j1") {
 		t.Errorf("imagick:\n%s", join(im))
 	}
 	if !strings.Contains(strings.Join(im[1].Env, " "), "/opt/p/libs/imagemagick-7.1.2-34/lib/pkgconfig") {
 		t.Errorf("imagick cannot see ImageMagick's pkg-config dir: %v", im[1].Env)
 	}
-	if got := ExtRecipe(ExtSource{Name: "imagick"}, "/opt/php/8.4.27-1", map[string]string{"zlib": "/z"}, 2); got != nil {
-		t.Errorf("imagick without imagemagick must return nil, got %+v", got)
-	}
-	if got := ExtRecipe(ExtSource{Name: "redis"}, "/opt/php/8.4.27-1", deps, 2); got != nil {
-		t.Errorf("unknown extension must return nil, got %+v", got)
+}
+
+// The two ways a recipe can be unavailable say which one it is: a missing library is not an unknown extension.
+func TestExtRecipeErrors(t *testing.T) {
+	deps := map[string]string{"zlib": "/z"}
+	for _, tt := range []struct{ name, ext, want string }{
+		{"library not built", "imagick", "imagick needs imagemagick, which was not built"},
+		{"unknown extension", "redis", `no build recipe for extension "redis"`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := ExtRecipe(ExtSource{Name: tt.ext}, "/opt/php/8.4.27-1", deps, 2)
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("err %v, want one mentioning %q", err, tt.want)
+			}
+			if got != nil {
+				t.Errorf("commands %+v returned with an error", got)
+			}
+		})
 	}
 }

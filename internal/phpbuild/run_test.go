@@ -402,6 +402,33 @@ func TestBuildSkipsInstalledLibraries(t *testing.T) {
 	}
 }
 
+// A library installed under the old recipe is not reused once its recipe revision is bumped: it is built again into
+// a directory of its own, and the build lists that one.
+func TestRecipeRevisionRebuildsAnInstalledLibrary(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(filepath.Join(f.root, "libs", "zlib-1.3.1"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	f.libs[0].Rev = 1
+	if err := Fetch(context.Background(), f.env(), f.dir); err != nil {
+		t.Fatal(err)
+	}
+	var p plan
+	if err := readJSON(filepath.Join(f.dir, "plan.json"), &p); err != nil || p.Libs[0].Have {
+		t.Fatalf("zlib-1.3.1 was reused although its recipe changed: %+v (%v)", p.Libs[0], err)
+	}
+	f.ran = nil
+	if err := Build(context.Background(), f.env(), f.dir); err != nil {
+		t.Fatal(err)
+	}
+	if all := strings.Join(f.ran, "\n"); !strings.Contains(all, "zlib-1.3.1.tar.xz") {
+		t.Errorf("zlib was not rebuilt:\n%s", all)
+	}
+	if libs, _ := os.ReadFile(filepath.Join(f.root, "8.4.27-2", "libs.txt")); !strings.HasPrefix(string(libs), "zlib-1.3.1-r1\n") {
+		t.Errorf("libs.txt %q", libs)
+	}
+}
+
 func TestBuildFailureIsRecorded(t *testing.T) {
 	f := newFixture(t)
 	if err := Fetch(context.Background(), f.env(), f.dir); err != nil {
@@ -422,6 +449,23 @@ func TestBuildFailureIsRecorded(t *testing.T) {
 	}
 	if _, statErr := os.Stat(filepath.Join(f.root, "8.4.27-2", "libs.txt")); statErr == nil {
 		t.Error("a failed build must not look finished")
+	}
+}
+
+// A recipe that cannot run fails the build with the reason (not a generic "library was not built").
+func TestBuildExtensionRecipeErrorsSayWhy(t *testing.T) {
+	f := newFixture(t)
+	f.libs = f.libs[:2] // no imagemagick: imagick cannot be built
+	if err := Fetch(context.Background(), f.env(), f.dir); err != nil {
+		t.Fatal(err)
+	}
+	prefix := filepath.Join(f.root, "8.4.27-2")
+	if err := os.MkdirAll(prefix, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	err := Build(context.Background(), f.env(), f.dir)
+	if err == nil || !strings.Contains(err.Error(), "imagick needs imagemagick, which was not built") {
+		t.Fatalf("err %v", err)
 	}
 }
 

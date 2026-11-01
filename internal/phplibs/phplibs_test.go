@@ -176,6 +176,37 @@ func TestSourceDir(t *testing.T) {
 	}
 }
 
+// An installed library directory is never replaced, so the name has to change when a recipe does: revision 0 keeps
+// the plain name (every library installed so far), a bumped revision adds -rN.
+func TestDirNamesTheRecipeRevision(t *testing.T) {
+	for _, tt := range []struct {
+		r    Resolved
+		want string
+	}{
+		{Resolved{Name: "zlib", Version: "1.3.2"}, "zlib-1.3.2"},
+		{Resolved{Name: "zlib", Version: "1.3.2", Rev: 1}, "zlib-1.3.2-r1"},
+		{Resolved{Name: "imagemagick", Version: "7.1.2-34", Rev: 2}, "imagemagick-7.1.2-34-r2"},
+	} {
+		if got := Dir(tt.r); got != tt.want {
+			t.Errorf("Dir(%+v) = %s, want %s", tt.r, got, tt.want)
+		}
+	}
+}
+
+func TestResolveCarriesTheRecipeRevision(t *testing.T) {
+	get := fixtureGetter(t)
+	r, err := Resolve(context.Background(), get, "zlib")
+	if err != nil || r.Rev != 0 {
+		t.Fatalf("no bump recorded: rev %d, err %v", r.Rev, err)
+	}
+	recipeRev["zlib"] = 3
+	t.Cleanup(func() { delete(recipeRev, "zlib") })
+	r, err = Resolve(context.Background(), get, "zlib")
+	if err != nil || r.Rev != 3 {
+		t.Fatalf("rev %d, err %v, want 3", r.Rev, err)
+	}
+}
+
 func TestNewer(t *testing.T) {
 	for _, tt := range []struct {
 		a, b string

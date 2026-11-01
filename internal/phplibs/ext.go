@@ -112,9 +112,9 @@ func expand(entries []packagistEntry) []map[string]json.RawMessage {
 }
 
 // ExtRecipe builds and installs one extension against a built PHP: phpize, configure, make, install. Dir "" is
-// the unpacked extension directory. It returns nil for an unknown extension or when a library the extension
-// needs is missing from deps, so the caller can fail with a clear message.
-func ExtRecipe(e ExtSource, phpPrefix string, deps map[string]string, jobs int) []Cmd {
+// the unpacked extension directory. It fails for an extension with no recipe and for one whose library is missing
+// from deps, and says which.
+func ExtRecipe(e ExtSource, phpPrefix string, deps map[string]string, jobs int) ([]Cmd, error) {
 	env := BuildEnv(phpPrefix, deps)
 	args := []string{"--with-php-config=" + phpPrefix + "/bin/php-config"}
 	switch e.Name {
@@ -123,16 +123,16 @@ func ExtRecipe(e ExtSource, phpPrefix string, deps map[string]string, jobs int) 
 	case "imagick":
 		im := deps["imagemagick"]
 		if im == "" {
-			return nil
+			return nil, fmt.Errorf("imagick needs imagemagick, which was not built")
 		}
 		args = append(args, "--with-imagick="+im)
 	default:
-		return nil
+		return nil, fmt.Errorf("no build recipe for extension %q", e.Name)
 	}
 	return []Cmd{
 		{Env: env, Name: phpPrefix + "/bin/phpize"},
 		{Env: env, Name: "./configure", Args: args},
 		{Env: env, Name: "make", Args: []string{"-j" + strconv.Itoa(max(jobs, 1))}},
 		{Env: env, Name: "make", Args: []string{"install"}},
-	}
+	}, nil
 }

@@ -54,7 +54,7 @@ type planLib struct {
 	Have bool   `json:"have"`           // already installed (and seeded into the stage): not rebuilt
 }
 
-func (l planLib) dir() string { return l.Name + "-" + l.Version }
+func (l planLib) dir() string { return phplibs.Dir(l.Resolved) }
 
 func readJSON(file string, v any) error {
 	b, err := os.ReadFile(file)
@@ -135,16 +135,36 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 		return err
 	}
 
-	// PHP: the version's release record gives the sha256; the detached signature is checked against the PHP keyring.
-	body, err := e.Get(ctx, "https://www.php.net/releases/index.php?json&version="+job.Version)
+	phpFile, err := e.fetchPHP(ctx, src, job.Version)
 	if err != nil {
-		return fmt.Errorf("php.net release record: %w", err)
+		return err
+	}
+	p := plan{PHPFile: phpFile}
+	if p.Libs, err = e.fetchLibs(ctx, dir, src); err != nil {
+		return err
+	}
+	if p.Exts, err = e.fetchExts(ctx, src); err != nil {
+		return err
+	}
+	pb, _ := json.Marshal(p)
+	if err := os.WriteFile(filepath.Join(dir, "plan.json"), pb, 0o644); err != nil {
+		return err
+	}
+	return SetState(dir, State{Phase: PhaseBuilding, Version: job.Version, N: job.N})
+}
+
+// fetchPHP downloads the PHP tarball into src: the version's release record gives the sha256, and the detached
+// signature is checked against the PHP keyring. It returns the tarball's file name.
+func (e Env) fetchPHP(ctx context.Context, src, version string) (string, error) {
+	body, err := e.Get(ctx, "https://www.php.net/releases/index.php?json&version="+version)
+	if err != nil {
+		return "", fmt.Errorf("php.net release record: %w", err)
 	}
 	var rel phpRelease
-	if err := json.Unmarshal(body, &rel); err != nil || rel.Version != job.Version {
-		return fmt.Errorf("php.net returned no release record for %s", job.Version)
+	if err := json.Unmarshal(body, &rel); err != nil || rel.Version != version {
+		return "", fmt.Errorf("php.net returned no release record for %s", version)
 	}
-	phpFile := "php-" + job.Version + ".tar.xz"
+	phpFile := "php-" + version + ".tar.xz"
 	sum := ""
 	for _, s := range rel.Source {
 		if s.Filename == phpFile {
@@ -152,32 +172,36 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 		}
 	}
 	if sum == "" {
-		return fmt.Errorf("php.net publishes no sha256 for %s", phpFile)
+		return "", fmt.Errorf("php.net publishes no sha256 for %s", phpFile)
 	}
 	e.logf("downloading %s", phpFile)
 	tarball, err := e.Get(ctx, "https://www.php.net/distributions/"+phpFile)
 	if err != nil {
-		return fmt.Errorf("download %s: %w", phpFile, err)
+		return "", fmt.Errorf("download %s: %w", phpFile, err)
 	}
 	if err := checkSum(phplibs.AlgoSHA256, tarball, sum); err != nil {
-		return fmt.Errorf("%s: %w", phpFile, err)
+		return "", fmt.Errorf("%s: %w", phpFile, err)
 	}
 	sig, err := e.Get(ctx, "https://www.php.net/distributions/"+phpFile+".asc")
 	if err != nil {
-		return fmt.Errorf("download the %s signature: %w", phpFile, err)
+		return "", fmt.Errorf("download the %s signature: %w", phpFile, err)
 	}
 	if err := os.WriteFile(filepath.Join(src, phpFile), tarball, 0o644); err != nil {
-		return err
+		return "", err
 	}
 	if err := os.WriteFile(filepath.Join(src, phpFile+".asc"), sig, 0o644); err != nil {
-		return err
+		return "", err
 	}
 	if err := e.Verify(ctx, filepath.Join(src, phpFile), filepath.Join(src, phpFile+".asc")); err != nil {
-		return fmt.Errorf("%s signature: %w", phpFile, err)
+		return "", fmt.Errorf("%s signature: %w", phpFile, err)
 	}
 	e.logf("%s: sha256 and GPG signature verified", phpFile)
+	return phpFile, nil
+}
 
-	// Libraries.
+// fetchLibs resolves every library, reuses (and seeds into the stage) the ones already installed under the same
+// directory name, and downloads and checksums the rest into src.
+func (e Env) fetchLibs(ctx context.Context, dir, src string) ([]planLib, error) {
 	libs := e.Libs
 	if libs == nil {
 		libs = func(ctx context.Context) ([]phplibs.Resolved, error) {
@@ -194,9 +218,9 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 	}
 	resolved, err := libs(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	p := plan{PHPFile: phpFile}
+	var out []planLib
 	for _, r := range resolved {
 		l := planLib{Resolved: r}
 		if _, err := os.Lstat(filepath.Join(e.Root, "libs", l.dir())); err == nil { // installed: seed it, do not rebuild
@@ -209,40 +233,45 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 					}
 				}
 				if err := os.MkdirAll(filepath.Join(e.Stage, "libs"), 0o755); err != nil {
-					return err
+					return nil, err
 				}
 				if err := copyLib(ctx, filepath.Join(e.Root, "libs", l.dir()), filepath.Join(e.Stage, "libs", l.dir())); err != nil {
-					return fmt.Errorf("reuse %s: %w", l.dir(), err)
+					return nil, fmt.Errorf("reuse %s: %w", l.dir(), err)
 				}
 			}
 			e.logf("%s: already installed, reused", l.dir())
-			p.Libs = append(p.Libs, l)
+			out = append(out, l)
 			continue
 		}
 		u, err := url.Parse(r.URL)
 		if err != nil || u.Scheme != "https" {
-			return fmt.Errorf("%s: %q is not an https URL", r.Name, r.URL)
+			return nil, fmt.Errorf("%s: %q is not an https URL", r.Name, r.URL)
 		}
 		l.File = path.Base(u.Path)
 		if l.File == "" || l.File == "." || l.File == "/" || strings.ContainsAny(l.File, `\`) {
-			return fmt.Errorf("%s: cannot name the tarball %q", r.Name, r.URL)
+			return nil, fmt.Errorf("%s: cannot name the tarball %q", r.Name, r.URL)
 		}
 		e.logf("downloading %s", r.URL)
 		data, err := e.Get(ctx, r.URL)
 		if err != nil {
-			return fmt.Errorf("download %s: %w", l.dir(), err)
+			return nil, fmt.Errorf("download %s: %w", l.dir(), err)
 		}
 		if err := checkSum(r.Algo, data, r.Sum); err != nil {
-			return fmt.Errorf("%s: %w", l.dir(), err)
+			return nil, fmt.Errorf("%s: %w", l.dir(), err)
 		}
 		if err := os.WriteFile(filepath.Join(src, l.File), data, 0o644); err != nil {
-			return err
+			return nil, err
 		}
 		e.logf("%s: %s verified%s", l.dir(), r.Algo, map[bool]string{true: " (pinned, not feed-tracked)"}[r.Pinned])
-		p.Libs = append(p.Libs, l)
+		out = append(out, l)
 	}
-	// PECL extensions. Packagist and GitHub publish no checksum for these (decided: trust them over HTTPS at the commit
-	// Packagist names), so the log records the commit and the zipball's sha256 for anyone who wants to audit a build.
+	return out, nil
+}
+
+// fetchExts downloads the PECL extension sources. Packagist and GitHub publish no checksum for these (decided: trust
+// them over HTTPS at the commit Packagist names), so the log records the commit and the zipball's sha256 for anyone
+// who wants to audit a build.
+func (e Env) fetchExts(ctx context.Context, src string) ([]planExt, error) {
 	exts := e.Exts
 	if exts == nil {
 		exts = func(ctx context.Context) ([]phplibs.ExtSource, error) {
@@ -259,30 +288,27 @@ func Fetch(ctx context.Context, e Env, dir string) (err error) {
 	}
 	extSrc, err := exts(ctx)
 	if err != nil {
-		return err
+		return nil, err
 	}
+	var out []planExt
 	for _, x := range extSrc {
 		e.logf("downloading %s", x.URL)
 		data, err := e.Get(ctx, x.URL)
 		if err != nil {
-			return fmt.Errorf("download %s %s: %w", x.Name, x.Version, err)
+			return nil, fmt.Errorf("download %s %s: %w", x.Name, x.Version, err)
 		}
 		if len(data) < 4 || string(data[:2]) != "PK" {
-			return fmt.Errorf("%s %s: the download is not a zip file", x.Name, x.Version)
+			return nil, fmt.Errorf("%s %s: the download is not a zip file", x.Name, x.Version)
 		}
 		file := "ext-" + x.Name + "-" + x.Version + ".zip"
 		if err := os.WriteFile(filepath.Join(src, file), data, 0o644); err != nil {
-			return err
+			return nil, err
 		}
 		sum := sha256.Sum256(data)
 		e.logf("%s %s (%s) commit %s sha256 %x: no checksum is published, trusted at that commit over HTTPS", x.Name, x.Version, x.Package, x.Commit, sum)
-		p.Exts = append(p.Exts, planExt{ExtSource: x, File: file})
+		out = append(out, planExt{ExtSource: x, File: file})
 	}
-	pb, _ := json.Marshal(p)
-	if err := os.WriteFile(filepath.Join(dir, "plan.json"), pb, 0o644); err != nil {
-		return err
-	}
-	return SetState(dir, State{Phase: PhaseBuilding, Version: job.Version, N: job.N})
+	return out, nil
 }
 
 // Build compiles the libraries that are not installed yet and then PHP, each into its final prefix under e.Root.
@@ -306,79 +332,20 @@ func Build(ctx context.Context, e Env, dir string) (err error) {
 	if err := SetState(dir, State{Phase: PhaseBuilding, Version: job.Version, N: job.N}); err != nil {
 		return err
 	}
-	src, work := filepath.Join(dir, "src"), filepath.Join(dir, "work")
-	if err := os.MkdirAll(work, 0o755); err != nil {
+	b := builder{Env: e, src: filepath.Join(dir, "src"), work: filepath.Join(dir, "work")}
+	if err := os.MkdirAll(b.work, 0o755); err != nil {
 		return err
 	}
-	run := func(c phplibs.Cmd) error {
-		e.logf("+ %s %s", c.Name, strings.Join(c.Args, " "))
-		return e.Run(ctx, c)
+	deps, err := b.libs(ctx, p.Libs, job.Jobs)
+	if err != nil {
+		return err
 	}
-	unpack := func(file, into string) error {
-		if err := os.MkdirAll(into, 0o755); err != nil {
-			return err
-		}
-		return run(phplibs.Cmd{Dir: work, Name: "tar", Args: []string{"-xf", filepath.Join(src, file), "-C", into}})
+	prefix, err := b.php(ctx, job, p.PHPFile, deps)
+	if err != nil {
+		return err
 	}
-
-	deps := map[string]string{}
-	for _, l := range p.Libs {
-		prefix := filepath.Join(e.Root, "libs", l.dir())
-		if !l.Have {
-			e.logf("== building %s", l.dir())
-			into := filepath.Join(work, l.Name)
-			if err := unpack(l.File, into); err != nil {
-				return fmt.Errorf("unpack %s: %w", l.dir(), err)
-			}
-			srcDir := filepath.Join(into, phplibs.SourceDir(l.Resolved))
-			for _, c := range phplibs.Recipe(l.Resolved, prefix, deps, job.Jobs) {
-				c.Dir = filepath.Join(srcDir, c.Dir)
-				if err := run(c); err != nil {
-					return fmt.Errorf("build %s: %s: %w", l.dir(), c.Name, err)
-				}
-			}
-		}
-		deps[l.Name] = prefix
-	}
-
-	e.logf("== building PHP %s", job.Version)
-	if err := unpack(p.PHPFile, work); err != nil {
-		return fmt.Errorf("unpack php: %w", err)
-	}
-	srcDir := filepath.Join(work, "php-"+job.Version)
-	prefix := filepath.Join(e.Root, job.Label())
-	args, env := PHPConfigure(job.Version, prefix, deps)
-	jobs := fmt.Sprintf("-j%d", max(job.Jobs, 1))
-	for _, c := range []phplibs.Cmd{
-		{Dir: srcDir, Env: env, Name: "./configure", Args: args},
-		{Dir: srcDir, Env: env, Name: "make", Args: []string{jobs}},
-		{Dir: srcDir, Env: env, Name: "make", Args: []string{"install"}},
-	} {
-		if err := run(c); err != nil {
-			return fmt.Errorf("build php: %s: %w", c.Name, err)
-		}
-	}
-	// PECL extensions are built against this PHP with its own phpize, as shared objects into its extension directory.
-	for _, x := range p.Exts {
-		e.logf("== building %s %s", x.Name, x.Version)
-		into := filepath.Join(work, "ext-"+x.Name)
-		if err := unzip(filepath.Join(src, x.File), into); err != nil {
-			return fmt.Errorf("unpack %s: %w", x.Name, err)
-		}
-		top, err := onlyChild(into)
-		if err != nil {
-			return fmt.Errorf("unpack %s: %w", x.Name, err)
-		}
-		cmds := phplibs.ExtRecipe(x.ExtSource, prefix, deps, job.Jobs)
-		if len(cmds) == 0 {
-			return fmt.Errorf("build %s: a library it needs was not built", x.Name)
-		}
-		for _, c := range cmds {
-			c.Dir = filepath.Join(top, c.Dir)
-			if err := run(c); err != nil {
-				return fmt.Errorf("build %s: %s: %w", x.Name, filepath.Base(c.Name), err)
-			}
-		}
+	if err := b.exts(ctx, p.Exts, prefix, deps, job.Jobs); err != nil {
+		return err
 	}
 	var used []string
 	for _, l := range p.Libs {
@@ -388,4 +355,95 @@ func Build(ctx context.Context, e Env, dir string) (err error) {
 		return fmt.Errorf("record the libraries: %w", err)
 	}
 	return SetState(dir, State{Phase: PhaseBuilt, Version: job.Version, N: job.N})
+}
+
+// builder is one Build run: the Env plus the directories Fetch filled (src) and compilation uses (work).
+type builder struct {
+	Env
+	src, work string
+}
+
+func (b builder) run(ctx context.Context, c phplibs.Cmd) error {
+	b.logf("+ %s %s", c.Name, strings.Join(c.Args, " "))
+	return b.Run(ctx, c)
+}
+
+func (b builder) unpack(ctx context.Context, file, into string) error {
+	if err := os.MkdirAll(into, 0o755); err != nil {
+		return err
+	}
+	return b.run(ctx, phplibs.Cmd{Dir: b.work, Name: "tar", Args: []string{"-xf", filepath.Join(b.src, file), "-C", into}})
+}
+
+// libs builds the libraries that are not installed yet and returns every library's prefix by name.
+func (b builder) libs(ctx context.Context, libs []planLib, jobs int) (map[string]string, error) {
+	deps := map[string]string{}
+	for _, l := range libs {
+		prefix := filepath.Join(b.Root, "libs", l.dir())
+		if !l.Have {
+			b.logf("== building %s", l.dir())
+			into := filepath.Join(b.work, l.Name)
+			if err := b.unpack(ctx, l.File, into); err != nil {
+				return nil, fmt.Errorf("unpack %s: %w", l.dir(), err)
+			}
+			srcDir := filepath.Join(into, phplibs.SourceDir(l.Resolved))
+			for _, c := range phplibs.Recipe(l.Resolved, prefix, deps, jobs) {
+				c.Dir = filepath.Join(srcDir, c.Dir)
+				if err := b.run(ctx, c); err != nil {
+					return nil, fmt.Errorf("build %s: %s: %w", l.dir(), c.Name, err)
+				}
+			}
+		}
+		deps[l.Name] = prefix
+	}
+	return deps, nil
+}
+
+// php compiles and installs PHP itself against deps and returns its prefix.
+func (b builder) php(ctx context.Context, job Job, phpFile string, deps map[string]string) (string, error) {
+	b.logf("== building PHP %s", job.Version)
+	if err := b.unpack(ctx, phpFile, b.work); err != nil {
+		return "", fmt.Errorf("unpack php: %w", err)
+	}
+	srcDir := filepath.Join(b.work, "php-"+job.Version)
+	prefix := filepath.Join(b.Root, job.Label())
+	args, env := PHPConfigure(job.Version, prefix, deps)
+	jobs := fmt.Sprintf("-j%d", max(job.Jobs, 1))
+	for _, c := range []phplibs.Cmd{
+		{Dir: srcDir, Env: env, Name: "./configure", Args: args},
+		{Dir: srcDir, Env: env, Name: "make", Args: []string{jobs}},
+		{Dir: srcDir, Env: env, Name: "make", Args: []string{"install"}},
+	} {
+		if err := b.run(ctx, c); err != nil {
+			return "", fmt.Errorf("build php: %s: %w", c.Name, err)
+		}
+	}
+	return prefix, nil
+}
+
+// exts builds the PECL extensions against the PHP just installed, with its own phpize, as shared objects in its
+// extension directory.
+func (b builder) exts(ctx context.Context, exts []planExt, prefix string, deps map[string]string, jobs int) error {
+	for _, x := range exts {
+		b.logf("== building %s %s", x.Name, x.Version)
+		into := filepath.Join(b.work, "ext-"+x.Name)
+		if err := unzip(filepath.Join(b.src, x.File), into); err != nil {
+			return fmt.Errorf("unpack %s: %w", x.Name, err)
+		}
+		top, err := onlyChild(into)
+		if err != nil {
+			return fmt.Errorf("unpack %s: %w", x.Name, err)
+		}
+		cmds, err := phplibs.ExtRecipe(x.ExtSource, prefix, deps, jobs)
+		if err != nil {
+			return fmt.Errorf("build %s: %w", x.Name, err)
+		}
+		for _, c := range cmds {
+			c.Dir = filepath.Join(top, c.Dir)
+			if err := b.run(ctx, c); err != nil {
+				return fmt.Errorf("build %s: %s: %w", x.Name, filepath.Base(c.Name), err)
+			}
+		}
+	}
+	return nil
 }

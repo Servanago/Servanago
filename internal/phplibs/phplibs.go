@@ -21,6 +21,20 @@ type Getter func(ctx context.Context, url string) ([]byte, error)
 type Resolved struct {
 	Name, Version, URL, Algo, Sum string
 	Pinned                        bool
+	Rev                           int // recipe revision, from recipeRev: part of the installed directory's name
+}
+
+// recipeRev is bumped, per library, whenever its recipe in recipe.go changes in a way that alters the installed files
+// (a flag, a patch, a dependency). An installed library directory is never replaced, so without the bump an old build
+// of the same version would be reused forever. Absent = revision 0 = the plain name every installed library has.
+var recipeRev = map[string]int{}
+
+// Dir is the library's directory name under libs/: name-version, plus -rN once its recipe has been revised.
+func Dir(r Resolved) string {
+	if r.Rev > 0 {
+		return fmt.Sprintf("%s-%s-r%d", r.Name, r.Version, r.Rev)
+	}
+	return r.Name + "-" + r.Version
 }
 
 // pinned holds the libraries whose projects publish no sha256 in any feed (GPG signature or md5 only). Each
@@ -114,7 +128,7 @@ func Resolve(ctx context.Context, get Getter, name string) (Resolved, error) {
 	if err != nil {
 		return Resolved{}, fmt.Errorf("%s: %w", name, err)
 	}
-	r.Name = name
+	r.Name, r.Rev = name, recipeRev[name]
 	switch {
 	case !versionRE.MatchString(r.Version):
 		return Resolved{}, fmt.Errorf("%s: version %q is not a plain dotted number", name, r.Version)
