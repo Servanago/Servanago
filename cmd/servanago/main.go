@@ -44,6 +44,8 @@ func main() {
 			cmd = runHelper
 		case "php-job":
 			cmd = func() error { return runPHPJob(os.Args[2:]) }
+		case "update-job":
+			cmd = func() error { return runUpdateJob(os.Args[2:]) }
 		case "backup-job":
 			cmd = func() error { return runBackupJob(os.Args[2:]) }
 		case "backup":
