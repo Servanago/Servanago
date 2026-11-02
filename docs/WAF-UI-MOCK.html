@@ -1,0 +1,276 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServanaGo WAF tab mock</title>
+<meta name="description" content="M12 design mock: the site WAF tab with five preset profiles, events with click-to-tune, exclusion rows, category boxes and the rules browser.">
+<style>
+:root {
+  color-scheme: dark;
+  /* ServanaGo brand greens (asset pack tokens), copied from internal/web/static/servanago.css */
+  --sg-green-950: #063D2B; --sg-green-900: #075A3D; --sg-green-800: #08764B; --sg-green-700: #0D9B49;
+  --sg-green-600: #25B85B; --sg-green-500: #53D769; --sg-green-400: #83E65C; --sg-green-300: #A7F078;
+  --sg-white: #FFFFFF;
+  --sg-bg: #10191B; --sg-surface: #172326; --sg-surface-raised: #1F2F33; --sg-border: #344447;
+  --sg-text: #F1F5F4; --sg-text-secondary: #C7D0D2; --sg-text-muted: #8A999D;
+  --sg-accent: var(--sg-green-400);
+  --sg-success: #53D769; --sg-warning: #C98619; --sg-danger: #F07A81; --sg-info: #5FA8EE;
+  --sg-radius-sm: 6px; --sg-radius-md: 10px; --sg-radius-lg: 16px;
+  --sg-shadow-panel: 0 8px 24px rgba(0,0,0,.22);
+  --sg-shadow-focus: 0 0 0 3px rgba(131,230,92,.28);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { font-size: 15px; }
+body { margin: 0; background: var(--sg-bg); color: var(--sg-text); font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+a { color: var(--sg-text-secondary); text-decoration: none; }
+:focus-visible { outline: 2px solid var(--sg-accent); outline-offset: 2px; }
+
+.mocknote { max-width: 74rem; margin: 0.9rem auto 0; padding: 0.55rem 1rem; border: 1px dashed var(--sg-border); border-radius: 10px;
+  color: var(--sg-text-muted); font-size: 0.85rem; }
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--sg-surface); border-bottom: 1px solid var(--sg-border); padding: 0 1.4rem; margin-inline: -16px; }
+.topbar-in { max-width: 74rem; margin: 0 auto; display: flex; align-items: center; gap: 1.1rem; min-height: 3.4rem; }
+.brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--sg-text); white-space: nowrap; flex: none; }
+.wordmark { font-size: 1.2rem; font-weight: 700; letter-spacing: 0.01em; }
+.wordmark b { color: var(--sg-accent); font-weight: 700; }
+.topnav { display: flex; gap: 0.1rem; overflow-x: auto; scrollbar-width: none; min-width: 0; align-items: center; }
+.topnav::-webkit-scrollbar { display: none; }
+.topnav a { display: inline-flex; padding: 0.42rem 0.7rem; border-radius: 6px; color: var(--sg-text-secondary); white-space: nowrap; font-size: 0.88rem; }
+.topnav a:hover { background: var(--sg-surface-raised); color: var(--sg-text); }
+.topnav a[aria-current="page"] { background: var(--sg-surface-raised); color: var(--sg-text); font-weight: 600; }
+.usermenu { margin-left: auto; flex: none; padding: 0.35rem 0.75rem; border: 1px solid var(--sg-border); border-radius: 999px; background: var(--sg-surface-raised); color: var(--sg-text-secondary); font-size: 0.85rem; white-space: nowrap; }
+
+main.content { max-width: 74rem; margin: 0 auto; padding: 1.6rem 0 4rem; }
+.crumb { margin: 0 0 0.3rem; font-size: 0.9rem; color: var(--sg-text-muted); }
+.crumb a:hover { color: var(--sg-text); }
+main.content h1 { margin: 0 0 0.35rem; font-size: 1.75rem; line-height: 1.2; letter-spacing: -0.02em; }
+.kindrow { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.2rem 0 1.1rem; }
+
+.tabs { display: flex; gap: 0.15rem; border-bottom: 1px solid var(--sg-border); margin: 0.2rem 0 1.4rem; overflow-x: auto; max-width: 60rem; }
+.tabs a { padding: 0.42rem 0.7rem; border-bottom: 2px solid transparent; color: var(--sg-text-secondary); white-space: nowrap; font-size: 0.92rem; }
+.tabs a:hover { background: var(--sg-surface-raised); color: var(--sg-text); }
+.tabs a.sel { color: var(--sg-green-400); border-bottom-color: var(--sg-green-400); font-weight: 600; }
+
+.sect { border: 1px solid var(--sg-border); border-radius: var(--sg-radius-lg); background: var(--sg-surface); padding: 1.1rem 1.3rem; margin-bottom: 1.2rem; max-width: 56rem; }
+.sect h2 { margin: 0 0 0.2rem; font-size: 1.15rem; }
+.sect-note { margin: 0 0 1.1rem; color: var(--sg-text-muted); font-size: 0.92rem; }
+.sect h3 { margin: 1.4rem 0 0.5rem; font-size: 0.95rem; color: var(--sg-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.chip { display: inline-block; padding: 0.05rem 0.6rem; border-radius: 999px; background: var(--sg-surface-raised); color: var(--sg-text-secondary); font-size: 0.78rem; white-space: nowrap; }
+.chip.ok { color: var(--sg-success); } .chip.warn { color: var(--sg-warning); } .chip.info { color: var(--sg-info); } .chip.bad { color: var(--sg-danger); }
+.tag { display: inline-block; padding: 0.05rem 0.55rem; border-radius: 999px; border: 1px solid var(--sg-border); color: var(--sg-text-muted); font-size: 0.74rem; white-space: nowrap; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+th { color: var(--sg-text-secondary); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; }
+th, td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--sg-border); vertical-align: top; }
+tbody tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+td.mono, code { font-family: var(--mono); font-size: 0.84rem; }
+td.actions { white-space: nowrap; text-align: right; }
+td small { display: block; color: var(--sg-text-muted); max-width: 16rem; overflow-wrap: anywhere; }
+
+label { display: block; margin-bottom: 0.9rem; font-size: 0.92rem; color: var(--sg-text-secondary); }
+label > input, label > select, label > textarea { display: block; margin-top: 0.3rem; width: 100%; max-width: 30rem; }
+input, select, textarea { font: inherit; color: var(--sg-text); background: var(--sg-bg); border: 1px solid var(--sg-border); border-radius: var(--sg-radius-sm); padding: 0.45rem 0.7rem; }
+input:focus, select:focus, textarea:focus { border-color: var(--sg-accent); box-shadow: var(--sg-shadow-focus); outline: 0; }
+textarea { font-family: var(--mono); font-size: 0.84rem; line-height: 1.6; }
+select { max-width: 30rem; }
+input[type="checkbox"] { width: auto; }
+
+button, a.btn { font: inherit; display: inline-flex; align-items: center; gap: 0.4rem; width: auto; cursor: pointer;
+  padding: 0.5rem 1rem; border: 1px solid var(--sg-green-700); border-radius: var(--sg-radius-sm); background: var(--sg-green-800); color: var(--sg-white); font-weight: 600; }
+button:hover { background: var(--sg-green-900); }
+button.outline { background: transparent; color: var(--sg-accent); border-color: var(--sg-accent); font-weight: 500; }
+button.outline:hover { background: color-mix(in srgb, var(--sg-accent) 14%, transparent); }
+button.danger { background: transparent; color: var(--sg-danger); border-color: var(--sg-danger); font-weight: 500; }
+button.danger:hover { background: rgba(240,122,129,.14); }
+button.mini { padding: 0.3rem 0.7rem; font-size: 0.85rem; font-weight: 500; }
+.actions .mini + .mini { margin-left: 0.3rem; }
+
+pre { background: var(--sg-bg); border: 1px solid var(--sg-border); border-radius: var(--sg-radius-sm); padding: 0.7rem 0.9rem;
+  font-family: var(--mono); font-size: 0.8rem; line-height: 1.65; color: var(--sg-text-secondary); overflow-x: auto; max-width: 48rem; margin: 0 0 0.9rem; }
+.checks { list-style: none; margin: 0 0 0.9rem; padding: 0; display: flex; flex-wrap: wrap; gap: 0.35rem 1.1rem; }
+.checks label { display: inline-flex; align-items: center; gap: 0.4rem; margin: 0; }
+.checks label > input { margin: 0; width: auto; }
+.empty { padding: 1.2rem 1.4rem; border: 1px dashed var(--sg-border); border-radius: var(--sg-radius-lg); color: var(--sg-text-secondary); }
+@media (max-width: 700px) { th, td { overflow-wrap: anywhere; } .hide-phone { display: none; } }
+</style>
+</head>
+<body>
+<div class="mocknote">Design mock for M12 (review artifact, not a build). Same tokens and layout as the panel's site tabs. Everything shown is example data: site <b>waf.example.test</b>, PHP ecommerce shop.</div>
+
+<header class="topbar"><div class="topbar-in">
+  <a class="brand" href="#"><span class="wordmark">Servana<b>Go</b></span></a>
+  <nav class="topnav" aria-label="Main">
+    <a href="#" aria-current="page">Sites</a><a href="#">DNS</a><a href="#">Domains</a><a href="#">Backups</a><a href="#">Scan</a><a href="#">Mail</a><a href="#">Logs</a>
+  </nav>
+  <span class="usermenu">Menu</span>
+</div></header>
+
+<main class="content">
+  <p class="crumb"><a href="#">Sites</a> &nbsp;/&nbsp; waf.example.test</p>
+  <h1>waf.example.test</h1>
+  <div class="kindrow">
+    <span class="chip">php</span><span class="chip">unit servanago-waf.service</span><span class="chip ok">up</span><span class="chip info">cert issued</span>
+  </div>
+
+  <nav class="tabs" aria-label="Site sections">
+    <a href="#">Settings</a><a href="#">DNS</a><a href="#">SSL</a><a href="#">Scan</a><a href="#">Backups</a><a href="#">Mail</a><a href="#">Snippets</a>
+    <a href="#">Runtime</a><a href="#">Gate</a><a href="#">Routes</a><a href="#">Countries</a><a href="#" class="sel">WAF</a>
+  </nav>
+
+  <!-- ============ 1. RULESET ============ -->
+  <section class="sect" id="panel-waf">
+    <h2>Web application firewall</h2>
+    <p class="sect-note">The OWASP CRS ruleset compiled into ServanaGo inspects every request this site serves. Matches are recorded in Events below; nothing is blocked until you switch the engine on.</p>
+
+    <p><span class="chip ok">Profile: PHP ecommerce</span> <span class="chip warn">Engine: DetectionOnly</span> <span class="chip info">18 rules matched, 3 blocked, last 24 h</span></p>
+
+    <label>Ruleset
+      <select name="waf">
+        <option>Off (no inspection)</option>
+        <option>OWASP CRS (detection only)</option>
+        <option>Profile: PHP generic</option>
+        <option selected>Profile: PHP ecommerce</option>
+        <option>Profile: WordPress</option>
+        <option>Profile: Go / generic API</option>
+        <option>Profile: Node / JSON API</option>
+        <option>OWASP CRS plus custom rules</option>
+      </select>
+    </label>
+
+    <label>Engine mode
+      <select name="waf_mode">
+        <option selected>Log only (detection)</option>
+        <option>Block requests the ruleset rejects</option>
+      </select>
+    </label>
+    <p class="sect-note" style="margin-top:-0.6rem">Detection writes every match into Events without refusing anything; Blocking answers 403 the moment a rule fires. You tune in detection first, then flip this to block.</p>
+
+    <p class="sect-note" style="margin-bottom:0.4rem"><strong style="color:var(--sg-text-secondary)">What this profile ships</strong> — read-only; switch to <b>OWASP CRS plus custom rules</b> to write your own on top.</p>
+<pre>Include @coraza.conf-recommended
+Include @crs-setup.conf.example
+Include @owasp_crs/*.conf
+SecRuleEngine DetectionOnly
+SecAction "id:900110,phase:1,pass,t:none,setvar:tx.paranoia_level=1"
+
+# PHP ecommerce profile exclusions (updated with each CRS release):
+SecRuleRemoveByTag attack-rce
+SecRuleUpdateTargetById 942330 "!ARGS:address_1"
+SecRuleUpdateTargetById 941000 "!ARGS:gift_message"</pre>
+
+    <button type="button">Save WAF</button>
+  </section>
+
+  <!-- ============ 2. EVENTS ============ -->
+  <section class="sect" id="panel-waf-events">
+    <h2>Events</h2>
+    <p class="sect-note">One row per matched rule, newest first; the totals above name the noisiest ones. Click a row's buttons to tune the ruleset for this site: <span class="chip warn">Disable</span> removes the rule here entirely, <span class="chip info">Narrow</span> keeps the rule but stops it looking at the exact request item that tripped it.</p>
+
+    <h3>Most active rules today</h3>
+    <table>
+      <thead><tr><th>Rule</th><th class="hide-phone">Category</th><th>Matches</th><th>Last seen</th><th class="hide-phone">Example path</th><th></th></tr></thead>
+      <tbody>
+        <tr>
+          <td class="mono">942100<small>SQL injection via libinjection</small></td>
+          <td class="hide-phone"><span class="tag">attack-sqli</span></td>
+          <td class="num">214</td><td class="num">4 min ago</td><td class="hide-phone mono">/?q=old+shoes</td>
+          <td class="actions"><button class="mini" type="button">Narrow</button><button class="mini danger" type="button">Disable</button></td>
+        </tr>
+        <tr>
+          <td class="mono">941100<small>XSS detected via libinjection</small></td>
+          <td class="hide-phone"><span class="tag">attack-xss</span></td>
+          <td class="num">61</td><td class="num">1 h ago</td><td class="hide-phone mono">/search?q=</td>
+          <td class="actions"><button class="mini" type="button">Narrow</button><button class="mini danger" type="button">Disable</button></td>
+        </tr>
+        <tr>
+          <td class="mono">932236<small>RCE: unix shell injection</small></td>
+          <td class="hide-phone"><span class="tag">attack-rce</span></td>
+          <td class="num">9</td><td class="num">3 h ago</td><td class="hide-phone mono">/wp-login.php</td>
+          <td class="actions"><button class="mini" type="button">Narrow</button><button class="mini danger" type="button">Disable</button></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Newest matches</h3>
+    <table>
+      <thead><tr><th>Time</th><th>Rule</th><th class="hide-phone">Request</th><th>Verdict</th><th></th></tr></thead>
+      <tbody>
+        <tr><td class="num" style="white-space:nowrap">14:32:09</td><td class="mono">942100<small>ARGS:q</small></td><td class="hide-phone mono">GET /?q=old%20shoes</td><td><span class="chip warn">detect only</span></td><td class="actions"><button class="mini" type="button">Narrow</button><button class="mini danger" type="button">Disable</button></td></tr>
+        <tr><td class="num" style="white-space:nowrap">14:31:58</td><td class="mono">942100<small>ARGS:q</small></td><td class="hide-phone mono">GET /?q=old+shoes</td><td><span class="chip warn">detect only</span></td><td class="actions"><button class="mini" type="button">Narrow</button><button class="mini danger" type="button">Disable</button></td></tr>
+        <tr><td class="num" style="white-space:nowrap">14:30:12</td><td class="mono">930120<small>ARGS:p = /etc/passwd</small></td><td class="hide-phone mono">GET /?p=/etc/passwd</td><td><span class="chip bad">blocked (403)</span></td><td class="actions"><button class="mini" type="button">Narrow</button><button class="mini danger" type="button">Disable</button></td></tr>
+        <tr><td class="num" style="white-space:nowrap">14:29:47</td><td class="mono">920350<small>host header is an IP literal</small></td><td class="hide-phone mono">HEAD /</td><td><span class="chip bad">blocked (403)</span></td><td class="actions"><button class="mini" type="button">Narrow</button><button class="mini danger" type="button">Disable</button></td></tr>
+        <tr><td class="num" style="white-space:nowrap">14:29:40</td><td class="mono">941100<small>ARGS:gift_message</small></td><td class="hide-phone mono">POST /cart/checkout</td><td><span class="chip warn">detect only</span></td><td class="actions"><button class="mini" type="button">Narrow</button><button class="mini danger" type="button">Disable</button></td></tr>
+      </tbody>
+    </table>
+    <p class="sect-note" style="margin:0.7rem 0 0">Rows cap at 10,000 and age out like the audit log. Every match also lands in the journal as before.</p>
+  </section>
+
+  <!-- ============ 3. EXCLUSIONS ============ -->
+  <section class="sect" id="panel-waf-exclusions">
+    <h2>Exclusions</h2>
+    <p class="sect-note">The per-site rules you removed or narrowed here (your choice, distinct from what the profile ships). An exclusion reverts by deleting its row.</p>
+    <table>
+      <thead><tr><th>Kind</th><th>Rule</th><th class="hide-phone">Target</th><th class="hide-phone">Note</th><th class="hide-phone">Added</th><th></th></tr></thead>
+      <tbody>
+        <tr><td><span class="chip info">narrow</span></td><td class="mono">942330</td><td class="hide-phone mono">!ARGS:address_1</td><td class="hide-phone"><small>checkout address trips SQLi pattern</small></td><td class="hide-phone"><small>admin · today 14:05</small></td><td class="actions"><button class="mini danger" type="button">Remove</button></td></tr>
+        <tr><td><span class="chip warn">remove</span></td><td class="mono">932236</td><td class="hide-phone mono">—</td><td class="hide-phone"><small>shell-injection rule noisy on wp-login probes</small></td><td class="hide-phone"><small>admin · yesterday</small></td><td class="actions"><button class="mini danger" type="button">Remove</button></td></tr>
+      </tbody>
+    </table>
+
+    <h3>Add an exclusion</h3>
+    <form onsubmit="return false">
+      <label>Kind
+        <select><option>Remove the rule here (SecRuleRemoveById)</option><option>Narrow the rule (SecRuleUpdateTargetById)</option></select>
+      </label>
+      <label>Rule id <input type="text" inputmode="numeric" value="942100" placeholder="942100"></label>
+      <label>Target (for narrowing) <input type="text" placeholder="!ARGS:q"></label>
+      <label>Note <input type="text" value="shop search fires 942100 on ordinary words" placeholder="why this rule needed tuning"></label>
+      <button type="button">Add exclusion</button>
+    </form>
+
+    <h3>Category boxes</h3>
+    <p class="sect-note">Tick a CRS category to stop the site evaluating all of its rules (one <span class="mono">SecRuleRemoveByTag</span> exclusion per tick).</p>
+    <ul class="checks">
+      <li><label><input type="checkbox"> <span class="mono">attack-sqli</span> <span class="tag">942</span></label></li>
+      <li><label><input type="checkbox"> <span class="mono">attack-xss</span> <span class="tag">941</span></label></li>
+      <li><label><input type="checkbox"> <span class="mono">attack-rce</span> <span class="tag">932</span></label></li>
+      <li><label><input type="checkbox"> <span class="mono">attack-lfi</span> <span class="tag">930</span></label></li>
+      <li><label><input type="checkbox"> <span class="mono">attack-php</span> <span class="tag">933</span></label></li>
+      <li><label><input type="checkbox"> <span class="mono">attack-generic-webshell</span> <span class="tag">934</span></label></li>
+    </ul>
+    <button type="button" class="outline">Add checked categories as exclusions</button>
+  </section>
+
+  <!-- ============ 4. RULES BROWSER ============ -->
+  <section class="sect" id="panel-waf-rules">
+    <h2>Rules browser</h2>
+    <p class="sect-note">Read-only view of the ruleset compiled into this ServanaGo (CRS v4.30.0). A rule page pairs with the events table: clicking <b>Disable</b> there adds the exclusion here and in the list above.</p>
+    <table>
+      <thead><tr><th>Rules file</th><th class="num">Rules</th><th class="hide-phone">Category</th><th></th></tr></thead>
+      <tbody>
+        <tr><td class="mono">REQUEST-920-PROTOCOL-ENFORCEMENT</td><td class="num">23</td><td class="hide-phone"><span class="tag">protocol</span></td><td class="actions"><a class="mini" href="#">Open</a></td></tr>
+        <tr><td class="mono">REQUEST-930-APPLICATION-ATTACK-LFI</td><td class="num">19</td><td class="hide-phone"><span class="tag">attack-lfi</span></td><td class="actions"><a class="mini" href="#">Open</a></td></tr>
+        <tr><td class="mono">REQUEST-932-APPLICATION-ATTACK-RCE</td><td class="num">52</td><td class="hide-phone"><span class="tag">attack-rce</span></td><td class="actions"><a class="mini" href="#">Open</a></td></tr>
+        <tr><td class="mono">REQUEST-941-APPLICATION-ATTACK-XSS</td><td class="num">31</td><td class="hide-phone"><span class="tag">attack-xss</span></td><td class="actions"><a class="mini" href="#">Open</a></td></tr>
+        <tr><td class="mono">REQUEST-942-APPLICATION-ATTACK-SQLI</td><td class="num">70</td><td class="hide-phone"><span class="tag">attack-sqli</span></td><td class="actions"><a class="mini" href="#">Open</a></td></tr>
+        <tr><td class="mono"><small>+ 26 more files, 600+ rules in total</small></td><td class="num"></td><td class="hide-phone"></td><td class="actions"></td></tr>
+      </tbody>
+    </table>
+    <h3 style="margin-bottom:0.4rem">REQUEST-942 — sample of the detail page</h3>
+    <table>
+      <thead><tr><th>Id</th><th>Message</th><th class="hide-phone">Phase</th><th class="hide-phone">Tags</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">942100</td><td>SQL injection detected via libinjection</td><td class="hide-phone">2</td><td class="hide-phone"><span class="tag">attack-sqli</span></td></tr>
+        <tr><td class="mono">942380</td><td>SQL conditional detection</td><td class="hide-phone">2</td><td class="hide-phone"><span class="tag">attack-sqli</span></td></tr>
+        <tr><td class="mono">942390</td><td>SQL comment sequence</td><td class="hide-phone">2</td><td class="hide-phone"><span class="tag">attack-sqli</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <p class="sect-note">Not in this mock: rate limiting — its own fieldset is mocked in <a href="#">RATELILMITING_UI_MOCK.html</a>. The engine's per-request state (rate limit counters) is in-memory and survives until the panel restarts.</p>
+</main>
+</body>
+</html>

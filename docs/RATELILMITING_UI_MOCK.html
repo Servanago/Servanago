@@ -1,0 +1,157 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServanaGo rate limit mock</title>
+<meta name="description" content="M12 design mock: the per-site rate limit fieldset as it will appear on the WAF tab — per-IP fixed window with optional path scoping.">
+<style>
+:root {
+  color-scheme: dark;
+  --sg-green-950: #063D2B; --sg-green-900: #075A3D; --sg-green-800: #08764B; --sg-green-700: #0D9B49;
+  --sg-green-600: #25B85B; --sg-green-500: #53D769; --sg-green-400: #83E65C; --sg-green-300: #A7F078;
+  --sg-white: #FFFFFF;
+  --sg-bg: #10191B; --sg-surface: #172326; --sg-surface-raised: #1F2F33; --sg-border: #344447;
+  --sg-text: #F1F5F4; --sg-text-secondary: #C7D0D2; --sg-text-muted: #8A999D;
+  --sg-accent: var(--sg-green-400);
+  --sg-success: #53D769; --sg-warning: #C98619; --sg-danger: #F07A81; --sg-info: #5FA8EE;
+  --sg-radius-sm: 6px; --sg-radius-md: 10px; --sg-radius-lg: 16px;
+  --sg-shadow-panel: 0 8px 24px rgba(0,0,0,.22);
+  --sg-shadow-focus: 0 0 0 3px rgba(131,230,92,.28);
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html { font-size: 15px; }
+body { margin: 0; background: var(--sg-bg); color: var(--sg-text); font: 1rem/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+a { color: var(--sg-text-secondary); text-decoration: none; }
+:focus-visible { outline: 2px solid var(--sg-accent); outline-offset: 2px; }
+
+.mocknote { max-width: 74rem; margin: 0.9rem auto 0; padding: 0.55rem 1rem; border: 1px dashed var(--sg-border); border-radius: 10px;
+  color: var(--sg-text-muted); font-size: 0.85rem; }
+.topbar { position: sticky; top: 0; z-index: 20; background: var(--sg-surface); border-bottom: 1px solid var(--sg-border); padding: 0 1.4rem; margin-inline: -16px; }
+.topbar-in { max-width: 74rem; margin: 0 auto; display: flex; align-items: center; gap: 1.1rem; min-height: 3.4rem; }
+.brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--sg-text); white-space: nowrap; flex: none; }
+.wordmark { font-size: 1.2rem; font-weight: 700; }
+.wordmark b { color: var(--sg-accent); font-weight: 700; }
+.topnav { display: flex; gap: 0.1rem; overflow-x: auto; scrollbar-width: none; min-width: 0; align-items: center; }
+.topnav::-webkit-scrollbar { display: none; }
+.topnav a { display: inline-flex; padding: 0.42rem 0.7rem; border-radius: 6px; color: var(--sg-text-secondary); white-space: nowrap; font-size: 0.88rem; }
+.topnav a:hover { background: var(--sg-surface-raised); color: var(--sg-text); }
+.topnav a[aria-current="page"] { background: var(--sg-surface-raised); color: var(--sg-text); font-weight: 600; }
+.usermenu { margin-left: auto; flex: none; padding: 0.35rem 0.75rem; border: 1px solid var(--sg-border); border-radius: 999px; background: var(--sg-surface-raised); color: var(--sg-text-secondary); font-size: 0.85rem; white-space: nowrap; }
+
+main.content { max-width: 74rem; margin: 0 auto; padding: 1.6rem 0 4rem; }
+.crumb { margin: 0 0 0.3rem; font-size: 0.9rem; color: var(--sg-text-muted); }
+main.content h1 { margin: 0 0 0.35rem; font-size: 1.75rem; line-height: 1.2; letter-spacing: -0.02em; }
+.kindrow { display: flex; gap: 0.4rem; flex-wrap: wrap; margin: 0.2rem 0 1.1rem; }
+
+.tabs { display: flex; gap: 0.15rem; border-bottom: 1px solid var(--sg-border); margin: 0.2rem 0 1.4rem; overflow-x: auto; max-width: 60rem; }
+.tabs a { padding: 0.42rem 0.7rem; border-bottom: 2px solid transparent; color: var(--sg-text-secondary); white-space: nowrap; font-size: 0.92rem; }
+.tabs a:hover { background: var(--sg-surface-raised); color: var(--sg-text); }
+.tabs a.sel { color: var(--sg-green-400); border-bottom-color: var(--sg-green-400); font-weight: 600; }
+
+.sect { border: 1px solid var(--sg-border); border-radius: var(--sg-radius-lg); background: var(--sg-surface); padding: 1.1rem 1.3rem; margin-bottom: 1.2rem; max-width: 56rem; }
+.sect h2 { margin: 0 0 0.2rem; font-size: 1.15rem; }
+.sect-note { margin: 0 0 1.1rem; color: var(--sg-text-muted); font-size: 0.92rem; }
+.sect h3 { margin: 1.4rem 0 0.5rem; font-size: 0.95rem; color: var(--sg-text-secondary); text-transform: uppercase; letter-spacing: 0.05em; }
+
+.chip { display: inline-block; padding: 0.05rem 0.6rem; border-radius: 999px; background: var(--sg-surface-raised); color: var(--sg-text-secondary); font-size: 0.78rem; white-space: nowrap; }
+.chip.ok { color: var(--sg-success); } .chip.warn { color: var(--sg-warning); } .chip.info { color: var(--sg-info); } .chip.bad { color: var(--sg-danger); }
+fieldset { border: 1px solid var(--sg-border); border-radius: var(--sg-radius-md); padding: 0.75rem 1rem; margin: 0 0 1rem; }
+legend { color: var(--sg-text-secondary); padding: 0 0.4rem; font-size: 0.9rem; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+th { color: var(--sg-text-secondary); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; text-align: left; }
+th, td { padding: 0.5rem 0.6rem; border-bottom: 1px solid var(--sg-border); vertical-align: top; }
+tbody tr:last-child td { border-bottom: 0; }
+td.num { font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+td.mono, code { font-family: var(--mono); font-size: 0.84rem; }
+td small { display: block; color: var(--sg-text-muted); }
+
+label { display: block; margin-bottom: 0.9rem; font-size: 0.92rem; color: var(--sg-text-secondary); }
+label > input, label > select, label > textarea { display: block; margin-top: 0.3rem; width: 100%; max-width: 30rem; }
+input, select, textarea { font: inherit; color: var(--sg-text); background: var(--sg-bg); border: 1px solid var(--sg-border); border-radius: var(--sg-radius-sm); padding: 0.45rem 0.7rem; }
+input:focus, select:focus, textarea:focus { border-color: var(--sg-accent); box-shadow: var(--sg-shadow-focus); outline: 0; }
+
+button { font: inherit; width: auto; cursor: pointer; padding: 0.5rem 1rem;
+  border: 1px solid var(--sg-green-700); border-radius: var(--sg-radius-sm); background: var(--sg-green-800); color: var(--sg-white); font-weight: 600; }
+button:hover { background: var(--sg-green-900); }
+button.outline { background: transparent; color: var(--sg-accent); border-color: var(--sg-accent); font-weight: 500; }
+
+/* bar rows for the demo meter */
+.bar { min-width: 0; background: var(--sg-surface-raised); position: relative; height: 1.05rem; border-radius: 999px; overflow: hidden; }
+.bar > i { position: absolute; inset: 0 auto 0 0; border-radius: 999px; background: var(--sg-green-700); }
+.bar > i.over { background: var(--sg-danger); }
+.bar > i.near { background: var(--sg-warning); }
+td .bar { display: block; }
+@media (max-width: 700px) { th, td { overflow-wrap: anywhere; } .hide-phone { display: none; } }
+</style>
+</head>
+<body>
+<div class="mocknote">Design mock for M12 (review artifact, not a build). This is the <b>Rate limiting</b> fieldset as it will sit at the bottom of the site's WAF tab; the WAF table content above it is mocked in WAF-UI-MOCK.html. Example data: site <b>shop.example.test</b>, limit on.</div>
+
+<header class="topbar"><div class="topbar-in">
+  <a class="brand" href="#"><span class="wordmark">Servana<b>Go</b></span></a>
+  <nav class="topnav" aria-label="Main">
+    <a href="#" aria-current="page">Sites</a><a href="#">DNS</a><a href="#">Domains</a><a href="#">Backups</a><a href="#">Scan</a><a href="#">Mail</a><a href="#">Logs</a>
+  </nav>
+  <span class="usermenu">Menu</span>
+</div></header>
+
+<main class="content">
+  <p class="crumb"><a href="#">Sites</a> &nbsp;/&nbsp; shop.example.test</p>
+  <h1>shop.example.test</h1>
+  <div class="kindrow">
+    <span class="chip">php</span><span class="chip ok">unit up</span><span class="chip info">cert issued</span><span class="chip warn">rate limit on</span>
+  </div>
+  <nav class="tabs" aria-label="Site sections">
+    <a href="#">Settings</a><a href="#">DNS</a><a href="#">SSL</a><a href="#">Scan</a><a href="#">Backups</a><a href="#">Mail</a><a href="#">Snippets</a>
+    <a href="#">Runtime</a><a href="#">Gate</a><a href="#">Routes</a><a href="#">Countries</a><a href="#" class="sel">WAF</a>
+  </nav>
+
+  <section class="sect" id="panel-ratelimit">
+    <h2>Rate limiting</h2>
+    <p class="sect-note">Per client IP: count the requests each address makes against this site over the window you name. When one address goes over the limit, it answers <span class="mono">429</span> until the window passes; the client IP is the one Cloudflare names in <span class="mono">CF-Connecting-IP</span> or the connecting address. Counters live in the panel process: a restart clears them.</p>
+
+    <p><span class="chip ok">Limit: 120 requests / 5 min</span> <span class="chip info">Scope: /login, /cart/checkout only</span> <span class="chip warn">7 addresses limited in the last hour</span></p>
+
+    <form onsubmit="return false">
+      <label>Requests per address over the window (blank = no limit)
+        <input type="number" inputmode="numeric" value="120" min="1" max="1000000">
+      </label>
+      <label>Window
+        <select>
+          <option>1 minute</option><option selected>5 minutes</option><option>1 hour</option>
+        </select>
+      </label>
+      <label>Limit only these paths (one per line; blank = the whole site)
+<textarea rows="3" placeholder="/login
+/cart/checkout">/login
+/cart/checkout</textarea>
+      </label>
+      <button type="button">Save rate limit</button>
+    </form>
+
+    <h3>This window, per client IP</h3>
+    <table>
+      <thead><tr><th>Client</th><th class="num">Requests</th><th style="min-width:14rem">Window use</th><th>State</th><th class="hide-phone">Limited at</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">203.0.113.24</td><td class="num">118 / 120</td><td><span class="bar"><i class="near" style="width:96%"></i></span></td><td><span class="chip warn">near</span></td><td class="hide-phone"><small>—</small></td></tr>
+        <tr><td class="mono">203.0.113.71</td><td class="num">121 / 120</td><td><span class="bar"><i class="over" style="width:100%"></i></span></td><td><span class="chip bad">limited (429)</span></td><td class="hide-phone"><small>14:20:04</small></td></tr>
+        <tr><td class="mono">203.0.113.9</td><td class="num">44 / 120</td><td><span class="bar"><i style="width:37%"></i></span></td><td><span class="chip ok">ok</span></td><td class="hide-phone"><small>—</small></td></tr>
+      </tbody>
+    </table>
+    <p class="sect-note" style="margin:0.7rem 0 0">Counts reset with the window. The panel keeps at most one million (IP, path) keys so a flood of unique addresses cannot grow the memory past that bound.</p>
+
+    <h3>What an over-the-limit client sees</h3>
+<pre>HTTP/2 429
+content-type: text/plain; charset=utf-8
+retry-after: 12
+
+Too many requests. Wait the window out and try again.</pre>
+    <p class="sect-note">Only the over-the-limit address is refused; every other visitor is unaffected. The site's own health checks (the panel's probes, loopback) are never counted.</p>
+  </section>
+</main>
+</body>
+</html>

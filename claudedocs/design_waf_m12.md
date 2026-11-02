@@ -10,6 +10,13 @@ Requirements settled 2026-11-02 with Brian (six AskUserQuestion answers, this se
 4. **Events**: one row per matched rule with the verdict (deny / detect-only); capped ~10k like the audit log; per-site list + per-rule aggregates drive the tuning loop.
 5. **Rate limiting**: per-IP fixed window, N requests/window, optional path scoping (one path per line), in-memory, like caddy-waf's model.
 6. **CRS updates**: every release bumps the pinned CRS (no Settings pin, no LTS default); release notes call it out.
+7. **Engine mode per site** (Brian's flag, same day, after mock review): every preset/profile/`custom`
+   site picks the engine mode from the Ruleset section — **Detection only** (default) or **Blocking**.
+   A new `sites.waf_mode` (`''` = detect, `detect`, `block`) is the single owner of the
+   `SecRuleEngine` line: the renderer emits exactly one `SecRuleEngine` directive, last in the
+   composed tail, so the profile and the admin tail can never fight over it. `wafval` drops
+   `SecRuleEngine` from the allowed set: a tail containing it errors with "the engine mode is the
+   Ruleset setting, not a directive". Verdict labels on event rows follow the mode.
 
 Architecture decisions below are mine (Claude), listed so they can be argued.
 
@@ -38,7 +45,12 @@ the app layer (`wafval`/`caddywaf`) instead.
 
 ## Data model — migration `011_waf_events.sql`
 
+The migration rebuilds `sites` once (SQLite cannot alter a CHECK): it drops the
+`sites.waf` value-set CHECK (profiles need more values; the app layer validates now) and
+adds the engine/rate-limit columns:
+
 ```sql
+ALTER TABLE sites ADD COLUMN waf_mode   TEXT    NOT NULL DEFAULT '' CHECK (waf_mode IN ('', 'detect', 'block'));
 ALTER TABLE sites ADD COLUMN rl_requests INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE sites ADD COLUMN rl_window   TEXT    NOT NULL DEFAULT '';          -- '' | "1m" | "5m" | "1h"
 ALTER TABLE sites ADD COLUMN rl_paths    TEXT    NOT NULL DEFAULT '';          -- one path per line; '' = all
@@ -64,11 +76,16 @@ CREATE INDEX waf_events_site ON waf_events(site_id, ts DESC);
 CREATE INDEX waf_events_rule ON waf_events(site_id, rule_id);
 ```
 
-Renderer: exclusion rows append to the tail **after** `waf_directives` (preset stays)
-— `SecRuleRemoveById <id>` per remove-row, `SecRuleUpdateTargetById <id> "<target>"` per
+Renderer: the composed tail is preset → profile exclusions (or the admin's
+`waf_directives`) → exclusion rows → **the one `SecRuleEngine` line from `waf_mode` last** —
+`SecRuleRemoveById <id>` per remove-row, `SecRuleUpdateTargetById <id> "<target>"` per
 narrow-row; profiles resolve to a code-constant directives tail (`internal/caddywaf/profiles.go`),
-not stored text, so a CRS bump can retune profiles per release. `sites.waf` values:
-`''`, `crs`, `custom`, `php`, `wordpress`, `shop`, `goapi`, `node`.
+not stored text, so a CRS bump can retune profiles per release. The shipped `Preset` drops
+its `SecRuleEngine DetectionOnly` line (mode is owned and appended last), so the composed
+tail carries exactly one `SecRuleEngine` directive; a pre-M12 stored tail that still names
+one is simply overridden by the mode line (SecLang's last-wins), and the next save of that
+tail moves it out of storage entirely (`SecRuleEngine` leaves the allowed set). `sites.waf`
+values: `''`, `crs`, `custom`, `php`, `wordpress`, `shop`, `goapi`, `node`.
 
 Events writer: the engine's callback fires per matched rule; the module pushes
 `WafEvent` structs onto a buffered channel; one background goroutine in the same
@@ -81,7 +98,9 @@ desired state). Aggregate query: `rule_id, count(*), max(ts)` grouped — the li
 
 - **Ruleset** (exists): presets select gains the five profile options and keeps
   custom; profile = preset + generated tail (read-only textarea showing what ships,
-  no editing — switch to `custom` to edit).
+  no editing — switch to `custom` to edit). An **Engine mode** select sits under it:
+  *Log only (detection)* (default) and *Block*, owned by `waf_mode`; the state chip
+  and the events' verdicts follow it.
 - **Exclusions**: add/remove rows (like gate grants): from events (buttons) or by id
   on the form (`kind`, `rule_id`, `target`, note). List shows added-by/at. A profile
   preset's own exclusions are part of the profile, NOT excluded rows — the rows list
@@ -104,8 +123,9 @@ counter set (Caddy is one process) — no cross-server state, no unit, no helper
 
 ## MCP
 
-- `waf` gains the profile values in the schema text; `get_site` additionally
-  returns `rl_requests` / `rl_window` / `rl_paths`.
+- `waf` gains the profile values in the schema text; `waf_mode` (`detect` | `block`;
+  `""` = detect) rides beside it on `create_site`/`update_site` and in `get_site`,
+  which additionally returns `rl_requests` / `rl_window` / `rl_paths`.
 - Exclusions/events get NO new tools now (avoid tool-regex churn; UI-first like
   the country rule was). If wanted later, follow the scan-tools pattern.
 - `formOf` overlays: `rl_*` join like any field; `waf_exclusions` NOT in formOf —
