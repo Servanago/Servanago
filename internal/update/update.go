@@ -31,8 +31,16 @@ func ManifestAt(version string) string {
 }
 
 // Keys are the trusted public keys, any one of which may have signed a manifest. A rotation ships a release
-// that carries the old and the new key. Empty until the first key is generated (`servanago manifest keygen`).
-var Keys []ed25519.PublicKey
+// that carries the old and the new key. The private half is ~/.config/servanago/release.key (`servanago manifest keygen`).
+var Keys = []ed25519.PublicKey{mustKey("E50qWhlp5n7O4h/wNcC6gpfHYm2rsRst6LRBmsVivUQ=")}
+
+func mustKey(b64 string) ed25519.PublicKey {
+	k, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil || len(k) != ed25519.PublicKeySize {
+		panic("update: bad built-in public key")
+	}
+	return k
+}
 
 type Deb struct {
 	URL    string `json:"url"`
