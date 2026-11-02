@@ -217,14 +217,21 @@ func (a *authn) level(r *http.Request) string {
 	return l
 }
 
+// bcryptCost is the work factor of every password hash. Tests lower it (TestMain): bcrypt under -race was most of
+// the suite's run time.
+var bcryptCost = bcrypt.DefaultCost
+
 // dummyHash makes a login for an unknown username cost one bcrypt comparison, like a wrong password does.
-var dummyHash, _ = bcrypt.GenerateFromPassword([]byte("servanago-no-such-user"), bcrypt.DefaultCost)
+var dummyHash = sync.OnceValue(func() []byte {
+	h, _ := bcrypt.GenerateFromPassword([]byte("servanago-no-such-user"), bcryptCost)
+	return h
+})
 
 // checkPassword compares pw with the user's hash; with ok=false it still burns one comparison. Passwords are
 // stored trimmed, so stray whitespace from a paste is forgiven; the text exactly as typed is tried first so an
 // account whose password was set with edge whitespace (before that rule) still signs in.
 func checkPassword(u store.User, found bool, pw string) bool {
-	hash := []byte(dummyHash)
+	hash := dummyHash()
 	if found {
 		hash = []byte(u.PasswordHash)
 	}

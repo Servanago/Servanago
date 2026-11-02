@@ -75,7 +75,7 @@ func hashPassword(w http.ResponseWriter, pw string) (string, bool) {
 		fail(w, http.StatusUnprocessableEntity, err.Error())
 		return "", false
 	}
-	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcryptCost)
 	if err != nil {
 		fail(w, http.StatusInternalServerError, err.Error())
 		return "", false

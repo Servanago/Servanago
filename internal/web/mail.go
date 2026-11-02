@@ -605,7 +605,7 @@ func validHookUser(u string) bool {
 }
 
 func bcryptHash(pw string) (string, error) {
-	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+	h, err := bcrypt.GenerateFromPassword([]byte(pw), bcryptCost)
 	return string(h), err
 }
 

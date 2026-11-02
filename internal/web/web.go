@@ -139,7 +139,7 @@ func (s *Server) initUsers() {
 		if name == "" {
 			name = "admin"
 		}
-		hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+		hash, err := bcrypt.GenerateFromPassword([]byte(pw), bcryptCost)
 		if err == nil {
 			_, err = s.deps.Store.CreateUser(ctx, name, string(hash))
 		}

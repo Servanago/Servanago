@@ -89,7 +89,7 @@ func applyBasicAuth(r *store.Site, user, pw string) error {
 		if len(pw) > 72 {
 			return fmt.Errorf("basic auth password must be at most 72 bytes")
 		}
-		h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.DefaultCost)
+		h, err := bcrypt.GenerateFromPassword([]byte(pw), bcryptCost)
 		if err != nil {
 			return fmt.Errorf("hash password: %w", err)
 		}
