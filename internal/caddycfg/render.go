@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/servanago/servanago/internal/caddywaf"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/store"
 )
@@ -275,13 +276,16 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 			handlers = []any{m{"handler": "subroute", "routes": routes}}
 		}
 	}
-	if r.CountryMode == "" && r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(snip) == 0 && len(handlers) == 1 {
+	if r.CountryMode == "" && r.Waf == "" && r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(snip) == 0 && len(handlers) == 1 {
 		return handlers[0], nil
 	}
 
 	var sub []any
 	if geo := geoRouteOf(r); geo != nil { // the country rule leads: a blocked country is 403 before the gate or the site
 		sub = append(sub, m{"handle": []any{geo}})
+	}
+	if waf := wafRouteOf(r); waf != nil { // the WAF inspects the request before any panel access control
+		sub = append(sub, m{"handle": []any{waf}})
 	}
 	cidrs := strings.Fields(r.Allowlist)
 	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
@@ -325,6 +329,16 @@ func geoRouteOf(r store.Site) any {
 		return nil
 	}
 	return m{"handler": "servanago_geoip", "mode": r.CountryMode, "countries": strings.Fields(r.Countries)}
+}
+
+// wafRouteOf is the site's Coraza WAF as a handler config, or nil when the site has none.
+// It leads with the CRS preset (internal/caddywaf): a payload the engine rejects never
+// reaches the gate's form, the snippets or the upstream.
+func wafRouteOf(r store.Site) any {
+	if r.Waf == "" {
+		return nil
+	}
+	return m{"handler": "waf", "load_owasp_crs": true, "directives": caddywaf.DirectivesFor(r.Waf, r.WafDirectives)}
 }
 
 // extraRoutes renders the site's extra routes (admin-entered, config.ParseExtraRoutes): each becomes

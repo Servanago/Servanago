@@ -20,6 +20,7 @@ import (
 
 	_ "github.com/caddy-dns/cloudflare"
 	"github.com/cloudflare/cloudflare-go/v7/option"
+	_ "github.com/corazawaf/coraza-caddy/v2" // registers http.handlers.waf in the embedded Caddy
 
 	"github.com/servanago/servanago/internal/apply"
 	"github.com/servanago/servanago/internal/buildinfo"

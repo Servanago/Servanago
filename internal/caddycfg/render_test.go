@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/servanago/servanago/internal/caddywaf"
 	"github.com/servanago/servanago/internal/store"
 )
 
@@ -502,5 +503,133 @@ func TestGeoLeadsTheChain(t *testing.T) {
 	}
 	if !walk(mlCfg) {
 		t.Errorf("the ml host needs the geo rule ahead of its gate:\n%s", mlgot)
+	}
+}
+
+// The WAF handler renders between the geo rule and the gate, inside the full route
+// (a custom preset carries the site's directives on top of the CRS bootstrap). The ml
+// host stays WAF-free: it serves only the gate's own pages, and payload inspection
+// there could reject a link exchange.
+func TestWafRendersInTheChain(t *testing.T) {
+	names := func(cfg any) []string {
+		// the subroute holding the site's security chain: handler names of its routes in order
+		var out []string
+		var walk func(v any)
+		walk = func(v any) {
+			switch x := v.(type) {
+			case map[string]any:
+				if routes, ok := x["routes"].([]any); ok && out == nil {
+					names := []string{}
+					waf := false
+					for _, rt := range routes {
+						fm, _ := rt.(map[string]any)
+						if hs, ok := fm["handle"].([]any); ok {
+							for _, h := range hs {
+								if hm, ok := h.(map[string]any); ok {
+									if name, _ := hm["handler"].(string); name != "" {
+										names = append(names, name)
+										if name == "waf" {
+											waf = true
+										}
+									}
+								}
+							}
+						}
+					}
+					if waf {
+						out = names
+					}
+				}
+				for _, c := range x {
+					walk(c)
+				}
+			case []any:
+				for _, c := range x {
+					walk(c)
+				}
+			}
+		}
+		walk(cfg)
+		return out
+	}
+	st := with(site, func(r *store.Site) {
+		r.GateMode = "acl"
+		r.CountryMode, r.Countries = "deny", "DE FR"
+		r.Waf = "custom"
+		r.WafDirectives = "SecRuleEngine On\nSecRuleRemoveById 920280"
+	})
+	got, err := Render(State{[]store.Domain{dom}, []store.Site{st}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cfg any
+	if err := json.Unmarshal(got, &cfg); err != nil {
+		t.Fatal(err)
+	}
+	wantOrder := []string{"servanago_geoip", "waf", "servanago_gate"}
+	if names := names(cfg); len(names) < len(wantOrder) || !strings.Contains(strings.Join(names, ","), strings.Join(wantOrder, ",")) {
+		t.Errorf("handler order %v, want %v containing order:\n%s", names, wantOrder, got)
+	}
+	if !strings.Contains(string(got), "SecRuleEngine On") {
+		t.Errorf("custom directives missing from the render:\n%s", got)
+	}
+	// the ml host has no WAF at all (the site's main host is in the same config, so
+	// search the ml route specifically)
+	ml := with(st, func(r *store.Site) { r.Hostnames = append(r.Hostnames, r.MLHost()) })
+	mlgot, err := Render(State{[]store.Domain{dom}, []store.Site{ml}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var mlCfg2 any
+	if err := json.Unmarshal(mlgot, &mlCfg2); err != nil {
+		t.Fatal(err)
+	}
+	mlRoute := ""
+	var routeOf func(v any, host string)
+	routeOf = func(v any, host string) {
+		switch x := v.(type) {
+		case map[string]any:
+			if ms, ok := x["match"].([]any); ok && len(ms) == 1 {
+				if hm, ok := ms[0].(map[string]any); ok {
+					if hosts, ok := hm["host"].([]any); ok && len(hosts) == 1 && hosts[0] == host {
+						b, _ := json.Marshal(x["handle"])
+						mlRoute = string(b)
+					}
+				}
+			}
+			for _, c := range x {
+				routeOf(c, host)
+			}
+		case []any:
+			for _, c := range x {
+				routeOf(c, host)
+			}
+		}
+	}
+	routeOf(mlCfg2, "ml.sonarr.example.com")
+	if mlRoute == "" || !strings.Contains(mlRoute, "servanago_gate") {
+		t.Fatalf("ml route not found:\n%s", mlRoute)
+	}
+	if strings.Contains(mlRoute, "load_owasp_crs") {
+		t.Errorf("the ml host rendered a WAF handler:\n%s", mlRoute)
+	}
+}
+
+// DirectivesFor builds one stable directives string: the preset alone for the crs
+// preset, preset plus the trimmed tail for custom (never a preset alone with a
+// non-tail), and the plain preset when the site's waf value is unknown.
+func TestWafDirectivesFor(t *testing.T) {
+	if d := caddywaf.DirectivesFor("crs", ""); !strings.HasSuffix(d, "SecRuleEngine DetectionOnly\n") || !strings.Contains(d, "@owasp_crs/*.conf") {
+		t.Errorf("crs preset directives wrong:\n%s", d)
+	}
+	custom := "SecRuleEngine On\nSecRuleRemoveById 920280"
+	if d := caddywaf.DirectivesFor("custom", custom+"\n"); !strings.HasPrefix(d, caddywaf.Preset) || !strings.HasSuffix(d, custom+"\n") {
+		t.Errorf("custom directives not preset+tail:\n%s", d)
+	}
+	if d := caddywaf.DirectivesFor("custom", "   \n"); d != caddywaf.Preset {
+		t.Errorf("blank custom tail must fall back to the preset alone, got:\n%s", d)
+	}
+	if d := caddywaf.DirectivesFor("", "SecRuleEngine On"); d != caddywaf.Preset {
+		t.Errorf("empty site waf must give the plain preset:\n%s", d)
 	}
 }

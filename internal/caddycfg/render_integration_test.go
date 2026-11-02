@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
+	_ "github.com/corazawaf/coraza-caddy/v2" // registers http.handlers.waf for the integration renders
 	_ "github.com/servanago/servanago/internal/caddygeoip"
 	"github.com/servanago/servanago/internal/caddytest"
 	"github.com/servanago/servanago/internal/store"
@@ -152,5 +153,61 @@ func TestGeoRouteLoads(t *testing.T) {
 	// the site answers its upstream for a local client (the geo rule judges public addresses only)
 	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "geo.test", "/"); status != 200 {
 		t.Errorf("local GET: %d", status)
+	}
+}
+
+// TestWafPresetServesNormally: the CRS preset renders DetectionOnly, so the site serves its
+// upstream unchanged while the engine compiles the ruleset (a CRS syntax error would fail
+// the load, not the request).
+func TestWafPresetServesNormally(t *testing.T) {
+	storage := caddytest.TempDir(t)
+	caddytest.Cleanup(t)
+	t.Cleanup(func() { _ = caddy.Stop() })
+	up := caddytest.Upstream(t, "ok")
+	upPort, _ := strconv.Atoi(strings.TrimPrefix(up, "127.0.0.1:"))
+	site := with(store.Site{ID: 2, Hostnames: []string{"wafcrs.test"}, Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: upPort, Enabled: true},
+		func(r *store.Site) { r.Waf = "crs" })
+	o := opts()
+	o.Issuer = Internal
+	o.HTTPPort, o.HTTPSPort = caddytest.FreePort(t), caddytest.FreePort(t)
+	o.StoragePath = storage
+	b, err := Render(State{[]store.Domain{}, []store.Site{site}}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caddy.Load(b, false); err != nil {
+		t.Fatalf("caddy rejected the WAF config: %v", err)
+	}
+	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "wafcrs.test", "/"); status != 200 {
+		t.Errorf("GET with CRS enabled (DetectionOnly): %d; want 200", status)
+	}
+}
+
+// TestWafBlocksTraversal: a site that turned the engine on with custom directives gets the CRS
+// verdict on an OS-file probe and still serves a clean request.
+func TestWafBlocksTraversal(t *testing.T) {
+	storage := caddytest.TempDir(t)
+	caddytest.Cleanup(t)
+	t.Cleanup(func() { _ = caddy.Stop() })
+	up := caddytest.Upstream(t, "ok")
+	upPort, _ := strconv.Atoi(strings.TrimPrefix(up, "127.0.0.1:"))
+	site := with(store.Site{ID: 2, Hostnames: []string{"wafon.test"}, Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: upPort, Enabled: true},
+		func(r *store.Site) { r.Waf, r.WafDirectives = "custom", "SecRuleEngine On" })
+	o := opts()
+	o.Issuer = Internal
+	o.HTTPPort, o.HTTPSPort = caddytest.FreePort(t), caddytest.FreePort(t)
+	o.StoragePath = storage
+	b, err := Render(State{[]store.Domain{}, []store.Site{site}}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caddy.Load(b, false); err != nil {
+		t.Fatalf("caddy rejected the WAF config: %v", err)
+	}
+	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "wafon.test", "/"); status != 200 {
+		t.Errorf("clean GET: %d; want 200", status)
+	}
+	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "wafon.test", "/?p=/etc/passwd"); status != 403 {
+		t.Errorf("traversal probe: %d; want 403", status)
 	}
 }

@@ -28,7 +28,7 @@ Caddy: enabled site with CRS in DetectionOnly answers normally and logs the
 violations; disabled sites render unchanged. All golden/positional test literals
 updated.
 **Tests**: `render_test.go` goldens, `render_integration_test.go` (real Caddy, CRS compile).
-**Status**: Not Started
+**Status**: Complete
 
 ## Stage 3: Validator — directives allowlist + compile check
 **Goal**: per-site custom SecLang tails are validated before they reach SQLite/Caddy:
