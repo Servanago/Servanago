@@ -19,6 +19,7 @@ Every site has a control view at `/sites/<id>`: one page per area, shared by a t
 | `/sites/<id>/gate` | Gate mode, who may ask for a link, IP allowlist, basic auth. |
 | `/sites/<id>/routes` | Extra routes and a proxy site's TLS/stream/upload tuning. |
 | `/sites/<id>/countries` | The site's country rule. |
+| `/sites/<id>/waf` | The site's web application firewall. |
 
 Tabs save in place: a form posts from its tab, the button shows the save, and the page does not reload. Actions that came from the dashboard rows (resync, scan, backup saves, access list rows) accept a return-to tab.
 
@@ -93,6 +94,8 @@ The DNS page is a full independent record view of every Cloudflare zone the toke
 ## Country filter
 
 A site's Country filter (the access area of its editor) answers whole countries with a plain 403: **Deny these countries** keeps the listed ones out, **Allow only these countries** keeps everyone else out. Codes are ISO 3166-1 two-letter codes (DE, US), space or comma separated. Everything from the machine itself, a home network or a tailnet (private addresses) is never judged, and the `/.well-known/` paths always stay open so certificates keep renewing. A record proxied through Cloudflare is judged by the address Cloudflare names in `CF-Connecting-IP` (a header Cloudflare sets itself); otherwise the visiting address is. The database is MaxMind's GeoLite2-Country, read from Settings' path — ServanaGo never installs it: `apt install geoipupdate` keeps the file current with your license key in `/etc/GeoIP.conf`. A rule that cannot read the database lets everyone in.
+
+A site's **Web application firewall** (the WAF tab) inspects every request against the OWASP Coreruleset (CRS v4, compiled into the binary via Coraza — no rule files to install). The ruleset starts in **detection-only** mode: violations are written to the log, nothing is blocked, so you can read a day of your traffic and tune first. **OWASP CRS** keeps that mode; **OWASP CRS plus custom rules** appends your SecLang lines after the preset — turn the engine on with `SecRuleEngine On`, remove a rule of yours the site trips with `SecRuleRemoveById <id>` (the rule's id), or add your own `SecRule`. The custom tail is validated when you save (compiles against the CRS, so a removed id must exist) and file-reading or DNS-resolving operators (`@inspectFile`, `@pmFromFile`, `@rbl`, ...) are refused. The WAF runs after the country rule and before the gate; requests to the gate's own `ml.` host are never inspected. A custom tail that fails inside Caddy's load restores the site's last-known-good config automatically.
 
 ## Virus scanning
 
