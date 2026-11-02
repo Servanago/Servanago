@@ -119,7 +119,7 @@ func TestRepairAddsMissingLegacyObjects(t *testing.T) {
 		t.Errorf("rows lost: users %d sites %d", users, sites)
 	}
 	if ver != LatestVersion() {
-		t.Errorf("user_version = %d, want migrations 002..010 applied", ver)
+		t.Errorf("user_version = %d, want migrations 002..011 applied", ver)
 	}
 
 	fi, err := os.Stat(path + ".pre-repair")
@@ -228,15 +228,21 @@ func TestOpenRefusesBelowVintageGate(t *testing.T) {
 	}
 }
 
-// The backup job opens a copy of the live DB: no snapshot, no repair beside it.
+// OpenSnapshot never repairs: it runs the migrations only. Since 011 the rebuild reads
+// columns the repair list owns (php_extensions and the other pre-0.5.0 in-place edits), so
+// a v1-era database is not migrateable without the repair — the backup job only ever opens
+// copies of the live DB, which Open already repaired, and this pins that nothing tries to
+// fix one silently.
 func TestOpenSnapshotDoesNotRepair(t *testing.T) {
 	path := legacyDB(t, old001)
-	st, err := OpenSnapshot(path)
-	if err != nil {
-		t.Fatalf("OpenSnapshot: %v", err)
+	_, err := OpenSnapshot(path)
+	if err == nil || !strings.Contains(err.Error(), "011_waf_events") {
+		t.Fatalf("OpenSnapshot = %v, want the 011 migrate to refuse a v1 database", err)
 	}
-	defer st.Close()
-	if hasColumn(t, st.db, "sites", "php_extensions") {
+	if hasColumn(t, func() *sql.DB {
+		db, _ := sql.Open("sqlite", "file:"+path+"?_pragma=foreign_keys(1)")
+		return db
+	}(), "sites", "php_extensions") {
 		t.Error("OpenSnapshot repaired the schema")
 	}
 	if _, err := os.Stat(path + ".pre-repair"); err == nil {

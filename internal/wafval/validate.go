@@ -19,12 +19,13 @@ import (
 	"github.com/servanago/servanago/internal/caddywaf"
 )
 
-// allowed lists the directives a site may set on top of the panel's preset. The host-level
+// allowed lists the directives a site may set on top of the panel's preset. The engine
+// line is NOT among them: the site's waf_mode owns it (the Ruleset select). The host-level
 // ones (Include, SecAuditLog*, SecTmpDir, SecDataDir, file-path configuration) and the
-// preset-carried engine setup may not appear here; compile rules out the rest.
+// preset-carried setup may not appear here either; compile rules out the rest.
 var allowed = map[string]struct{}{
 	"SecRule": {}, "SecAction": {}, "SecMarker": {}, "SecComponentSignature": {},
-	"SecRuleEngine": {}, "SecDefaultAction": {}, "SecArgumentSeparator": {},
+	"SecDefaultAction": {}, "SecArgumentSeparator": {},
 	"SecRequestBodyAccess": {}, "SecRequestBodyLimit": {}, "SecRequestBodyInMemoryLimit": {},
 	"SecRequestBodyLimitAction": {}, "SecRequestBodyJsonDepthLimit": {},
 	"SecResponseBodyAccess": {}, "SecResponseBodyLimit": {}, "SecResponseBodyLimitAction": {},
@@ -58,9 +59,10 @@ func Validate(directives string) error {
 	}
 	// Compile what the site render will load: preset and tail together, so CRS-tuning
 	// directives find their rules and include files resolve from the compiled ruleset.
+	// DetectionOnly mirrors how a fresh compose runs (the mode line is the renderer's).
 	config := coraza.NewWAFConfig().
 		WithRootFS(mergefs.Merge(coreruleset.FS, corazaconf.FS, mergefsio.OSFS)).
-		WithDirectives(caddywaf.Preset + directives)
+		WithDirectives(caddywaf.Preset + directives + "\nSecRuleEngine DetectionOnly\n")
 	waf, err := coraza.NewWAF(config)
 	if err != nil {
 		return fmt.Errorf("directives do not compile: %w", err)

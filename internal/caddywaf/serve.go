@@ -21,6 +21,12 @@ import (
 // errors for the site's error routes. Port of coraza-caddy's ServeHTTP minus the
 // tx-id header field.
 func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyhttp.Handler) error {
+	// The rate limiter leads the chain: an over-the-limit address is refused before any
+	// rule evaluation, exactly like the geo rule leads.
+	if m.serveRateLimit(w, r) {
+		return nil
+	}
+
 	id := randomString(16)
 
 	tx := m.waf.NewTransactionWithID(id)

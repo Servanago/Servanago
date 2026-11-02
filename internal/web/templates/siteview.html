@@ -342,17 +342,47 @@
 {{if eq .Active "waf"}}
 <section class="sect" id="panel-waf">
 <h2>Web application firewall</h2>
-{{if .Site.Waf}}<p>Current preset: <span class="chip">{{.Site.Waf}}</span></p>{{else}}<p class="empty">Off — the site's requests are not inspected.</p>{{end}}
+{{if .Site.Waf}}<p>Current preset: <span class="chip">{{.Site.Waf}}</span>{{if eq .Site.WafMode "block"}} <span class="chip bad">Engine: blocking</span>{{else}} <span class="chip warn">Engine: DetectionOnly</span>{{end}}{{if gt .Site.RLRequests 0}} <span class="chip info">Rate limit: {{.Site.RLRequests}} / {{.Site.RLWindow}}</span>{{end}}</p>{{else}}<p class="empty">Off — the site's requests are not inspected.</p>{{end}}
 <form hx-post="/sites/{{$id}}/waf" hx-target="#msg">
 <label>Ruleset <select name="waf" aria-describedby="hint-waf">
 <option value=""{{if not .Site.Waf}} selected{{end}}>Off (no inspection)</option>
-<option value="crs"{{if eq .Site.Waf "crs"}} selected{{end}}>OWASP CRS (detects, does not block yet)</option>
+<option value="crs"{{if eq .Site.Waf "crs"}} selected{{end}}>OWASP CRS (bare preset)</option>
+<option value="php"{{if eq .Site.Waf "php"}} selected{{end}}>Profile: PHP generic</option>
+<option value="wordpress"{{if eq .Site.Waf "wordpress"}} selected{{end}}>Profile: WordPress</option>
+<option value="shop"{{if eq .Site.Waf "shop"}} selected{{end}}>Profile: PHP ecommerce</option>
+<option value="goapi"{{if eq .Site.Waf "goapi"}} selected{{end}}>Profile: Go / generic API</option>
+<option value="node"{{if eq .Site.Waf "node"}} selected{{end}}>Profile: Node / JSON API</option>
 <option value="custom"{{if eq .Site.Waf "custom"}} selected{{end}}>OWASP CRS plus custom rules</option>
 </select></label>
 {{hintid "waf"}}
+<label>Engine mode <select name="waf_mode" aria-describedby="hint-waf_mode">
+<option value=""{{if not .Site.WafMode}} selected{{end}}>Log only (detection)</option>
+<option value="block"{{if eq .Site.WafMode "block"}} selected{{end}}>Block requests the ruleset rejects</option>
+</select></label>
+{{hintid "waf_mode"}}
 <label>Custom directives (SecLang, one per line; with custom only)
-<textarea name="waf_directives" rows="6" placeholder="SecRuleEngine On" aria-describedby="hint-waf_directives">{{.Site.WafDirectives}}</textarea></label>
+<textarea name="waf_directives" rows="6" placeholder="SecRuleRemoveById 920280" aria-describedby="hint-waf_directives">{{.Site.WafDirectives}}</textarea></label>
 {{hintid "waf_directives"}}
+
+<fieldset>
+<legend>Rate limiting</legend>
+<p class="sect-note">Per client IP: N requests per window; over the limit answers 429 until the window passes. Paths narrow it to named prefixes; blank means the whole site. Counters live in the panel process and reset at a restart.</p>
+<label>Requests per address (blank = no limit)
+<input name="rl_requests" value="{{size .Site.RLRequests}}" inputmode="numeric" placeholder="120" autocomplete="off" aria-describedby="hint-rl_requests"></label>
+{{hintid "rl_requests"}}
+<label>Window <select name="rl_window" aria-describedby="hint-rl_window">
+<option value=""{{if not .Site.RLWindow}} selected{{end}}>—</option>
+<option value="1m"{{if eq .Site.RLWindow "1m"}} selected{{end}}>1 minute</option>
+<option value="5m"{{if eq .Site.RLWindow "5m"}} selected{{end}}>5 minutes</option>
+<option value="1h"{{if eq .Site.RLWindow "1h"}} selected{{end}}>1 hour</option>
+</select></label>
+{{hintid "rl_window"}}
+<label>Limit only these paths (one per line; blank = the whole site)
+<textarea name="rl_paths" rows="3" placeholder="/login
+/cart/checkout" aria-describedby="hint-rl_paths">{{.Site.RLPaths}}</textarea></label>
+{{hintid "rl_paths"}}
+</fieldset>
+
 <button type="submit">Save WAF</button>
 </form>
 <p id="msg" role="alert" data-toast></p>

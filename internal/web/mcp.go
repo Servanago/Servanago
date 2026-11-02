@@ -84,8 +84,12 @@ type siteArgs struct {
 	ExtraRoutes   *string   `json:"extra_routes,omitempty" jsonschema:"paths sent to another app, one per line as path=dial (dial = host:port or absolute socket path), e.g. /api=127.0.0.1:3303; \"\" clears them, leaving it out keeps the stored ones"`
 	CountryMode   *string   `json:"country_mode,omitempty" jsonschema:"deny | allow (country filter): which addresses the site serves; \"\" turns it off, leaving it out keeps the stored one"`
 	Countries     *string   `json:"countries,omitempty" jsonschema:"space- or comma-separated ISO 3166-1 alpha-2 codes (DE, US); required when country_mode is set"`
-	Waf           *string   `json:"waf,omitempty" jsonschema:"crs | custom (Web application firewall, OWASP CRS): the site's WAF; \"\" turns it off, leaving it out keeps the stored one"`
-	WafDirectives *string   `json:"waf_directives,omitempty" jsonschema:"custom: extra SecLang directives appended to the CRS preset, one per line; validated at save; \"\" clears them, leaving it out keeps the stored ones"`
+	Waf           *string   `json:"waf,omitempty" jsonschema:"crs | php | wordpress | shop | goapi | node | custom (Web application firewall, OWASP CRS): the site's ruleset; \"\" turns it off, leaving it out keeps the stored one"`
+	WafMode       *string   `json:"waf_mode,omitempty" jsonschema:"detect | block (WAF engine mode); \"\" = detect, leaving it out keeps the stored one"`
+	WafDirectives *string   `json:"waf_directives,omitempty" jsonschema:"custom: extra SecLang directives appended to the CRS preset, one per line, valid at save; \"\" clears them, leaving it out keeps the stored ones"`
+	RLRequests    *int64    `json:"rl_requests,omitempty" jsonschema:"rate limit: requests per client IP per window; 0 turns it off, leaving it out keeps the stored one"`
+	RLWindow      *string   `json:"rl_window,omitempty" jsonschema:"rate limit window: 1m | 5m | 1h"`
+	RLPaths       *string   `json:"rl_paths,omitempty" jsonschema:"rate limit scope: one path prefix per line (/login); \"\" = the whole site; leaving it out keeps the stored ones"`
 	Notes         *string   `json:"notes,omitempty" jsonschema:"admin notes shown on the Reference page, plain text, at most 10,000 characters; \"\" clears them, leaving it out keeps the stored ones"`
 }
 
@@ -155,6 +159,31 @@ func (a siteArgs) overlay(v url.Values) {
 	} else if a.WafDirectives != nil {
 		v.Set("waf_directives", *a.WafDirectives)
 	}
+	if a.WafMode != nil {
+		v.Set("waf_mode", *a.WafMode)
+	}
+	if a.RLRequests != nil {
+		if *a.RLRequests == 0 { // off clears the whole trio
+			v.Set("rl_requests", "")
+			v.Set("rl_window", "")
+			v.Set("rl_paths", "")
+		} else {
+			v.Set("rl_requests", strconv.FormatInt(*a.RLRequests, 10))
+			if a.RLWindow != nil {
+				v.Set("rl_window", *a.RLWindow)
+			}
+			if a.RLPaths != nil {
+				v.Set("rl_paths", *a.RLPaths)
+			}
+		}
+	} else {
+		if a.RLWindow != nil {
+			v.Set("rl_window", *a.RLWindow)
+		}
+		if a.RLPaths != nil {
+			v.Set("rl_paths", *a.RLPaths)
+		}
+	}
 	if a.Notes != nil {
 		v.Set("notes", *a.Notes)
 	}
@@ -183,7 +212,15 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v.Set("country_mode", cur.CountryMode) // the site's country rule; both fields change together or not at all
 	v.Set("countries", cur.Countries)
 	v.Set("waf", cur.Waf) // the site's WAF preset; the directives change with it or not at all
+	v.Set("waf_mode", cur.WafMode)
 	v.Set("waf_directives", cur.WafDirectives)
+	if cur.RLRequests > 0 {
+		v.Set("rl_requests", strconv.FormatInt(cur.RLRequests, 10))
+	} else {
+		v.Set("rl_requests", "")
+	}
+	v.Set("rl_window", cur.RLWindow)
+	v.Set("rl_paths", cur.RLPaths)
 	v.Set("gate_mode", cur.GateMode)
 	v.Set("gate_provider", cur.GateProvider) // the sealed secret is never read back; blank keeps it
 	v.Set("gate_from", cur.GateFrom)
@@ -268,7 +305,11 @@ type siteView struct {
 	CountryMode   string    `json:"country_mode,omitempty"`
 	Countries     string    `json:"countries,omitempty"`
 	Waf           string    `json:"waf,omitempty"`
+	WafMode       string    `json:"waf_mode,omitempty"`
 	WafDirectives string    `json:"waf_directives,omitempty"`
+	RLRequests    int64     `json:"rl_requests,omitempty"`
+	RLWindow      string    `json:"rl_window,omitempty"`
+	RLPaths       string    `json:"rl_paths,omitempty"`
 	GateMode      string    `json:"gate_mode,omitempty"`
 	BasicAuth     bool      `json:"basic_auth"`
 	Snippets      []string  `json:"snippets,omitempty"`
@@ -297,7 +338,7 @@ func dnsViewOf(x store.DNSRecord) dnsView {
 func viewOf(x store.Site) siteView {
 	v := siteView{ID: x.ID, Slug: x.Slug, Kind: x.Kind, Hostnames: x.Hostnames, Enabled: x.Enabled, StaticRoot: x.StaticRoot,
 		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, ExtraRoutes: x.ExtraRoutes, RecordIP: x.RecordIP, RecordIPv6: x.RecordIP6, UpdatedAt: x.UpdatedAt,
-		CountryMode: x.CountryMode, Countries: x.Countries, Waf: x.Waf, WafDirectives: x.WafDirectives}
+		CountryMode: x.CountryMode, Countries: x.Countries, Waf: x.Waf, WafMode: x.WafMode, WafDirectives: x.WafDirectives, RLRequests: x.RLRequests, RLWindow: x.RLWindow, RLPaths: x.RLPaths}
 	switch {
 	case x.UpstreamPort != 0:
 		v.Upstream = net.JoinHostPort(x.UpstreamHost, strconv.Itoa(x.UpstreamPort))

@@ -276,7 +276,7 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 			handlers = []any{m{"handler": "subroute", "routes": routes}}
 		}
 	}
-	if r.CountryMode == "" && r.Waf == "" && r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(snip) == 0 && len(handlers) == 1 {
+	if r.CountryMode == "" && r.Waf == "" && r.RLRequests <= 0 && r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(snip) == 0 && len(handlers) == 1 {
 		return handlers[0], nil
 	}
 
@@ -331,14 +331,35 @@ func geoRouteOf(r store.Site) any {
 	return m{"handler": "servanago_geoip", "mode": r.CountryMode, "countries": strings.Fields(r.Countries)}
 }
 
-// wafRouteOf is the site's Coraza WAF as a handler config, or nil when the site has none.
-// It leads with the CRS preset (internal/caddywaf): a payload the engine rejects never
-// reaches the gate's form, the snippets or the upstream.
+// wafRouteOf is the site's Coraza WAF as a handler config, or nil when the site neither
+// inspects nor limits. It leads with the CRS preset (internal/caddywaf); a payload the
+// engine rejects never reaches the gate's form, the snippets or the upstream. A rate limit
+// without a ruleset renders the handler engine-off, so the limiter still leads the chain.
 func wafRouteOf(r store.Site) any {
-	if r.Waf == "" {
+	if r.Waf == "" && r.RLRequests <= 0 {
 		return nil
 	}
-	return m{"handler": "waf", "load_owasp_crs": true, "directives": caddywaf.DirectivesFor(r.Waf, r.WafDirectives)}
+	h := m{}
+	if r.Waf == "" {
+		h["handler"] = "waf"
+		h["directives"] = caddywaf.EngineOff
+	} else {
+		h["handler"] = "waf"
+		h["load_owasp_crs"] = true
+		h["directives"] = caddywaf.DirectivesFor(r.Waf, r.WafDirectives, r.WafMode)
+	}
+	if r.RLRequests > 0 {
+		win, _, werr := config.RLWindow(r.RLWindow)
+		if werr != nil || win <= 0 { // an invalid row must never break a render; store rows are validated at save
+			win = 60
+		}
+		rl := m{"requests": r.RLRequests, "window_ms": int64(win) * 1000}
+		if paths, err := config.ParseRLPaths(r.RLPaths); err == nil && len(paths) > 0 {
+			rl["paths"] = paths
+		}
+		h["rate_limit"] = rl
+	}
+	return h
 }
 
 // extraRoutes renders the site's extra routes (admin-entered, config.ParseExtraRoutes): each becomes

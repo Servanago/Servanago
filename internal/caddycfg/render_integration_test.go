@@ -191,7 +191,7 @@ func TestWafBlocksTraversal(t *testing.T) {
 	up := caddytest.Upstream(t, "ok")
 	upPort, _ := strconv.Atoi(strings.TrimPrefix(up, "127.0.0.1:"))
 	site := with(store.Site{ID: 2, Hostnames: []string{"wafon.test"}, Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: upPort, Enabled: true},
-		func(r *store.Site) { r.Waf, r.WafDirectives = "custom", "SecRuleEngine On" })
+		func(r *store.Site) { r.Waf, r.WafMode = "custom", "block" })
 	o := opts()
 	o.Issuer = Internal
 	o.HTTPPort, o.HTTPSPort = caddytest.FreePort(t), caddytest.FreePort(t)
@@ -208,5 +208,42 @@ func TestWafBlocksTraversal(t *testing.T) {
 	}
 	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "wafon.test", "/?p=/etc/passwd"); status != 403 {
 		t.Errorf("traversal probe: %d; want 403", status)
+	}
+}
+
+// TestRateLimitServesAndBlocks: a limit-only site (no ruleset, engine off) refuses the
+// over-the-window address with 429 + Retry-After while every other address is unaffected;
+// the path scope exempts paths outside the prefixes.
+func TestRateLimitServesAndBlocks(t *testing.T) {
+	storage := caddytest.TempDir(t)
+	caddytest.Cleanup(t)
+	t.Cleanup(func() { _ = caddy.Stop() })
+	up := caddytest.Upstream(t, "ok")
+	upPort, _ := strconv.Atoi(strings.TrimPrefix(up, "127.0.0.1:"))
+	site := with(store.Site{ID: 2, Hostnames: []string{"rl.test"}, Scheme: "http", UpstreamHost: "127.0.0.1", UpstreamPort: upPort, Enabled: true},
+		func(r *store.Site) { r.RLRequests, r.RLWindow, r.RLPaths = 2, "1h", "/login\n/cart/checkout" })
+	o := opts()
+	o.Issuer = Internal
+	o.HTTPPort, o.HTTPSPort = caddytest.FreePort(t), caddytest.FreePort(t)
+	o.StoragePath = storage
+	b, err := Render(State{[]store.Domain{}, []store.Site{site}}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caddy.Load(b, false); err != nil {
+		t.Fatalf("caddy rejected the rate limit config: %v", err)
+	}
+	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "rl.test", "/"); status != 200 {
+		t.Errorf("unscoped path limited: %d; want 200", status)
+	}
+	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "rl.test", "/login"); status != 200 {
+		t.Errorf("first scoped request refused: %d", status)
+	}
+	if status, _ := caddytest.GetPath(t, o.HTTPSPort, "rl.test", "/login"); status != 200 {
+		t.Errorf("second scoped request refused: %d", status)
+	}
+	status, _ := caddytest.GetPath(t, o.HTTPSPort, "rl.test", "/login/2fa") // a scoped child shares the budget
+	if status != 429 {
+		t.Errorf("third scoped request: %d; want 429", status)
 	}
 }

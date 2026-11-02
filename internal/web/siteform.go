@@ -281,6 +281,16 @@ func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (st
 			r.WafDirectives = ""
 		}
 	}
+	if mode, err := parseWafMode(v); err != nil {
+		return r, err
+	} else if mode != nil {
+		r.WafMode = *mode
+	}
+	if rl, err := parseRL(v); err != nil {
+		return r, err
+	} else if rl != nil {
+		r.RLRequests, r.RLWindow, r.RLPaths = rl.requests, rl.window, rl.paths
+	}
 	r.Snippets = r.Snippets[:0:0]
 	for _, n := range v["snippets"] {
 		if n != "" {
@@ -309,6 +319,55 @@ func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (st
 	}
 	r.Enabled = v.Get("enabled") != ""
 	return r, nil
+}
+
+// parseWafMode reads the engine mode the Ruleset select carries: nil = the form has no
+// waf_mode field at all (the stored mode survives), "" = detection only, "block".
+func parseWafMode(v url.Values) (*string, error) {
+	if _, ok := v["waf_mode"]; !ok {
+		return nil, nil
+	}
+	m := v.Get("waf_mode")
+	switch m {
+	case "", "detect", "block":
+		return &m, nil
+	default:
+		return nil, fmt.Errorf("engine mode %q must be empty (detection only) or block", m)
+	}
+}
+
+// parseRL reads the rate limit trio; nil = the form carries none. Requests and window set
+// together; empty (or 0) requests turns the limit off and clears the window and paths.
+func parseRL(v url.Values) (*rlForm, error) {
+	if _, ok := v["rl_requests"]; !ok {
+		return nil, nil
+	}
+	n := strings.TrimSpace(v.Get("rl_requests"))
+	if n == "" || n == "0" {
+		return &rlForm{requests: 0, window: ""}, nil
+	}
+	requests, err := strconv.ParseInt(n, 10, 64)
+	if err != nil || requests < 1 || requests > 1_000_000 {
+		return nil, fmt.Errorf("rate requests %q must be a number 1–1,000,000", n)
+	}
+	wsecs, window, err := config.RLWindow(v.Get("rl_window"))
+	if err != nil {
+		return nil, fmt.Errorf("rate limit: %w", err)
+	}
+	if wsecs == 0 {
+		return nil, fmt.Errorf("rate limit: a window must be chosen (1m, 5m or 1h)")
+	}
+	lines, err := config.ParseRLPaths(v.Get("rl_paths"))
+	if err != nil {
+		return nil, err
+	}
+	return &rlForm{requests: requests, window: window, paths: strings.Join(lines, "\n")}, nil
+}
+
+type rlForm struct {
+	requests int64
+	window   string
+	paths    string
 }
 
 // parseHealthPath reads the optional path requested after a PHP switch: an absolute URL path, not a URL.
@@ -450,6 +509,12 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	}
 	if _, ok := r.PostForm["waf"]; ok {
 		base.Waf, base.WafDirectives = in.Waf, in.WafDirectives
+	}
+	if _, ok := r.PostForm["waf_mode"]; ok {
+		base.WafMode = in.WafMode
+	}
+	if _, ok := r.PostForm["rl_requests"]; ok {
+		base.RLRequests, base.RLWindow, base.RLPaths = in.RLRequests, in.RLWindow, in.RLPaths
 	}
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}

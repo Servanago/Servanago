@@ -52,12 +52,14 @@ func (p *pooledWAF) Destruct() error {
 //
 //	{"handler":"waf","load_owasp_crs":true,"directives":"..."}
 type Middleware struct {
-	Deprecated   []string `json:"include,omitempty"`
-	Directives   string   `json:"directives"`
-	LoadOWASPCRS bool     `json:"load_owasp_crs"`
+	Deprecated   []string   `json:"include,omitempty"`
+	Directives   string     `json:"directives"`
+	LoadOWASPCRS bool       `json:"load_owasp_crs"`
+	Rate         *RateLimit `json:"rate_limit,omitempty"`
 
 	logger  *zap.Logger
 	waf     coraza.WAF
+	limiter *rateLimiter
 	poolKey string
 }
 
@@ -86,6 +88,9 @@ func (m *Middleware) Provision(ctx caddy.Context) error {
 	m.waf = val.(*pooledWAF).waf
 	if loaded {
 		m.logger.Info("reusing existing WAF instance from pool")
+	}
+	if m.Rate != nil && m.Rate.Requests > 0 && m.Rate.WindowMS > 0 {
+		m.limiter = newRateLimiter(*m.Rate)
 	}
 	return nil
 }

@@ -555,8 +555,8 @@ func TestWafRendersInTheChain(t *testing.T) {
 	st := with(site, func(r *store.Site) {
 		r.GateMode = "acl"
 		r.CountryMode, r.Countries = "deny", "DE FR"
-		r.Waf = "custom"
-		r.WafDirectives = "SecRuleEngine On\nSecRuleRemoveById 920280"
+		r.Waf, r.WafMode = "custom", "block"
+		r.WafDirectives = "SecRuleRemoveById 920280"
 	})
 	got, err := Render(State{[]store.Domain{dom}, []store.Site{st}}, opts())
 	if err != nil {
@@ -570,7 +570,7 @@ func TestWafRendersInTheChain(t *testing.T) {
 	if names := names(cfg); len(names) < len(wantOrder) || !strings.Contains(strings.Join(names, ","), strings.Join(wantOrder, ",")) {
 		t.Errorf("handler order %v, want %v containing order:\n%s", names, wantOrder, got)
 	}
-	if !strings.Contains(string(got), "SecRuleEngine On") {
+	if !strings.Contains(string(got), "SecRuleRemoveById 920280") {
 		t.Errorf("custom directives missing from the render:\n%s", got)
 	}
 	// the ml host has no WAF at all (the site's main host is in the same config, so
@@ -615,21 +615,39 @@ func TestWafRendersInTheChain(t *testing.T) {
 	}
 }
 
-// DirectivesFor builds one stable directives string: the preset alone for the crs
-// preset, preset plus the trimmed tail for custom (never a preset alone with a
-// non-tail), and the plain preset when the site's waf value is unknown.
+// DirectivesFor composes the tail (preset, custom extras) and always ends with exactly one
+// engine line, owned by waf_mode: detect by default, On for block, whatever the preset or
+// the tail carried.
 func TestWafDirectivesFor(t *testing.T) {
-	if d := caddywaf.DirectivesFor("crs", ""); !strings.HasSuffix(d, "SecRuleEngine DetectionOnly\n") || !strings.Contains(d, "@owasp_crs/*.conf") {
+	if d := caddywaf.DirectivesFor("crs", "", ""); strings.Count(d, "SecRuleEngine") != 1 || !strings.HasSuffix(d, "SecRuleEngine DetectionOnly\n") || !strings.Contains(d, "@owasp_crs/*.conf") {
 		t.Errorf("crs preset directives wrong:\n%s", d)
 	}
-	custom := "SecRuleEngine On\nSecRuleRemoveById 920280"
-	if d := caddywaf.DirectivesFor("custom", custom+"\n"); !strings.HasPrefix(d, caddywaf.Preset) || !strings.HasSuffix(d, custom+"\n") {
-		t.Errorf("custom directives not preset+tail:\n%s", d)
+	custom := "SecRuleRemoveById 920280"
+	if d := caddywaf.DirectivesFor("custom", custom+"\n", "block"); strings.Count(d, "SecRuleEngine") != 1 ||
+		!strings.HasPrefix(d, caddywaf.Preset) || !strings.HasSuffix(d, "SecRuleEngine On\n") {
+		t.Errorf("custom block directives not preset+tail+mode:\n%s", d)
 	}
-	if d := caddywaf.DirectivesFor("custom", "   \n"); d != caddywaf.Preset {
+	if d := caddywaf.DirectivesFor("custom", "   \n", ""); strings.Count(d, "SecRuleEngine") != 1 || d != caddywaf.DirectivesFor("crs", "", "") {
 		t.Errorf("blank custom tail must fall back to the preset alone, got:\n%s", d)
 	}
-	if d := caddywaf.DirectivesFor("", "SecRuleEngine On"); d != caddywaf.Preset {
-		t.Errorf("empty site waf must give the plain preset:\n%s", d)
+}
+
+// A rate limit without a ruleset renders the handler engine-off (limiter only); a ruleset
+// plus a limit renders the CRS tail and the limiter in the same handler.
+func TestWafRateLimitRenders(t *testing.T) {
+	limiterOnly := with(site, func(r *store.Site) { r.RLRequests, r.RLWindow, r.RLPaths = 120, "5m", "/login\n/cart/checkout" })
+	got, err := Render(State{[]store.Domain{dom}, []store.Site{limiterOnly}}, opts())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(got), "SecRuleEngine Off") {
+		t.Errorf("limit-only site kept the CRS bootstrap:\n%s", got)
+	}
+	if !strings.Contains(string(got), `"requests":120`) || !strings.Contains(string(got), `"window_ms":300000`) ||
+		!strings.Contains(string(got), `"/login"`) {
+		t.Errorf("rate limit config missing from the handler:\n%s", got)
+	}
+	if strings.Contains(string(got), "@owasp_crs") {
+		t.Errorf("limit-only site loaded the CRS rules:\n%s", got)
 	}
 }

@@ -424,34 +424,69 @@ func TestDashboardRowCarriesBackupAge(t *testing.T) {
 	}
 }
 
-// The WAF tab: the preset saves in place, invalid custom directives are refused with the
-// reason, and off clears both fields.
+// The WAF tab: ruleset, engine mode and rate limit save in place; a preset refuses a tail;
+// SecRuleEngine cannot hide in the custom tail (the engine mode owns it); off clears everything.
 func TestSiteWafTabSaves(t *testing.T) {
 	s, id, ck := signedIn(t)
-	post := func(waf, directives string) *httptest.ResponseRecorder {
-		return s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck, hdr: htmxPost,
-			body: url.Values{"waf": {waf}, "waf_directives": {directives}}.Encode()})
+	post := func(f url.Values) *httptest.ResponseRecorder {
+		return s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck, hdr: htmxPost, body: f.Encode()})
 	}
-	if w := post("crs", "SecRuleEngine On"); w.Code != 200 {
+	base := url.Values{"waf": {"crs"}, "waf_directives": {""}, "waf_mode": {""}, "rl_requests": {""}, "rl_window": {""}, "rl_paths": {""}}
+	if w := post(cloneForm(base)); w.Code != 200 {
 		t.Fatalf("save crs: %d %s", w.Code, w.Body.String())
 	}
-	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "crs" || rt.WafDirectives != "" {
-		t.Errorf("crs saved with the custom tail: %+v", rt)
+	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "crs" || rt.WafMode != "" || rt.RLRequests != 0 {
+		t.Errorf("crs save: %+v", rt)
 	}
-	if w := post("custom", "SecRuleEngine On\nSecRuleRemoveById 920280"); w.Code != 200 {
-		t.Fatalf("save custom: %d %s", w.Code, w.Body.String())
+	block := cloneForm(base)
+	block.Set("waf", "custom")
+	block.Set("waf_directives", "SecRuleRemoveById 920280")
+	block.Set("waf_mode", "block")
+	if w := post(block); w.Code != 200 {
+		t.Fatalf("save custom block: %d %s", w.Code, w.Body.String())
 	}
-	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "custom" || !strings.Contains(rt.WafDirectives, "SecRuleEngine On") {
-		t.Errorf("custom tail not saved: %+v", rt)
+	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "custom" || rt.WafMode != "block" || rt.WafDirectives != "SecRuleRemoveById 920280" {
+		t.Errorf("custom block tail not saved: %+v", rt)
 	}
-	if w := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck, hdr: htmxPost,
-		body: url.Values{"waf": {"custom"}, "waf_directives": {"SecAuditLog /var/log/x.log"}}.Encode()}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "SecAuditLog") {
-		t.Errorf("host-state directive accepted: %d %s", w.Code, w.Body.String())
+	enginein := cloneForm(base)
+	enginein.Set("waf", "custom")
+	enginein.Set("waf_directives", "SecRuleEngine On")
+	if w := post(enginein); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "SecRuleEngine") {
+		t.Errorf("engine line accepted in a tail: %d %s", w.Code, w.Body.String())
 	}
-	if w := post("", ""); w.Code != 200 {
+	limit := cloneForm(base)
+	limit.Set("rl_requests", "120")
+	limit.Set("rl_window", "5m")
+	limit.Set("rl_paths", "/login\n/cart/checkout")
+	if w := post(limit); w.Code != 200 {
+		t.Fatalf("save rate limit: %d %s", w.Code, w.Body.String())
+	}
+	rt, _ := s.deps.Store.GetSite(context.Background(), id)
+	if rt.RLRequests != 120 || rt.RLWindow != "5m" || rt.RLPaths != "/login\n/cart/checkout" {
+		t.Errorf("rate limit not saved: %+v", rt)
+	}
+	// a window without requests is refused
+	nowin := cloneForm(base)
+	nowin.Set("rl_requests", "50")
+	if w := post(nowin); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "window") {
+		t.Errorf("window-less limit accepted: %d %s", w.Code, w.Body.String())
+	}
+	off := cloneForm(base)
+	off.Set("waf", "")
+	if w := post(off); w.Code != 200 {
 		t.Fatalf("save off: %d %s", w.Code, w.Body.String())
 	}
-	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "" || rt.WafDirectives != "" {
+	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "" || rt.WafDirectives != "" || rt.RLRequests != 0 || rt.RLPaths != "" {
 		t.Errorf("off did not clear the fields: %+v", rt)
 	}
+}
+
+func cloneForm(v url.Values) url.Values {
+	out := url.Values{}
+	for k, vs := range v {
+		for _, x := range vs {
+			out.Add(k, x)
+		}
+	}
+	return out
 }

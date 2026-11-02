@@ -9,7 +9,6 @@ func TestValidateAccepts(t *testing.T) {
 	good := map[string]string{
 		"empty":           "",
 		"comment only":    "# nothing to see\n",
-		"engine on":       "SecRuleEngine On\n",
 		"tuned rule":      "SecRuleRemoveById 920280\nSecRuleRemoveByTag attack-xss\n",
 		"body limit":      "SecRequestBodyLimit 134217728\nSecRequestBodyLimitAction ProcessPartial\n",
 		"custom rule":     "SecRule ARGS:@q \"@rx evil\" \"id:4242,phase:1,log,msg:'site rule'\"\n",
@@ -39,6 +38,7 @@ func TestValidateRejects(t *testing.T) {
 		"pmFromFile op":     "SecRule ARGS \"@pmFromFile /etc/attackstrings.txt\" \"id:1,log\"\n",
 		"ipMatchFromFile":   "SecRule REMOTE_ADDR \"@ipMatchFromFile /etc/geo/bans.txt\" \"id:1,log\"\n",
 		"rbl op":            "SecRule REMOTE_ADDR \"@rbl dnsbl.example.com\" \"id:1,log\"\n",
+		"engine in tail":    "SecRuleEngine On\n",
 		"unknown directive": "SecSensorProperty pin=1234\n",
 		"does not compile":  "SecRule ARGS \"@rx ((\" \"id:1,log\"\n",
 		"update missing id": "SecRuleUpdateTargetById 333333 \"!ARGS:x\"\n",
@@ -62,6 +62,7 @@ func TestValidateRejectionsSayWhy(t *testing.T) {
 		{"builtin file reader", "SecRule ARGS \"@pmFromFile /etc/x.txt\" \"id:1,log\"\n", "pmFromFile is not allowed"},
 		{"dns resolver", "SecRule REMOTE_ADDR \"@rbl dnsbl.example.com\" \"id:1,log\"\n", "rbl is not allowed"},
 		{"audit log path", "SecAuditLog /var/log/x.log\n", "SecAuditLog is not allowed"},
+		{"engine owned by the field", "SecRuleEngine On\n", "SecRuleEngine is not allowed"},
 		{"syntax", "SecRule ARGS \"@rx ((\" \"id:1,log\"\n", "do not compile"},
 	}
 	for _, row := range rows {

@@ -313,29 +313,51 @@ func (s *Server) saveSiteGeo(w http.ResponseWriter, r *http.Request) {
 	inplace(w, "Saved and applied. The rule applies to requests as soon as Caddy has reloaded.")
 }
 
-// saveSiteWaf writes the site's WAF preset and custom directives in place. In the custom
-// preset the tail is appended to the CRS bootstrap by the renderer; it validates twice,
-// here by wafval and again in the engine at Caddy load.
+// saveSiteWaf writes the site's WAF preset, engine mode and rate limit in place. The custom
+// preset's tail is appended to the CRS bootstrap by the renderer; it validates twice, here
+// by wafval and again in the engine at Caddy load.
 func (s *Server) saveSiteWaf(w http.ResponseWriter, r *http.Request) {
 	if !s.mutateSite(w, r, "site.waf", func(rt *store.Site) error {
 		preset, directives := r.PostFormValue("waf"), strings.ReplaceAll(strings.TrimSpace(r.PostFormValue("waf_directives")), "\r\n", "\n")
 		switch preset {
-		case "crs":
-			directives = ""
+		case "crs", "php", "wordpress", "shop", "goapi", "node":
+			if directives != "" {
+				return fmt.Errorf("the %s preset carries its own rules; switch to custom to write more, or leave the box empty", preset)
+			}
 		case "custom":
 			if err := wafval.Validate(directives); err != nil {
 				return fmt.Errorf("custom directives: %w", err)
 			}
 		case "":
+			if directives != "" {
+				return fmt.Errorf("custom directives need the custom preset")
+			}
 		default:
-			return fmt.Errorf("WAF preset %q must be crs, custom or empty (off)", preset)
+			return fmt.Errorf("WAF ruleset %q must be off, a preset or custom", preset)
 		}
 		rt.Waf, rt.WafDirectives = preset, directives
+		mode := r.PostFormValue("waf_mode")
+		switch mode {
+		case "", "detect", "block":
+			rt.WafMode = mode
+		default:
+			return fmt.Errorf("engine mode %q must be empty (detection only) or block", mode)
+		}
+		rl, err := parseRL(r.PostForm)
+		if err != nil {
+			return err
+		}
+		if rl != nil {
+			if rt.Waf == "" && rl.requests > 0 { // a limit without a ruleset runs the handler engine-off
+				rt.Waf = ""
+			}
+			rt.RLRequests, rt.RLWindow, rt.RLPaths = rl.requests, rl.window, rl.paths
+		}
 		return nil
 	}) {
 		return
 	}
-	inplace(w, "Saved and applied. The WAF runs in the site's Caddy route as soon as Caddy has reloaded.")
+	inplace(w, "Saved and applied. The WAF and the rate limit run in the site's Caddy route as soon as Caddy has reloaded.")
 }
 
 // siteRuntimeAction starts, stops or restarts the site's supervised unit through the helper,

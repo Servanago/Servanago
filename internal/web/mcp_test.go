@@ -772,17 +772,20 @@ func TestMCPWafFields(t *testing.T) {
 
 	var made changed
 	if err := call(t, sess, "create_site", map[string]any{"kind": "static", "static_root": root,
-		"hostnames": []string{"wafmcp.example.com"}, "waf": "custom", "waf_directives": "SecRuleEngine On"}, &made); err != nil {
+		"hostnames": []string{"wafmcp.example.com"}, "waf": "custom", "waf_directives": "SecRuleRemoveById 920280",
+		"waf_mode": "block", "rl_requests": 120, "rl_window": "5m", "rl_paths": "/login"}, &made); err != nil {
 		t.Fatalf("create_site: %v", err)
 	}
-	if got := getSite(t, sess, made.ID); got.Waf != "custom" || got.WafDirectives != "SecRuleEngine On" {
+	if got := getSite(t, sess, made.ID); got.Waf != "custom" || got.WafDirectives != "SecRuleRemoveById 920280" ||
+		got.WafMode != "block" || got.RLRequests != 120 || got.RLWindow != "5m" || got.RLPaths != "/login" {
 		t.Fatalf("created WAF: %+v", got)
 	}
-	// an update that does not mention the WAF keeps both
+	// an update that does not mention the WAF keeps everything it owns
 	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "notes": "x"}, nil); err != nil {
 		t.Fatalf("update_site: %v", err)
 	}
-	if got := getSite(t, sess, made.ID); got.Waf != "custom" || got.WafDirectives != "SecRuleEngine On" {
+	if got := getSite(t, sess, made.ID); got.Waf != "custom" || got.WafDirectives != "SecRuleRemoveById 920280" ||
+		got.WafMode != "block" || got.RLRequests != 120 || got.RLPaths != "/login" {
 		t.Fatalf("update_site cleared the WAF: %+v", got)
 	}
 	// directives are validated: a host-state directive is refused with its reason
@@ -790,15 +793,20 @@ func TestMCPWafFields(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "SecAuditLog") {
 		t.Errorf("host-state directive accepted: %v", err)
 	}
+	// the engine line cannot hide in the tail: waf_mode owns it
+	err = call(t, sess, "update_site", map[string]any{"id": made.ID, "waf_directives": "SecRuleEngine On"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "SecRuleEngine") {
+		t.Errorf("engine line accepted in a tail: %v", err)
+	}
 	// an unknown preset is refused
 	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "waf": "modsec"}, nil); err == nil {
 		t.Error("unknown preset accepted")
 	}
-	// "" on waf turns it off and clears the directives
-	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "waf": "", "waf_directives": ""}, nil); err != nil {
+	// 0 on rl_requests turns the limit off and clears window and paths
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "waf": "", "waf_directives": "", "waf_mode": "", "rl_requests": 0}, nil); err != nil {
 		t.Fatalf("update_site: %v", err)
 	}
-	if got := getSite(t, sess, made.ID); got.Waf != "" || got.WafDirectives != "" {
+	if got := getSite(t, sess, made.ID); got.Waf != "" || got.WafDirectives != "" || got.WafMode != "" || got.RLRequests != 0 || got.RLPaths != "" {
 		t.Fatalf("WAF not cleared: %+v", got)
 	}
 }
