@@ -134,13 +134,20 @@ func (a Actions) PHPBuild(r Request) Response {
 			}
 		}
 	}
+	need := slices.Clone(phpTools)
+	for _, n := range exts {
+		e, _ := runtimes.Lookup(n)
+		for _, t := range e.Tools {
+			need = append(need, struct{ tool, pkg string }{t, t})
+		}
+	}
 	var tools []string
-	for _, t := range phpTools {
+	for _, t := range need {
 		tools = append(tools, t.tool)
 	}
 	if miss := a.s.Missing(tools); len(miss) > 0 {
 		var pkgs []string
-		for _, t := range phpTools {
+		for _, t := range need {
 			for _, m := range miss {
 				if t.tool == m {
 					pkgs = append(pkgs, t.pkg)
@@ -391,13 +398,7 @@ func (a Actions) builtExts(dir string) []string {
 	if err != nil {
 		return runtimes.LegacyExtensions
 	}
-	var out []string
-	for _, l := range strings.Split(string(b), "\n") {
-		if f := strings.Fields(l); len(f) > 0 {
-			out = append(out, f[0])
-		}
-	}
-	return out
+	return runtimes.BuildExtsOf(string(b))
 }
 
 // checkBuildHas refuses a site whose extensions its build does not contain (a build made before apcu or imagick were

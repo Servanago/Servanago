@@ -19,6 +19,7 @@ type Ext struct {
 	PECL  bool     // built from its Packagist source after PHP (phplibs.ResolveExt); false = compiled with PHP
 	Needs []string // other extensions that must be built with it (and load before it)
 	Libs  []string // libraries (phplibs names) the extension links; the build compiles only the ones selected
+	Tools []string // host programs only this extension's build needs (also their apt package names)
 }
 
 // PHPExtensions is the allowlist, in the order the ini loads them.
@@ -36,9 +37,22 @@ var PHPExtensions = []Ext{
 	{Name: "bcmath", Group: "core"}, {Name: "gmp", Group: "core", Libs: []string{"gmp"}},
 	{Name: "mysqli", Group: "db"}, {Name: "pdo_mysql", Group: "db"},
 	{Name: "pgsql", Group: "db", Libs: []string{"libpq"}}, {Name: "pdo_pgsql", Group: "db", Libs: []string{"libpq"}},
-	// PECL packages (apcu/apcu, imagick/imagick), built from their Packagist source.
+	{Name: "sockets", Group: "core"}, {Name: "pcntl", Group: "core"},
+	{Name: "exif", Group: "web"}, // mbstring, when both are built, must load first (the registry order does that)
+	{Name: "bz2", Group: "core", Libs: []string{"bzip2"}},
+	{Name: "sodium", Group: "core", Libs: []string{"libsodium"}},
+	{Name: "ldap", Group: "extra", Libs: []string{"openldap"}},
+	// PECL packages, built from their Packagist source after PHP (phplibs extSpecs).
 	{Name: "apcu", Group: "extra", PECL: true},
 	{Name: "imagick", Group: "extra", PECL: true, Libs: []string{"imagemagick"}},
+	{Name: "msgpack", Group: "extra", PECL: true},
+	{Name: "redis", Group: "extra", PECL: true},
+	{Name: "memcached", Group: "extra", PECL: true, Libs: []string{"libmemcached"}},
+	// The manual: mbstring must be loaded before mailparse. Its release zipball lacks the generated lexer (found by a
+	// real build: "re2c: command not found"), so the host needs re2c.
+	{Name: "mailparse", Group: "extra", PECL: true, Needs: []string{"mbstring"}, Tools: []string{"re2c"}},
+	{Name: "pcov", Group: "extra", PECL: true},
+	{Name: "xdebug", Group: "extra", PECL: true, Zend: true}, // a php-ext-zend package: loaded with zend_extension=
 }
 
 // CoreExtensions is what a site gets when it selects none.
@@ -169,8 +183,13 @@ func BuildExts(label string) []string {
 	if err != nil {
 		return nil
 	}
+	return BuildExtsOf(string(b))
+}
+
+// BuildExtsOf is the extension names in the text of an exts.txt (the first word of each line).
+func BuildExtsOf(text string) []string {
 	var out []string
-	for _, l := range strings.Split(string(b), "\n") {
+	for _, l := range strings.Split(text, "\n") {
 		if f := strings.Fields(l); len(f) > 0 {
 			out = append(out, f[0])
 		}

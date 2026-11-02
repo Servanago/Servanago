@@ -87,6 +87,23 @@ func Recipe(r Resolved, prefix string, deps map[string]string, jobs int) []Cmd {
 			c[i].Env = append(append([]string(nil), c[i].Env...), "CPPFLAGS=-DSQLITE_ENABLE_COLUMN_METADATA=1 -DSQLITE_ENABLE_FTS5=1 "+cppFlags(deps))
 		}
 		return c
+	case "bzip2":
+		// No configure script. The project's own Makefile-libbz2_so builds the shared library PHP's bz2.so links;
+		// the plain install adds the header and the static archive.
+		so := "libbz2.so." + r.Version
+		return []Cmd{
+			{Env: env, Name: "make", Args: []string{"-f", "Makefile-libbz2_so", j}},
+			mk("install", "PREFIX="+prefix),
+			{Env: env, Name: "cp", Args: []string{"-a", so, "libbz2.so.1.0", prefix + "/lib/"}},
+			{Env: env, Name: "ln", Args: []string{"-sf", so, prefix + "/lib/libbz2.so"}},
+		}
+	case "libsodium":
+		return std()
+	case "openldap":
+		// The client libraries only (libldap, liblber): no slapd, no SASL, TLS through the openssl built here.
+		return std("--disable-slapd", "--without-cyrus-sasl", "--without-systemd", "--with-tls=openssl")
+	case "libmemcached":
+		return cmake("-DBUILD_SHARED_LIBS=ON", "-DBUILD_TESTING=OFF", "-DBUILD_DOCS=OFF", "-DENABLE_SASL=OFF", "-DENABLE_DTRACE=OFF")
 	case "libpq":
 		// Only the client library: headers, libpq and its pkg-config file.
 		return []Cmd{

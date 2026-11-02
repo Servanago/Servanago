@@ -31,6 +31,12 @@ var switches = map[string]struct{ on, off []string }{
 	"pdo_mysql":  {on: []string{"--with-pdo-mysql=shared,mysqlnd"}},
 	"pgsql":      {on: []string{"--with-pgsql=shared"}},
 	"pdo_pgsql":  {on: []string{"--with-pdo-pgsql=shared"}},
+	"sockets":    {on: []string{"--enable-sockets=shared"}},
+	"pcntl":      {on: []string{"--enable-pcntl=shared"}},
+	"exif":       {on: []string{"--enable-exif=shared"}},
+	"bz2":        {on: []string{"--with-bz2=shared,{bzip2}"}},
+	"sodium":     {on: []string{"--with-sodium=shared"}}, // takes no directory: found through PKG_CONFIG_PATH
+	"ldap":       {on: []string{"--with-ldap=shared,{openldap}"}},
 }
 
 // PHPConfigure returns the ./configure arguments and environment for a PHP build into prefix, linked against the

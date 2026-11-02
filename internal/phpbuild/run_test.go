@@ -359,13 +359,41 @@ func TestUnzipRefusesEscapes(t *testing.T) {
 	}
 }
 
-func TestUnzipRefusesSymlinks(t *testing.T) {
+// A symlink in a zip (xdebug's test suite has one) is never created: it is skipped, the rest unpacks, and nothing
+// leaves the destination. Any other special entry still fails the unpack.
+func TestUnzipSkipsSymlinks(t *testing.T) {
 	var buf bytes.Buffer
 	zw := zip.NewWriter(&buf)
 	h := &zip.FileHeader{Name: "top/link"}
 	h.SetMode(os.ModeSymlink | 0o777)
 	w, _ := zw.CreateHeader(h)
 	_, _ = w.Write([]byte("/etc/passwd"))
+	w, _ = zw.Create("top/real.c")
+	_, _ = w.Write([]byte("/* c */"))
+	_ = zw.Close()
+	dir := t.TempDir()
+	file := filepath.Join(dir, "x.zip")
+	if err := os.WriteFile(file, buf.Bytes(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(dir, "out")
+	if err := unzip(file, out); err != nil {
+		t.Fatalf("a symlink entry must not fail the unpack: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(out, "top", "link")); err == nil {
+		t.Error("the symlink was created")
+	}
+	if b, err := os.ReadFile(filepath.Join(out, "top", "real.c")); err != nil || string(b) != "/* c */" {
+		t.Errorf("the regular file was not unpacked: %q %v", b, err)
+	}
+}
+
+func TestUnzipRefusesDevices(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	h := &zip.FileHeader{Name: "top/dev"}
+	h.SetMode(os.ModeDevice | 0o666)
+	_, _ = zw.CreateHeader(h)
 	_ = zw.Close()
 	dir := t.TempDir()
 	file := filepath.Join(dir, "x.zip")
@@ -526,6 +554,43 @@ func TestPHPConfigureSelection(t *testing.T) {
 	args85, _ := PHPConfigure("8.5.1", "/p", nil, nil)
 	if strings.Contains(strings.Join(args85, " "), "opcache") {
 		t.Error("8.5 builds opcache in: no flag, on or off")
+	}
+}
+
+// Every extension the allowlist offers can actually be built: its libraries exist, a bundled one has configure
+// switches, a PECL one has a recipe, and the libraries it names are the ones its flags use.
+func TestEveryOfferedExtensionHasARecipe(t *testing.T) {
+	deps := map[string]string{}
+	for _, n := range phplibs.Names() {
+		deps[n] = "/libs/" + n
+	}
+	for _, e := range runtimes.PHPExtensions {
+		for _, l := range e.Libs {
+			if !slices.Contains(phplibs.Names(), l) {
+				t.Errorf("%s names library %q, which phplibs cannot build", e.Name, l)
+			}
+		}
+		for _, n := range e.Needs {
+			if _, ok := runtimes.Lookup(n); !ok {
+				t.Errorf("%s needs %q, which is not an extension", e.Name, n)
+			}
+		}
+		if e.PECL {
+			if _, err := phplibs.ExtRecipe(phplibs.ExtSource{Name: e.Name}, "/p", deps, 1); err != nil {
+				t.Errorf("%s: %v", e.Name, err)
+			}
+			continue
+		}
+		if _, ok := switches[e.Name]; !ok && e.Shared("8.4") {
+			t.Errorf("%s has no configure switch", e.Name)
+		}
+	}
+	args, _ := PHPConfigure("8.4.27", "/p", map[string]string{"bzip2": "/libs/bzip2-1.0.8", "openldap": "/libs/openldap-2.7.2"}, []string{"bz2", "ldap", "sodium"})
+	got := strings.Join(args, " ") + " "
+	for _, want := range []string{"--with-bz2=shared,/libs/bzip2-1.0.8 ", "--with-ldap=shared,/libs/openldap-2.7.2 ", "--with-sodium=shared "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in %s", want, got)
+		}
 	}
 }
 

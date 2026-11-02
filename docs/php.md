@@ -9,12 +9,15 @@ The PHP page lets ServanaGo compile PHP itself, for when a security release must
 - Installs it root-owned under `/opt/servanago/php` (`<version>-<n>`, libraries in `…/libs`).
 - Runs the build as an unprivileged user in a sandboxed unit (half the CPU, 4 GB of memory).
 
-The host needs only a C and C++ toolchain, pkg-config, cmake, perl, bison, flex, autoconf, automake, libtool, m4, gpg, xz and tar. A missing one is listed with its `apt install` line.
+The host needs only a C and C++ toolchain, pkg-config, cmake, perl, bison, flex, autoconf, automake, libtool, m4, gpg, xz and tar. A missing one is listed with its `apt install` line. Ticking mailparse also needs `re2c` (its source ships without the generated lexer).
 
 ## Using a build
 
 - Each site picks a branch (`8.4`, follows the newest build) or an exact build (`8.4.27-1`).
-- Each site has its own set of extensions: 19 shared ones, including the PECL extensions apcu and imagick.
+- Each site has its own set of extensions, chosen from the ones its build holds.
+- The build form lists every extension as a checkbox (it starts from what the newest build holds). Only what you tick is compiled, and only the libraries those need. 34 are offered: the bundled ones (mbstring, opcache, sqlite3, pdo_sqlite, dom, simplexml, xml, xmlreader, xmlwriter, curl, zip, gd, intl, soap, bcmath, gmp, mysqli, pdo_mysql, pgsql, pdo_pgsql, sockets, pcntl, exif, bz2, sodium, ldap) and the PECL ones (apcu, imagick, msgpack, redis, memcached, mailparse, pcov, xdebug). mailparse needs mbstring and ticks it for you. Not offered: ssh2 (no PIE package) and igbinary (no stable release); imap and mongodb were left out on purpose.
+- A build records what it holds in `exts.txt` beside `libs.txt`. A build made before extensions were a choice has no such file and is taken to hold the old 22.
+- A PECL extension builds from the newest stable release whose PHP requirement the build meets (for example xdebug refuses PHP 8.6). If none does, the fetch step fails and says so.
 - Switching moves the sites one at a time and puts a site back on the previous build if it does not come up.
 - Each login user can have a default command-line `php` and `composer`.
 - A weekly check against php.net shows new releases (security ones marked) and emails the MAIL FROM address.
@@ -24,11 +27,11 @@ The host needs only a C and C++ toolchain, pkg-config, cmake, perl, bison, flex,
 Verified:
 
 - The PHP download, against the sha256 php.net publishes and a GPG signature from a PHP release manager. The keyring is embedded in the binary and was fetched once from php.net, so those keys are trusted on first use.
-- Each library, against the checksum its project publishes. Exceptions: libpng, freetype, libwebp and gmp are fixed to a checksum checked when it was added (newer releases of those need a ServanaGo update), and sqlite uses SHA3-256, the only hash it publishes.
+- Each library, against the checksum its project publishes. Exceptions: libpng, freetype, libwebp, gmp, bzip2, libsodium, OpenLDAP and libmemcached are fixed to a checksum checked when it was added (newer releases of those need a ServanaGo update; bzip2 and OpenLDAP were GPG-checked, libsodium's minisign signature and libmemcached, which has none, were not), and sqlite uses SHA3-256, the only hash it publishes.
 
 Only trusted:
 
-- The source of **apcu** and **imagick** comes from Packagist and GitHub over HTTPS at the commit Packagist names, because neither publishes a checksum. The build log records each commit and download hash. A compromise of Packagist or GitHub could put malicious code into an extension that php-fpm loads as the site user.
+- The source of the **PECL extensions** (apcu, imagick, redis, xdebug and the rest) comes from Packagist and GitHub over HTTPS at the commit Packagist names, because none publishes a checksum. The build log records each commit and download hash. A compromise of Packagist or GitHub could put malicious code into an extension that php-fpm loads as the site user.
 
 Build isolation:
 

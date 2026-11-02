@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,7 +37,16 @@ func TestSmokeRealBuild(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	jb, _ := json.Marshal(Job{Version: ver, N: 1, Jobs: 8})
+	// SMOKE_EXTS (comma separated) is the selection to build; empty builds the default set.
+	var picked []string
+	if s := os.Getenv("SMOKE_EXTS"); s != "" {
+		var err error
+		if picked, err = runtimes.ParseExtensions(strings.Split(s, ",")); err != nil {
+			t.Fatal(err)
+		}
+		picked = runtimes.Close(picked)
+	}
+	jb, _ := json.Marshal(Job{Version: ver, N: 1, Jobs: 8, Exts: picked})
 	if err := os.WriteFile(filepath.Join(dir, JobFile), jb, 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +72,18 @@ func TestSmokeRealBuild(t *testing.T) {
 	}
 	extDir := strings.TrimSpace(string(extDirOut))
 	args := []string{"-n", "-d", "extension_dir=" + extDir}
+	built, err := os.ReadFile(filepath.Join(prefix, "exts.txt"))
+	if err != nil {
+		t.Fatalf("no exts.txt: %v", err)
+	}
+	t.Logf("exts.txt:\n%s", built)
 	for _, x := range runtimes.SharedExtensions(runtimes.Branch(ver)) {
+		if !slices.Contains(runtimes.BuildExtsOf(string(built)), x.Name) {
+			if _, err := os.Stat(filepath.Join(extDir, x.Name+".so")); err == nil {
+				t.Errorf("%s.so exists although %s was not selected", x.Name, x.Name)
+			}
+			continue
+		}
 		if _, err := os.Stat(filepath.Join(extDir, x.Name+".so")); err != nil {
 			t.Errorf("%s.so missing: %v", x.Name, err)
 		}

@@ -118,7 +118,7 @@ func TestResolveRejects(t *testing.T) {
 // TestPinned: the three libraries without a feed sum resolve from the table, flagged as pinned, and nothing
 // else is flagged. A pinned entry is held to the same rules as a feed one.
 func TestPinned(t *testing.T) {
-	for _, n := range []string{"libpng", "freetype", "libwebp", "gmp"} {
+	for _, n := range []string{"libpng", "freetype", "libwebp", "gmp", "bzip2", "libsodium", "openldap", "libmemcached"} {
 		r, err := Resolve(context.Background(), nil, n) // pinned entries touch no feed
 		if err != nil {
 			t.Fatalf("%s: %v", n, err)
@@ -126,7 +126,7 @@ func TestPinned(t *testing.T) {
 		if !r.Pinned || r.Name != n || r.Algo != AlgoSHA256 || !sumRE.MatchString(r.Sum) || !strings.HasPrefix(r.URL, "https://") || !versionRE.MatchString(r.Version) {
 			t.Errorf("%s: %+v", n, r)
 		}
-		if !strings.Contains(r.URL, SourceDir(r)) {
+		if n != "libsodium" && n != "libmemcached" && !strings.Contains(r.URL, SourceDir(r)) { // the stable tarball and a GitHub tag archive do not carry the directory name in their URL
 			t.Errorf("%s: URL %s does not name the tarball %s extracts from", n, r.URL, SourceDir(r))
 		}
 	}

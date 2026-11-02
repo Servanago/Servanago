@@ -37,6 +37,7 @@ type fakeSeam struct {
 	// PHP build seam
 	files        map[string][]byte // ReadFile and Lstat see these (path -> content), besides atUnit
 	missing      []string
+	askedTools   []string // what the last Missing call asked for
 	free         uint64
 	jobDirCalls  []string
 	dirs         map[string][]string // ReadDir results
@@ -152,7 +153,10 @@ func (s *fakeSeam) CheckBinary(path string) error {
 	return s.binErr
 }
 
-func (s *fakeSeam) Missing([]string) []string        { return s.missing }
+func (s *fakeSeam) Missing(tools []string) []string {
+	s.askedTools = tools
+	return s.missing
+}
 func (s *fakeSeam) FreeBytes(string) (uint64, error) { return s.free, nil }
 func (s *fakeSeam) JobDir(dir, user string) error {
 	s.jobDirCalls = append(s.jobDirCalls, dir+" "+user)

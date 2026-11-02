@@ -69,6 +69,27 @@ var pinned = map[string]Resolved{
 	// keyserver.ubuntu.com; it has since expired, the signature predates that). No sha file is published.
 	"gmp": {Name: "gmp", Version: "6.3.0", URL: "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz", Algo: AlgoSHA256,
 		Sum: "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898", Pinned: true},
+	// bzip2 1.0.8 (2019-07-13): tarball from sourceware.org/pub/bzip2, the project's release host. GPG verified
+	// (2026-11-01): good signature by Mark Wielaard <mark@klomp.org>, fingerprint 1276 8A96 7959 9010 7A0D 2FDF
+	// FC57 E3CC ACD9 9A78 (key from keyserver.ubuntu.com). The project publishes no sha file.
+	"bzip2": {Name: "bzip2", Version: "1.0.8", URL: "https://sourceware.org/pub/bzip2/bzip2-1.0.8.tar.gz", Algo: AlgoSHA256,
+		Sum: "ab5a03176ee106d3f0fa90e381da478ddae405918153cca248e682cd0c4a2269", Pinned: true},
+	// libsodium 1.0.22 (stable-branch tarball): download.libsodium.org, the project's release host. The project
+	// signs it with minisign (a .minisig is published); that signature was NOT checked (no minisign tool here), so
+	// the trust is the https host, as for the PECL sources. The tarball extracts to libsodium-stable (SourceDir).
+	"libsodium": {Name: "libsodium", Version: "1.0.22", URL: "https://download.libsodium.org/libsodium/releases/libsodium-1.0.22-stable.tar.gz", Algo: AlgoSHA256,
+		Sum: "e30a1aa4a4e9e19d5ceaafd7fd2fa83999233b2b7338c5ef52f5deab054501d8", Pinned: true},
+	// OpenLDAP 2.7.2 (2026-10): openldap.org's release directory. GPG verified (2026-11-01): good signature by
+	// "OpenLDAP Project <project@openldap.org>", fingerprint 3CE2 69B5 398B C8B7 8564 5E98 7F67 D5FD 1CE1 CBCE (key
+	// from keyserver.ubuntu.com). The project publishes no sha file.
+	"openldap": {Name: "openldap", Version: "2.7.2", URL: "https://www.openldap.org/software/download/OpenLDAP/openldap-release/openldap-2.7.2.tgz", Algo: AlgoSHA256,
+		Sum: "aad731aa22118ff327b9b4ddfc4b6f18ef9476586205da88a532e90940b523d2", Pinned: true},
+	// libmemcached 1.1.4, the maintained awesomized fork (the original is dormant): GitHub's archive of the tag; the
+	// project publishes no release asset, signature or checksum. The sha256 is of the archive as downloaded
+	// 2026-11-01. GitHub can regenerate archives; the checksum check then fails closed and this entry needs the new
+	// sum after a look at the tag.
+	"libmemcached": {Name: "libmemcached", Version: "1.1.4", URL: "https://github.com/awesomized/libmemcached/archive/refs/tags/1.1.4.tar.gz", Algo: AlgoSHA256,
+		Sum: "c477e1f6510e1dc698e84f3717ce690a8f65b94c616ecaa62306cce0f5e3116a", Pinned: true},
 }
 
 // Algo values: sha256 everywhere except sqlite, which publishes only SHA3-256 (stdlib crypto/sha3).
@@ -78,7 +99,7 @@ const (
 )
 
 // names is the build order: a library comes after the ones its recipe links against.
-var names = []string{"zlib", "openssl", "curl", "libxml2", "libpng", "libjpeg-turbo", "freetype", "libwebp", "imagemagick", "libzip", "icu", "oniguruma", "sqlite", "libpq", "gmp"}
+var names = []string{"zlib", "openssl", "curl", "libxml2", "libpng", "libjpeg-turbo", "freetype", "libwebp", "imagemagick", "libzip", "icu", "oniguruma", "sqlite", "libpq", "gmp", "bzip2", "libsodium", "openldap", "libmemcached"}
 
 // Names returns the build order, dependencies first.
 func Names() []string { return append([]string(nil), names...) }
@@ -160,7 +181,7 @@ func Resolve(ctx context.Context, get Getter, name string) (Resolved, error) {
 		r, err = sqlite(ctx, get)
 	case "libpq":
 		r, err = postgres(ctx, get)
-	case "libpng", "freetype", "libwebp", "gmp":
+	case "libpng", "freetype", "libwebp", "gmp", "bzip2", "libsodium", "openldap", "libmemcached":
 		r = pinned[name]
 	default:
 		return Resolved{}, fmt.Errorf("unknown library %q", name)
@@ -185,6 +206,8 @@ func SourceDir(r Resolved) string {
 	switch r.Name {
 	case "icu":
 		return "icu"
+	case "libsodium":
+		return "libsodium-stable" // the stable-branch tarball does not name its version
 	case "imagemagick":
 		return "ImageMagick-" + r.Version
 	case "oniguruma":

@@ -314,6 +314,27 @@ func TestPHPBuildPassesTheSelection(t *testing.T) {
 	}
 }
 
+// An extension whose source ships without its generated parser (mailparse) makes the host's re2c a requirement, and
+// only for a build that ticks it.
+func TestPHPBuildAsksForTheToolsASelectionNeeds(t *testing.T) {
+	seam := newPHPSeam()
+	NewActions(seam).PHPBuild(req(t, ActionPHPBuild, `{"php_version":"8.4.27","php_exts":["mbstring","mailparse"]}`))
+	if !slices.Contains(seam.askedTools, "re2c") {
+		t.Errorf("mailparse needs re2c, tools asked for: %v", seam.askedTools)
+	}
+	seam = newPHPSeam()
+	NewActions(seam).PHPBuild(req(t, ActionPHPBuild, `{"php_version":"8.4.27","php_exts":["curl"]}`))
+	if slices.Contains(seam.askedTools, "re2c") {
+		t.Errorf("curl does not need re2c: %v", seam.askedTools)
+	}
+	seam = newPHPSeam()
+	seam.missing = []string{"re2c"}
+	resp := NewActions(seam).PHPBuild(req(t, ActionPHPBuild, `{"php_version":"8.4.27","php_exts":["mbstring","mailparse"]}`))
+	if resp.OK || !strings.Contains(resp.Error, "sudo apt install re2c") {
+		t.Errorf("%+v", resp)
+	}
+}
+
 func TestPHPBuildRefusesABadSelection(t *testing.T) {
 	old := runtimes.PHPExtensions
 	t.Cleanup(func() { runtimes.PHPExtensions = old })

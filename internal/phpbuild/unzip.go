@@ -12,7 +12,7 @@ import (
 const maxUnzipped = 500 << 20 // an extension's source is a few MB; this only stops a zip bomb
 
 // unzip extracts a zip into dst (created). It trusts nothing in the archive: names must stay inside dst, only plain
-// files and directories are written, and the total size is capped.
+// files and directories are written (symlinks are skipped, any other special entry fails), and the total size is capped.
 func unzip(file, dst string) error {
 	zr, err := zip.OpenReader(file)
 	if err != nil {
@@ -46,6 +46,9 @@ func unzip(file, dst string) error {
 			if err := extractFile(f, out, mode.Perm()&^0o022); err != nil {
 				return err
 			}
+		case mode&os.ModeSymlink != 0:
+			// Never created: a link could point anywhere. Sources keep them only in test fixtures, which a build does not read.
+			continue
 		default:
 			return fmt.Errorf("%s: entry %q is not a file or directory", filepath.Base(file), f.Name)
 		}
