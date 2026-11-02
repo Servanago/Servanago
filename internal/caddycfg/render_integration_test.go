@@ -10,7 +10,6 @@ import (
 	"testing"
 
 	"github.com/caddyserver/caddy/v2"
-	_ "github.com/corazawaf/coraza-caddy/v2" // registers http.handlers.waf for the integration renders
 	_ "github.com/servanago/servanago/internal/caddygeoip"
 	"github.com/servanago/servanago/internal/caddytest"
 	"github.com/servanago/servanago/internal/store"

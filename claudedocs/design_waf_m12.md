@@ -133,13 +133,11 @@ counter set (Caddy is one process) — no cross-server state, no unit, no helper
 
 ## Spike (Stage 0, before anything)
 
-1. `SecRuleRemoveById` on a retired CRS id: engine accepts or rejects? (Known:
-   `SecRuleUpdateTargetById` on a missing id **rejects** — "rule not found".) Outcomes:
-   rejects → exclusions of retired ids must be pruned by the CRS bump path (reconcile
-   pass listing current CRS ids per release); accepts → rows go silent, UI greys them
-   out against the current ruleset.
-2. Port the coraza-caddy tests: engine builds with CRS inside the Servanago module
-   and a request pipeline matches coraza-caddy's behavior (streaming, hijack, flush).
+**SecRuleRemoveById on a retired CRS id: ACCEPTED (pinned by `TestSpikeRemoveByIdOfRetiredRule`).**
+A CRS upgrade leaves retired-id exclusion rows as silent no-ops — no reconcile pass; the
+rules browser greys rows whose id the current ruleset does not ship. (`SecRuleUpdateTargetById`
+of a missing id does reject — a narrow-row naming a dead id breaks the site's next save, so the
+bump path must prune narrow-rows first; the CRS release notes carry the removed-id list.)
 
 ## Slices (build plan)
 
