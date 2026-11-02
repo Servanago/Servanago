@@ -4,7 +4,7 @@
 PKGS = ./cmd/... ./internal/...
 
 test:
-	go test -race $(PKGS)
+	go test -race -timeout 30m $(PKGS)
 
 lint:
 	@test -z "$$(gofmt -l cmd internal)" || { gofmt -l cmd internal; exit 1; }

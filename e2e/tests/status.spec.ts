@@ -22,7 +22,7 @@ test('status badges render for upstream, certificate and DNS', async ({ page }) 
   // "expiring soon"; staging never finishes offline and stays "pending".
   await expect(row.getByText('pending').first()
     .or(row.getByText('issued').first())
-    .or(row.getByText('expiring soon').first())).toBeVisible();
+    .or(row.getByText('expiring soon').first()).first()).toBeVisible();
   await expect(row.getByText('synced').first()).toBeVisible();
 
   await row.getByRole('link', { name: 'Edit' }).click();
