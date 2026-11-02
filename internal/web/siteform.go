@@ -24,6 +24,7 @@ import (
 	"github.com/servanago/servanago/internal/helper"
 	"github.com/servanago/servanago/internal/runtimes"
 	"github.com/servanago/servanago/internal/store"
+	"github.com/servanago/servanago/internal/wafval"
 )
 
 const maxNotes = 10000 // characters; the schema CHECK says the same
@@ -264,6 +265,22 @@ func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (st
 	} else if r.CountryMode != "" {
 		return r, fmt.Errorf("country mode %q must be deny, allow or empty (off)", r.CountryMode)
 	}
+	if _, ok := v["waf"]; ok { // the WAF tab or an MCP overlay owns these; absent = the stored ones survive
+		preset := v.Get("waf")
+		if preset != "crs" && preset != "custom" && preset != "" {
+			return r, fmt.Errorf("WAF preset %q must be crs, custom or empty (off)", preset)
+		}
+		r.Waf = preset
+		if preset == "custom" {
+			tail := strings.ReplaceAll(strings.TrimSpace(v.Get("waf_directives")), "\r\n", "\n")
+			if err := wafval.Validate(tail); err != nil {
+				return r, fmt.Errorf("custom directives: %w", err)
+			}
+			r.WafDirectives = tail
+		} else {
+			r.WafDirectives = ""
+		}
+	}
 	r.Snippets = r.Snippets[:0:0]
 	for _, n := range v["snippets"] {
 		if n != "" {
@@ -430,6 +447,9 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	}
 	if _, ok := r.PostForm["country_mode"]; ok {
 		base.CountryMode, base.Countries = in.CountryMode, in.Countries
+	}
+	if _, ok := r.PostForm["waf"]; ok {
+		base.Waf, base.WafDirectives = in.Waf, in.WafDirectives
 	}
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}

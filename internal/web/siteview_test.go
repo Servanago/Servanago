@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,7 +19,7 @@ import (
 )
 
 // siteTabsAll is the tab rail of the site view, settings first (it lives on /sites/{id} itself).
-var siteTabsAll = []string{"settings", "dns", "ssl", "scan", "backups", "mail", "snippets", "runtime", "gate", "routes", "countries"}
+var siteTabsAll = []string{"settings", "dns", "ssl", "scan", "backups", "mail", "snippets", "runtime", "gate", "routes", "countries", "waf"}
 
 // signedIn makes a server with one static site full of facts and returns the admin's cookies.
 func signedIn(t *testing.T) (*Server, int64, []*http.Cookie) {
@@ -420,5 +421,37 @@ func TestDashboardRowCarriesBackupAge(t *testing.T) {
 	body := s.do(req{path: "/", cookies: ck}).Body.String()
 	if !strings.Contains(body, "backup "+when(ts)) {
 		t.Errorf("backup chip missing (want %q)", "backup "+when(ts))
+	}
+}
+
+// The WAF tab: the preset saves in place, invalid custom directives are refused with the
+// reason, and off clears both fields.
+func TestSiteWafTabSaves(t *testing.T) {
+	s, id, ck := signedIn(t)
+	post := func(waf, directives string) *httptest.ResponseRecorder {
+		return s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck, hdr: htmxPost,
+			body: url.Values{"waf": {waf}, "waf_directives": {directives}}.Encode()})
+	}
+	if w := post("crs", "SecRuleEngine On"); w.Code != 200 {
+		t.Fatalf("save crs: %d %s", w.Code, w.Body.String())
+	}
+	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "crs" || rt.WafDirectives != "" {
+		t.Errorf("crs saved with the custom tail: %+v", rt)
+	}
+	if w := post("custom", "SecRuleEngine On\nSecRuleRemoveById 920280"); w.Code != 200 {
+		t.Fatalf("save custom: %d %s", w.Code, w.Body.String())
+	}
+	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "custom" || !strings.Contains(rt.WafDirectives, "SecRuleEngine On") {
+		t.Errorf("custom tail not saved: %+v", rt)
+	}
+	if w := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"waf": {"custom"}, "waf_directives": {"SecAuditLog /var/log/x.log"}}.Encode()}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "SecAuditLog") {
+		t.Errorf("host-state directive accepted: %d %s", w.Code, w.Body.String())
+	}
+	if w := post("", ""); w.Code != 200 {
+		t.Fatalf("save off: %d %s", w.Code, w.Body.String())
+	}
+	if rt, _ := s.deps.Store.GetSite(context.Background(), id); rt.Waf != "" || rt.WafDirectives != "" {
+		t.Errorf("off did not clear the fields: %+v", rt)
 	}
 }

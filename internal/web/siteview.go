@@ -15,6 +15,7 @@ import (
 	"github.com/servanago/servanago/internal/helper"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/store"
+	"github.com/servanago/servanago/internal/wafval"
 )
 
 // siteview.go: the per-site control view. One server-rendered page per tab at /sites/<id>/<tab>;
@@ -23,11 +24,11 @@ import (
 // that called it (backOf in auth.go).
 
 // siteTabs are the tab paths under /sites/<id>/; the rail lists Settings first (that path redirects here).
-var siteTabs = []string{"dns", "ssl", "scan", "backups", "mail", "snippets", "runtime", "gate", "routes", "countries"}
+var siteTabs = []string{"dns", "ssl", "scan", "backups", "mail", "snippets", "runtime", "gate", "routes", "countries", "waf"}
 
 var siteTabTitle = map[string]string{
 	"dns": "DNS", "ssl": "SSL", "scan": "Virus scanning", "backups": "Backups", "mail": "Mail",
-	"snippets": "Snippets", "runtime": "Runtime", "gate": "Gate", "routes": "Routes", "countries": "Countries",
+	"snippets": "Snippets", "runtime": "Runtime", "gate": "Gate", "routes": "Routes", "countries": "Countries", "waf": "WAF",
 }
 
 // siteTabPage serves one tab of the site view.
@@ -310,6 +311,31 @@ func (s *Server) saveSiteGeo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inplace(w, "Saved and applied. The rule applies to requests as soon as Caddy has reloaded.")
+}
+
+// saveSiteWaf writes the site's WAF preset and custom directives in place. In the custom
+// preset the tail is appended to the CRS bootstrap by the renderer; it validates twice,
+// here by wafval and again in the engine at Caddy load.
+func (s *Server) saveSiteWaf(w http.ResponseWriter, r *http.Request) {
+	if !s.mutateSite(w, r, "site.waf", func(rt *store.Site) error {
+		preset, directives := r.PostFormValue("waf"), strings.ReplaceAll(strings.TrimSpace(r.PostFormValue("waf_directives")), "\r\n", "\n")
+		switch preset {
+		case "crs":
+			directives = ""
+		case "custom":
+			if err := wafval.Validate(directives); err != nil {
+				return fmt.Errorf("custom directives: %w", err)
+			}
+		case "":
+		default:
+			return fmt.Errorf("WAF preset %q must be crs, custom or empty (off)", preset)
+		}
+		rt.Waf, rt.WafDirectives = preset, directives
+		return nil
+	}) {
+		return
+	}
+	inplace(w, "Saved and applied. The WAF runs in the site's Caddy route as soon as Caddy has reloaded.")
 }
 
 // siteRuntimeAction starts, stops or restarts the site's supervised unit through the helper,

@@ -84,6 +84,7 @@ document.addEventListener('htmx:afterSwap', function (e) {
 <a{{if eq $act "gate"}} class="sel"{{end}} href="/sites/{{$id}}/gate">Gate</a>
 <a{{if eq $act "routes"}} class="sel"{{end}} href="/sites/{{$id}}/routes">Routes</a>
 <a{{if eq $act "countries"}} class="sel"{{end}} href="/sites/{{$id}}/countries">Countries</a>
+<a{{if eq $act "waf"}} class="sel"{{end}} href="/sites/{{$id}}/waf">WAF</a>
 </nav>{{end}}
 
 {{/* sitehead: the identity block of a site's pages — crumb, name, badges, status pills, hostnames,

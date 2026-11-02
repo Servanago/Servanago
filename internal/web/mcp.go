@@ -84,6 +84,8 @@ type siteArgs struct {
 	ExtraRoutes   *string   `json:"extra_routes,omitempty" jsonschema:"paths sent to another app, one per line as path=dial (dial = host:port or absolute socket path), e.g. /api=127.0.0.1:3303; \"\" clears them, leaving it out keeps the stored ones"`
 	CountryMode   *string   `json:"country_mode,omitempty" jsonschema:"deny | allow (country filter): which addresses the site serves; \"\" turns it off, leaving it out keeps the stored one"`
 	Countries     *string   `json:"countries,omitempty" jsonschema:"space- or comma-separated ISO 3166-1 alpha-2 codes (DE, US); required when country_mode is set"`
+	Waf           *string   `json:"waf,omitempty" jsonschema:"crs | custom (Web application firewall, OWASP CRS): the site's WAF; \"\" turns it off, leaving it out keeps the stored one"`
+	WafDirectives *string   `json:"waf_directives,omitempty" jsonschema:"custom: extra SecLang directives appended to the CRS preset, one per line; validated at save; \"\" clears them, leaving it out keeps the stored ones"`
 	Notes         *string   `json:"notes,omitempty" jsonschema:"admin notes shown on the Reference page, plain text, at most 10,000 characters; \"\" clears them, leaving it out keeps the stored ones"`
 }
 
@@ -145,6 +147,14 @@ func (a siteArgs) overlay(v url.Values) {
 	} else if a.Countries != nil {
 		v.Set("countries", *a.Countries)
 	}
+	if a.Waf != nil { // "" = off: the directives clear with it
+		v.Set("waf", *a.Waf)
+		if a.WafDirectives != nil {
+			v.Set("waf_directives", *a.WafDirectives)
+		}
+	} else if a.WafDirectives != nil {
+		v.Set("waf_directives", *a.WafDirectives)
+	}
 	if a.Notes != nil {
 		v.Set("notes", *a.Notes)
 	}
@@ -172,6 +182,8 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v.Set("allowlist", cur.Allowlist)
 	v.Set("country_mode", cur.CountryMode) // the site's country rule; both fields change together or not at all
 	v.Set("countries", cur.Countries)
+	v.Set("waf", cur.Waf) // the site's WAF preset; the directives change with it or not at all
+	v.Set("waf_directives", cur.WafDirectives)
 	v.Set("gate_mode", cur.GateMode)
 	v.Set("gate_provider", cur.GateProvider) // the sealed secret is never read back; blank keeps it
 	v.Set("gate_from", cur.GateFrom)
@@ -243,27 +255,29 @@ func (s *Server) mcpAnswer(w *httptest.ResponseRecorder) (warnings []string, err
 }
 
 type siteView struct {
-	ID           int64     `json:"id"`
-	Slug         string    `json:"slug"`
-	Kind         string    `json:"kind"`
-	Hostnames    []string  `json:"hostnames"`
-	Enabled      bool      `json:"enabled"`
-	StaticRoot   string    `json:"static_root,omitempty"`
-	Upstream     string    `json:"upstream,omitempty"`
-	StartCommand string    `json:"start_command,omitempty"`
-	FPMVersion   string    `json:"fpm_version,omitempty"`
-	Allowlist    string    `json:"allowlist,omitempty"`
-	CountryMode  string    `json:"country_mode,omitempty"`
-	Countries    string    `json:"countries,omitempty"`
-	GateMode     string    `json:"gate_mode,omitempty"`
-	BasicAuth    bool      `json:"basic_auth"`
-	Snippets     []string  `json:"snippets,omitempty"`
-	Notes        string    `json:"notes,omitempty"`
-	ExtraRoutes  string    `json:"extra_routes,omitempty"`
-	RecordIP     string    `json:"record_ip,omitempty"`
-	RecordIPv6   string    `json:"record_ip6,omitempty"`
-	DNS          []dnsView `json:"dns,omitempty"`
-	UpdatedAt    string    `json:"updated_at,omitempty"`
+	ID            int64     `json:"id"`
+	Slug          string    `json:"slug"`
+	Kind          string    `json:"kind"`
+	Hostnames     []string  `json:"hostnames"`
+	Enabled       bool      `json:"enabled"`
+	StaticRoot    string    `json:"static_root,omitempty"`
+	Upstream      string    `json:"upstream,omitempty"`
+	StartCommand  string    `json:"start_command,omitempty"`
+	FPMVersion    string    `json:"fpm_version,omitempty"`
+	Allowlist     string    `json:"allowlist,omitempty"`
+	CountryMode   string    `json:"country_mode,omitempty"`
+	Countries     string    `json:"countries,omitempty"`
+	Waf           string    `json:"waf,omitempty"`
+	WafDirectives string    `json:"waf_directives,omitempty"`
+	GateMode      string    `json:"gate_mode,omitempty"`
+	BasicAuth     bool      `json:"basic_auth"`
+	Snippets      []string  `json:"snippets,omitempty"`
+	Notes         string    `json:"notes,omitempty"`
+	ExtraRoutes   string    `json:"extra_routes,omitempty"`
+	RecordIP      string    `json:"record_ip,omitempty"`
+	RecordIPv6    string    `json:"record_ip6,omitempty"`
+	DNS           []dnsView `json:"dns,omitempty"`
+	UpdatedAt     string    `json:"updated_at,omitempty"`
 }
 
 // dnsView is one DNS record's sync state: what the dashboard shows per hostname.
@@ -283,7 +297,7 @@ func dnsViewOf(x store.DNSRecord) dnsView {
 func viewOf(x store.Site) siteView {
 	v := siteView{ID: x.ID, Slug: x.Slug, Kind: x.Kind, Hostnames: x.Hostnames, Enabled: x.Enabled, StaticRoot: x.StaticRoot,
 		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, ExtraRoutes: x.ExtraRoutes, RecordIP: x.RecordIP, RecordIPv6: x.RecordIP6, UpdatedAt: x.UpdatedAt,
-		CountryMode: x.CountryMode, Countries: x.Countries}
+		CountryMode: x.CountryMode, Countries: x.Countries, Waf: x.Waf, WafDirectives: x.WafDirectives}
 	switch {
 	case x.UpstreamPort != 0:
 		v.Upstream = net.JoinHostPort(x.UpstreamHost, strconv.Itoa(x.UpstreamPort))

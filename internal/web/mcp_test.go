@@ -763,3 +763,42 @@ func TestMCPGeoFields(t *testing.T) {
 		t.Error("an allow rule without codes was accepted")
 	}
 }
+
+func TestMCPWafFields(t *testing.T) {
+	s, _ := runtimeServer(t)
+	s.deps.Cfg.MCPToken = mcpToken
+	sess := mcpSession(t, s, mcpToken)
+	root := t.TempDir()
+
+	var made changed
+	if err := call(t, sess, "create_site", map[string]any{"kind": "static", "static_root": root,
+		"hostnames": []string{"wafmcp.example.com"}, "waf": "custom", "waf_directives": "SecRuleEngine On"}, &made); err != nil {
+		t.Fatalf("create_site: %v", err)
+	}
+	if got := getSite(t, sess, made.ID); got.Waf != "custom" || got.WafDirectives != "SecRuleEngine On" {
+		t.Fatalf("created WAF: %+v", got)
+	}
+	// an update that does not mention the WAF keeps both
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "notes": "x"}, nil); err != nil {
+		t.Fatalf("update_site: %v", err)
+	}
+	if got := getSite(t, sess, made.ID); got.Waf != "custom" || got.WafDirectives != "SecRuleEngine On" {
+		t.Fatalf("update_site cleared the WAF: %+v", got)
+	}
+	// directives are validated: a host-state directive is refused with its reason
+	err := call(t, sess, "update_site", map[string]any{"id": made.ID, "waf_directives": "SecAuditLog /var/log/x.log"}, nil)
+	if err == nil || !strings.Contains(err.Error(), "SecAuditLog") {
+		t.Errorf("host-state directive accepted: %v", err)
+	}
+	// an unknown preset is refused
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "waf": "modsec"}, nil); err == nil {
+		t.Error("unknown preset accepted")
+	}
+	// "" on waf turns it off and clears the directives
+	if err := call(t, sess, "update_site", map[string]any{"id": made.ID, "waf": "", "waf_directives": ""}, nil); err != nil {
+		t.Fatalf("update_site: %v", err)
+	}
+	if got := getSite(t, sess, made.ID); got.Waf != "" || got.WafDirectives != "" {
+		t.Fatalf("WAF not cleared: %+v", got)
+	}
+}

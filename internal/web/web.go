@@ -278,6 +278,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sites/{id}/snippets", s.protected(s.saveSiteSnippets))
 	mux.Handle("POST /sites/{id}/routes", s.protected(s.saveSiteRoutes))
 	mux.Handle("POST /sites/{id}/geo", s.protected(s.saveSiteGeo))
+	mux.Handle("POST /sites/{id}/waf", s.protected(s.saveSiteWaf))
 	mux.Handle("POST /sites/{id}/dns-ip", s.protected(s.saveSiteDNSIP))
 	mux.Handle("POST /sites/{id}/runtime/{do}", s.protected(s.siteRuntimeAction))
 	mux.Handle("POST /sites/{id}/gate/grants", s.protected(s.addGateGrant))

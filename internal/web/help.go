@@ -56,6 +56,8 @@ var hints = map[string]string{
 	"geo_db":               "The path of MaxMind's GeoLite2-Country file (the Debian package keeps it at /var/lib/GeoIP/GeoLite2-Country.mmdb). ServanaGo only reads it; keep it fresh with geoipupdate: apt install geoipupdate, then put your license key in /etc/GeoIP.conf. Empty turns country blocking off.",
 	"country_mode":         "Deny answers these countries with 403; Allow only serves the countries you name and everyone else gets the same 403. Local, home-network and private addresses are never judged, and certificates renew from anywhere.",
 	"country_codes":        "ISO 3166-1 two-letter codes, space or comma separated, like DE US. A code the database does not know simply never matches.",
+	"waf":                  "The OWASP CRS ruleset compiled into ServanaGo, per site. Detection only at first: matches are logged, nothing is blocked, so you can read the log and tune before turning the engine on.",
+	"waf_directives":       "Custom SecLang lines appended to the CRS ruleset: turn the engine on with SecRuleEngine On, remove noisy rules with SecRuleRemoveById and their id, or add your own SecRule. File-reading and DNS-lookup operators are refused.",
 	"webui_mode":           "The same rule as the sites have, for the ServanaGo panel itself (sign-in included). The machine itself, your home network and a tailnet are never judged, so you cannot lock yourself out from inside.",
 	"scan_ntfy_token":      "Only if your ntfy asks for one: the topic's access token. Sealed with SERVANAGO_SECRET_KEY.",
 	"notes":                "Your own notes about this site (owner, purpose, things to remember), up to 10,000 characters. Plain text. Shown on the Reference page; nothing here changes how the site is served.",

@@ -338,5 +338,25 @@
 {{end}}
 </section>
 {{end}}
+
+{{if eq .Active "waf"}}
+<section class="sect" id="panel-waf">
+<h2>Web application firewall</h2>
+{{if .Site.Waf}}<p>Current preset: <span class="chip">{{.Site.Waf}}</span></p>{{else}}<p class="empty">Off — the site's requests are not inspected.</p>{{end}}
+<form hx-post="/sites/{{$id}}/waf" hx-target="#msg">
+<label>Ruleset <select name="waf" aria-describedby="hint-waf">
+<option value=""{{if not .Site.Waf}} selected{{end}}>Off (no inspection)</option>
+<option value="crs"{{if eq .Site.Waf "crs"}} selected{{end}}>OWASP CRS (detects, does not block yet)</option>
+<option value="custom"{{if eq .Site.Waf "custom"}} selected{{end}}>OWASP CRS plus custom rules</option>
+</select></label>
+{{hintid "waf"}}
+<label>Custom directives (SecLang, one per line; with custom only)
+<textarea name="waf_directives" rows="6" placeholder="SecRuleEngine On" aria-describedby="hint-waf_directives">{{.Site.WafDirectives}}</textarea></label>
+{{hintid "waf_directives"}}
+<button type="submit">Save WAF</button>
+</form>
+<p id="msg" role="alert" data-toast></p>
+</section>
+{{end}}
 {{end}}
 {{end}}
