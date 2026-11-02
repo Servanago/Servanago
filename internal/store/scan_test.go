@@ -140,3 +140,35 @@ func TestCountryRuleRoundTrip(t *testing.T) {
 		t.Errorf("rule lost across a save: %+v", got)
 	}
 }
+
+func TestWafRoundTrip(t *testing.T) {
+	s := open(t)
+	ctx := context.Background()
+	r := site("waf.example.com")
+	r.Waf, r.WafDirectives = "custom", "SecRuleEngine On\nSecRuleRemoveById 920280"
+	created, err := s.CreateSite(ctx, r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetSite(ctx, created.ID)
+	if err != nil || got.Waf != "custom" || got.WafDirectives != "SecRuleEngine On\nSecRuleRemoveById 920280" {
+		t.Fatalf("waf fields: %+v (%v)", got, err)
+	}
+	// the rules survive a save that does not mention them (UpdateSite writes every field; the web
+	// layer always renders both from the stored site)
+	got.Notes = "changed"
+	if err := s.UpdateSite(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetSite(ctx, created.ID); got.Waf != "custom" || got.WafDirectives == "" {
+		t.Errorf("waf lost across a save: %+v", got)
+	}
+	// fresh sites have the WAF off and no directives
+	fresh, err := s.CreateSite(ctx, site("plain.example.com"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p, _ := s.GetSite(ctx, fresh.ID); p.Waf != "" || p.WafDirectives != "" {
+		t.Errorf("new site not WAF-off: %+v", p)
+	}
+}

@@ -38,8 +38,8 @@ func TestMigrationsIdempotent(t *testing.T) {
 	}
 	mustDomain(t, s, "example.com")
 	var v int
-	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != LatestVersion() || v != 9 {
-		t.Fatalf("user_version %d %v", v, err)
+	if err := s.db.QueryRow("PRAGMA user_version").Scan(&v); err != nil || v != LatestVersion() || v != 10 {
+		t.Fatalf("user_version %d %v (want migrations 002..010 applied)", v, err)
 	}
 	s.Close()
 	s, err = Open(path) // reopen: migrations must not re-run (would fail on CREATE TABLE) or lose data
