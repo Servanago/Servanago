@@ -12,6 +12,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -27,6 +28,7 @@ import (
 	"github.com/servanago/servanago/internal/caddygate"
 	"github.com/servanago/servanago/internal/caddygeoip"
 	"github.com/servanago/servanago/internal/caddylog"
+	"github.com/servanago/servanago/internal/caddywaf"
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/dnssync"
@@ -114,6 +116,20 @@ func run() error {
 		}
 		return m, from, true
 	}, cfg.SecretKey, cfg.HTTPSPort))
+	// WAF events drain from the engine callbacks into the events table; a busy store drops
+	// the event rather than stalling a request.
+	caddywaf.StartEventWriter(func(ev caddywaf.WafEvent) {
+		if ev.SiteID == 0 {
+			return
+		}
+		if err := st.AddWafEvent(context.Background(), store.WafEvent{
+			SiteID: ev.SiteID, TS: ev.TS, RuleID: ev.RuleID, Message: ev.Message, Phase: ev.Phase,
+			Verdict: ev.Verdict, Tags: strings.Join(ev.Tags, " "), Host: ev.Host, Path: ev.Path,
+			Client: ev.Client, Method: ev.Method,
+		}); err != nil {
+			slog.Warn("waf event write failed", "error", err)
+		}
+	})
 	svc := apply.New(st, caddycfg.Options{
 		UIHost: cfg.Host, UIUpstream: uiUpstream, Email: cfg.ACMEEmail, Staging: cfg.Staging,
 		HTTPPort: cfg.HTTPPort, HTTPSPort: cfg.HTTPSPort, StoragePath: filepath.Join(cfg.DataDir, "caddy"),

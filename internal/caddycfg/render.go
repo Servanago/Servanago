@@ -348,6 +348,7 @@ func wafRouteOf(r store.Site) any {
 		h["load_owasp_crs"] = true
 		h["directives"] = caddywaf.DirectivesFor(r.Waf, r.WafDirectives, r.WafMode)
 	}
+	h["site_id"] = r.ID
 	if r.RLRequests > 0 {
 		win, _, werr := config.RLWindow(r.RLWindow)
 		if werr != nil || win <= 0 { // an invalid row must never break a render; store rows are validated at save

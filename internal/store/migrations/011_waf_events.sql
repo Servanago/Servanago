@@ -92,6 +92,7 @@ CREATE TABLE waf_events (
   message TEXT NOT NULL,
   phase   INTEGER NOT NULL,
   verdict TEXT NOT NULL CHECK (verdict IN ('deny', 'detect')),
+  tags    TEXT NOT NULL DEFAULT '',  -- the rule's CRS category tags (attack-sqli...), space-separated
   host    TEXT NOT NULL,
   path    TEXT NOT NULL,
   client  TEXT NOT NULL DEFAULT '',

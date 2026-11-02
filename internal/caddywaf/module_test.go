@@ -4,7 +4,9 @@ package caddywaf
 
 import (
 	"fmt"
+	"net/http"
 	"testing"
+	"time"
 )
 
 // TestSpikeRemoveByIdOfRetiredRule pins the engine's behaviour on an exclusion naming a
@@ -79,4 +81,48 @@ func TestMiddlewareImplementsTheCaddyContracts(t *testing.T) {
 	if m.Validate() != nil {
 		t.Fatal("default validate fails")
 	}
+}
+
+// A matched rule through the real engine reaches the event writer with the request
+// skeleton joined: site, host, rule id, verdict.
+func TestEventCaptureThroughTheEngine(t *testing.T) {
+	m := &Middleware{Directives: "SecRuleEngine DetectionOnly\nSecRule ARGS \"@rx evil\" \"id:7,phase:1,log\"\n", SiteID: 3, LoadOWASPCRS: false}
+	waf, err := m.buildWAF()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = waf.(interface{ Close() error }).Close() })
+
+	collected := make(chan WafEvent, 8)
+	StartEventWriter(func(ev WafEvent) { collected <- ev })
+
+	pendingEvents.Store("tx-test", eventSkeleton(3, mustGet(t, "http://t.test/?q=evil")))
+	defer pendingEvents.Delete("tx-test")
+	tx := waf.NewTransactionWithID("tx-test")
+	tx.ProcessConnection("1.2.3.4", 80, "", 0)
+	tx.ProcessURI("/?q=evil", "GET", "1.1")
+	tx.AddRequestHeader("Host", "t.test")
+	if it := tx.ProcessRequestHeaders(); it != nil {
+		t.Fatalf("detection-only run interrupted: %+v", it)
+	}
+	_ = tx.Close()
+
+	select {
+	case ev := <-collected:
+		if ev.SiteID != 3 || ev.RuleID != "7" || ev.Verdict != "detect" || ev.Host != "t.test" || ev.Client != "1.2.3.4" {
+			t.Errorf("event wrong: %+v", ev)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("no event reached the writer")
+	}
+}
+
+func mustGet(t *testing.T, url string) *http.Request {
+	t.Helper()
+	r, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.RemoteAddr = "1.2.3.4:9999"
+	return r
 }

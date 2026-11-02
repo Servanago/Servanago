@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/caddyserver/caddy/v2"
 	corazaconf "github.com/corazawaf/coraza-coreruleset/coraza/v3"
@@ -50,12 +51,13 @@ func (p *pooledWAF) Destruct() error {
 
 // Middleware is the Coraza WAF handler. JSON shape (what the renderer writes):
 //
-//	{"handler":"waf","load_owasp_crs":true,"directives":"..."}
+//	{"handler":"waf","load_owasp_crs":true,"directives":"...","site_id":2,"rate_limit":{...}}
 type Middleware struct {
 	Deprecated   []string   `json:"include,omitempty"`
 	Directives   string     `json:"directives"`
 	LoadOWASPCRS bool       `json:"load_owasp_crs"`
 	Rate         *RateLimit `json:"rate_limit,omitempty"`
+	SiteID       int64      `json:"site_id,omitempty"` // names the site for WAF events; 0 = none
 
 	logger  *zap.Logger
 	waf     coraza.WAF
@@ -143,6 +145,9 @@ func (m *Middleware) Cleanup() error {
 // land in journald the way the rest of the panel logs. MatchedRule carries everything
 // Stage 2's event writer needs.
 func severityLog(mr types.MatchedRule) {
+	if ev, ok := eventOf(mr, time.Now()); ok {
+		deliverEvent(ev) // dropped when the writer is off (log-only run) or the buffer is full
+	}
 	msg := mr.Message()
 	if mr.Rule() == nil {
 		slog.Warn("waf rule match", "msg", msg) // no rule metadata (a SecAction or an engine-level callback)

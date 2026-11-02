@@ -490,3 +490,43 @@ func cloneForm(v url.Values) url.Values {
 	}
 	return out
 }
+
+// The WAF tab renders the site's event aggregates and newest matches from the store, and
+// stays a complete page both ways (empty and populated).
+func TestSiteWafTabEventsRender(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"wafov.example.com"}, Kind: "static", StaticRoot: "/srv/www/wafov", Enabled: true,
+		Waf: "crs"})
+	// empty first: the tab must complete without any event
+	if w := s.do(req{path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck}); w.Code != 200 ||
+		!strings.Contains(w.Body.String(), ">Save WAF</button>") || !strings.Contains(w.Body.String(), "</form>") {
+		t.Fatalf("empty events tab incomplete: %d", w.Code)
+	}
+	ctx := context.Background()
+	for i := 0; i < 3; i++ {
+		if err := s.deps.Store.AddWafEvent(ctx, store.WafEvent{SiteID: id, TS: time.Now().Unix() - int64(i), RuleID: "942100",
+			Message: "SQL injection detected via libinjection", Phase: 2, Verdict: "detect", Tags: "attack-sqli",
+			Host: "wafov.example.com", Path: "/?q=evil", Client: "203.0.113.9", Method: "GET"}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := s.deps.Store.AddWafEvent(ctx, store.WafEvent{SiteID: id, TS: time.Now().Unix() + 60, RuleID: "930120",
+		Message: "OS file access", Phase: 1, Verdict: "deny", Host: "wafov.example.com", Path: "/?p=/etc/passwd", Method: "GET"}); err != nil {
+		t.Fatal(err)
+	}
+	ww := s.do(req{path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck})
+	body := ww.Body.String()
+	if ww.Code != 200 {
+		t.Fatalf("waf tab: %d %s", ww.Code, ww.Body.String())
+	}
+	for _, want := range []string{"Most active rules today", "Newest matches", ">942100<", "SQL injection detected", "attack-sqli", ">930120<", "blocked", "detect only", "</table>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("events tab missing %q", want)
+		}
+	}
+	// another site's events must not leak into this tab
+	other, otherID, ock := signedWith(t, store.Site{Hostnames: []string{"wafov2.example.com"}, Kind: "static", StaticRoot: "/srv/www/wafov2", Enabled: true})
+	body = other.do(req{path: fmt.Sprintf("/sites/%d/waf", otherID), cookies: ock}).Body.String()
+	if strings.Contains(body, ">942100<") || strings.Contains(body, "Most active rules today") {
+		t.Errorf("events leaked across sites")
+	}
+}

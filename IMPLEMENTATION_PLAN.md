@@ -11,7 +11,7 @@ Design: `claudedocs/design_waf_m12.md` (settled 2026-11-02, Brian's six answers 
 ## Stage 1: Engine mode + rate limit (migration 011, all objects)
 **Goal**: migration `011_waf_events.sql` once for the whole milestone (sites rebuild: `waf_mode`, `rl_requests/window/paths` + `waf_exclusions`, `waf_events` tables; drops the 010 CHECK). Preset drops its SecRuleEngine line; renderer composes it last from `waf_mode`. `wafval` drops SecRuleEngine from the allowed set. Rate limiter: fixed window per (client IP, optional path), bounded keys, 429, cleanup goroutine owned by the module. UI: WAF tab gains the engine-mode select and the rate-limit fieldset (mock class-for-class); MCP `waf_mode`/`rl_*` fields.
 **Tests**: 011 idempotence + user_version 10; renderer goldens (mode line last, rl handler when set); wafval rejection table (SecRuleEngine ban); ratelimit unit tests (window expiry, path keys, bounded table); web tests for the two controls; MCP field round-trip.
-**Status**: Not Started
+**Status**: Complete
 
 ## Stage 2: Events
 **Goal**: module callback → buffered channel → capped `waf_events` writer (trim past 10k, drop-on-full). WAF tab Events section: per-rule aggregates (rule, category, count, last seen, example path) + newest matches with Narrow/Disable buttons per mock.

@@ -85,12 +85,22 @@ type siteViewData struct {
 	SetSched    string // the backups page's default schedule, quoted on the tab
 	CountryText string
 	Routes      []routeRow
+	WafEvents   []store.WafEvent     // the WAF tab's newest matches, newest first
+	WafAggs     []store.WafEventRule // per-rule counts of the last 24 hours, loudest first
 }
 
 func (s *Server) siteViewPage(w http.ResponseWriter, r *http.Request, rt store.Site, tab string) {
 	d := siteViewData{Site: rt, Active: tab, Title: siteTabTitle[tab],
 		DNSOn: s.dnsOn(), MailOK: s.gateUsable(),
 		CountryText: strings.Join(strings.Fields(rt.Countries), ", ")}
+	if tab == "waf" { // the events table reads the store directly; failures leave an empty tab
+		if evs, err := s.deps.Store.ListWafEvents(r.Context(), rt.ID, 20); err == nil {
+			d.WafEvents = evs
+		}
+		if ags, err := s.deps.Store.WafEventAggregates(r.Context(), rt.ID); err == nil {
+			d.WafAggs = ags
+		}
+	}
 	if st, err := s.deps.Store.GetSettings(r.Context()); err == nil {
 		d.GeoOn, d.ScanOn = st.GeoDB != "", st.ScanSocket != ""
 	}

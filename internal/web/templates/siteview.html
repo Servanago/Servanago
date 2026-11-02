@@ -386,6 +386,34 @@
 <button type="submit">Save WAF</button>
 </form>
 <p id="msg" role="alert" data-toast></p>
+
+<div class="sect-events">
+<h3>Events</h3>
+<p class="sect-note">One row per match, newest first (the newest 20; the full history is in the store). Rows cap at 10,000 like the audit log.</p>
+{{if .WafAggs}}
+<h4>Most active rules today</h4>
+<table>
+<thead><tr><th>Rule</th><th>Category</th><th class="num">Matches</th><th>Last seen</th></tr></thead>
+<tbody>
+{{range .WafAggs}}
+<tr><td class="mono">{{.RuleID}}<br><small>{{.Message}}</small></td><td>{{range .TagsList}}<span class="tag">{{.}}</span> {{end}}</td><td class="num">{{.Count}}</td><td class="num"><small>{{.ShortSeen}}</small></td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="empty">No rule has matched on this site in the last 24 hours.</p>{{end}}
+{{if .WafEvents}}
+<h4>Newest matches</h4>
+<table>
+<thead><tr><th>Time</th><th>Rule</th><th>Request</th><th>Verdict</th></tr></thead>
+<tbody>
+{{$mode := .Site.WafMode}}
+{{range .WafEvents}}
+<tr><td class="num" style="white-space:nowrap">{{.ShortTime}}</td><td class="mono">{{.RuleID}}<br><small>{{.Message}}</small></td><td class="mono">{{.Method}} {{.Path}}</td><td>{{if eq .Verdict "deny"}}<span class="chip bad">blocked</span>{{else if eq $mode "block"}}<span class="chip warn">detect</span>{{else}}<span class="chip warn">detect only</span>{{end}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="empty">Nothing recorded yet — the events appear once the site serves requests through the WAF.</p>{{end}}
+</div>
 </section>
 {{end}}
 {{end}}

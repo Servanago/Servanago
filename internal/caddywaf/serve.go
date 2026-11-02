@@ -30,6 +30,10 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next cadd
 	id := randomString(16)
 
 	tx := m.waf.NewTransactionWithID(id)
+	// The join skeleton (site, host, client) lives exactly as long as the transaction, so
+	// a match during it — request or response phases — can name its site.
+	defer pendingEvents.Delete(id)
+	pendingEvents.Store(id, eventSkeleton(m.SiteID, r))
 	defer func() {
 		tx.ProcessLogging()
 		if err := tx.Close(); err != nil {
@@ -70,6 +74,13 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next cadd
 		logViolation(r, tx, it)
 	}
 	return err
+}
+
+// eventSkeleton is the per-request half of a WAF event: everything the engine callback
+// cannot see on its own.
+func eventSkeleton(siteID int64, r *http.Request) WafEvent {
+	client, _ := clientAddress(r)
+	return WafEvent{SiteID: siteID, Host: r.Host, Path: r.URL.Path, Method: r.Method, Client: client}
 }
 
 func logViolation(r *http.Request, tx types.Transaction, it *types.Interruption) {
