@@ -74,4 +74,4 @@ Building the package yourself (`make deb`), running from source, Cloudflare setu
 
 ## License
 
-MIT, see `LICENSE`. Third-party notices (Caddy, caddy-dns/cloudflare: Apache-2.0, and others) are in `NOTICE`.
+MIT, see `LICENSE`. Third-party notices (Caddy, caddy-dns/cloudflare, Coraza and the OWASP Coreruleset: Apache-2.0, and others) are in `NOTICE`.

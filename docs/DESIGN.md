@@ -672,3 +672,43 @@ Changes against 18.1 to 18.10. Everything not mentioned here (tokens, sessions, 
 **Not done.** No session revoke when the primary hostname changes: identities are global per email and cookies are host-bound, so nothing site-specific exists to revoke. No rate limit on send-test (it audits). No dedicated MCP row tools; rows are set through `update_site`'s `gate_acl`, and the provider secret is UI-only. A gated site was confirmed working on v1 with Cloudflare after 0.7.2; the Postmark provider has not been exercised against the real API.
 
 **Later changes.** 0.7.1: with an IP allowlist, the gate route carries a `not remote_ip` matcher (see the §18.6 edge case). 0.7.2: the site form template used `$.Site.ID` inside the rows loop, where `$` is the page wrapper, so the edit page of a gated site with rows ended early; fixed with a variable bound before the loop, and `render` now buffers the page so a template error answers 500 instead of a truncated 200.
+
+## 19. Web application firewall: Coraza + OWASP CRS, per site
+
+The site's WAF (the Sites doc's WAF tab, shipped with this version) is the `http.handlers.waf`
+handler of `corazawaf/coraza-caddy` v2 (Apache-2.0) with the OWASP Coreruleset v4 loaded from
+the `corazawaf/coraza-coreruleset` module — rule files never exist on disk: `include` paths
+starting with `@` resolve from the filesystem the two modules compile in. Coraza's `@geoLookup`
+operator is a stub that matches unconditionally, so country filtering stays `servanago_geoip`
+(the shipped module): the two stack, geo first.
+
+**Model.** `sites.waf` is `''` (off), `crs` (preset) or `custom` (preset plus the site's tail);
+`sites.waf_directives` holds the tail (migration `010_waf.sql`). The renderer (`internal/caddywaf`)
+is engine-free and pure: `Preset` is
+
+    Include @coraza.conf-recommended
+    Include @crs-setup.conf.example
+    Include @owasp_crs/*.conf
+    SecRuleEngine DetectionOnly
+
+so a site's WAF never blocks anything until the admin turns the engine on in the tail
+(`SecRuleEngine On`). `custom` appends the trimmed tail to the preset. The handler lands in the
+site subroute after the geo handler and before the gate and anything else; the `ml.` host
+serves only the gate's own pages and gets no WAF.
+
+**Validation (`internal/wafval`).** A tail is rejected unless: its directives are in the closed
+site-level set (`SecRule`, `SecAction`, tuning directives, engine and body/response limits — no
+`Include`, no `SecAuditLog*`, no `SecTmpDir`/`SecDataDir`, no file paths), no rule names a
+file-reading or DNS operator (`@inspectFile`, `@pmFromFile`, `@ipMatchFromFile`, `@from_file`,
+`@ossp`, `@rbl`), and the whole preset-plus-tail config compiles in the real engine — `SecRuleRemoveById`
+and `SecRuleUpdateTargetById` name CRS rules, so compiling the tail alone is meaningless and a
+standalone compile would reject correct tuning. The save-time compile is what keeps a bad tail from
+reaching `caddy.Load`, whose failure would restore last-known-good and show the banner.
+
+**Blocks and logs.** Coraza reports an interruption as a Caddy `error`; the panel does not render a
+custom block page yet (Caddy's default error page answers). Matched rules log through the Caddy logger
+(journald), with the CRS message and rule id; there is no WAF metrics endpoint (none exists in the module).
+
+**Not done.** No rate limiting (Coraza is only a rule engine; the caddy-waf module has one but is
+AGPL and this project will not embed it). No per-site false-positive analytics beyond the log.
+No audit-log plumbing for WAF events beyond Caddy's own log.
