@@ -16,6 +16,8 @@ require (
 
 require (
 	github.com/corazawaf/coraza-caddy/v2 v2.6.2 // indirect
+	github.com/corazawaf/coraza-coreruleset/coraza/v3 v3.8.1 // indirect
+	github.com/corazawaf/coraza-coreruleset/crs/v4 v4.30.0 // indirect
 	github.com/corazawaf/coraza-coreruleset/v4 v4.25.0 // indirect
 	github.com/corazawaf/coraza/v3 v3.8.1 // indirect
 	github.com/corazawaf/libinjection-go v0.3.3 // indirect

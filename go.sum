@@ -127,6 +127,10 @@ github.com/cloudflare/cloudflare-go/v7 v7.13.0 h1:AKD9hFlKVOEjObO/kny/gM+wbk+abE
 github.com/cloudflare/cloudflare-go/v7 v7.13.0/go.mod h1:9zcoIAtu6cmcoPszCNISvqYMXs8wObtVGXE1qGFMrNU=
 github.com/corazawaf/coraza-caddy/v2 v2.6.2 h1:dh7KlLARAkZn3xOr/E0PxnerB9wxpfexhUv/Epo3VOc=
 github.com/corazawaf/coraza-caddy/v2 v2.6.2/go.mod h1:H91VfsJD/oxu3mIJnxZXwEn679Kaq0lq+HcqXYT+h/U=
+github.com/corazawaf/coraza-coreruleset/coraza/v3 v3.8.1 h1:Cd5JFZKRA22dh5coq5cBK/0mMEBvAkYjSvaxy+nkXYA=
+github.com/corazawaf/coraza-coreruleset/coraza/v3 v3.8.1/go.mod h1:NJ9zTdyOf9Cfmlerw1IGz4fiigwrrxuHMepWruwUKd0=
+github.com/corazawaf/coraza-coreruleset/crs/v4 v4.30.0 h1:XMYT7VOFM2VrpIKMUn4vFWyoFNYg1ZaYiexs76AmxzQ=
+github.com/corazawaf/coraza-coreruleset/crs/v4 v4.30.0/go.mod h1:1yaQUjecpEJ/cWXhJaFto+vRuezJCCfVxGQlaQxAGt0=
 github.com/corazawaf/coraza-coreruleset/v4 v4.25.0 h1:tqFO1lfVpTiyWtlN618OXpZMfw+nnN0Q4///W5W+/HM=
 github.com/corazawaf/coraza-coreruleset/v4 v4.25.0/go.mod h1:nRuGXITxOPvsLF2VxaTB7pYok8QB8BitX3ZenXcUryY=
 github.com/corazawaf/coraza/v3 v3.8.1 h1:dMV55FbMR2vOks/acrT43RShR+VkzU6jwp+XPdxay8o=
