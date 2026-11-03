@@ -14,35 +14,39 @@ test('waf tab: profiles, engine mode, invalid tail, rate limit, rules browser', 
   await page.locator('nav[aria-label="Site sections"]').getByRole('link', { name: 'WAF' }).click();
   await expect(page.getByText("Off — the site's requests are not inspected.")).toBeVisible();
 
+  // every tab save answers by swapping #msg; wait for THIS save's response before
+  // reloading, because the previous save's identical message sits in the target
+  const save = async () => {
+    const done = page.waitForResponse(r => r.url().includes('/waf') && r.request().method() === 'POST');
+    await page.getByRole('button', { name: 'Save WAF' }).click();
+    const resp = await done;
+    await expect(page.getByText(/Saved and applied|refused|not allowed|must be/).first()).toBeVisible();
+    return resp.status();
+  };
+
   // a profile saves; the tab shows the profile chip and the detection engine after a reload
-  await page.getByLabel('Ruleset').selectOption('shop');
-  await page.getByRole('button', { name: 'Save WAF' }).click();
-  await expect(page.getByText('Saved and applied.').first()).toBeVisible();
+  await page.locator('select[name="waf"]').selectOption('shop');
+  expect(await save()).toBe(200);
   await page.reload();
   await expect(page.getByText('Engine: DetectionOnly')).toBeVisible();
 
   // blocking is a setting now, not a directive
-  await page.getByLabel('Engine mode').selectOption('block');
-  await page.getByRole('button', { name: 'Save WAF' }).click();
-  await expect(page.getByText('Saved and applied.').first()).toBeVisible();
+  await page.locator('select[name="waf_mode"]').selectOption('block');
+  expect(await save()).toBe(200);
   await page.reload();
   await expect(page.getByText('Engine: blocking')).toBeVisible();
 
   // the engine line cannot hide in a custom tail
-  await page.getByLabel('Ruleset').selectOption('custom');
+  await page.locator('select[name="waf"]').selectOption('custom');
   await page.getByLabel('Custom directives').fill('SecRuleEngine On');
-  await page.getByRole('button', { name: 'Save WAF' }).click();
-  await expect(page.getByText('SecRuleEngine').first()).toBeVisible();
-
+  expect(await save()).toBe(422);
   await page.getByLabel('Custom directives').fill('');
-  await page.getByRole('button', { name: 'Save WAF' }).click();
-  await expect(page.getByText('Saved and applied.').first()).toBeVisible();
+  expect(await save()).toBe(200);
 
   // rate limiting saves and the chip appears after a reload
   await page.getByLabel('Requests per address').fill('150');
-  await page.getByLabel('Window').selectOption('5m');
-  await page.getByRole('button', { name: 'Save WAF' }).click();
-  await expect(page.getByText('Saved and applied.').first()).toBeVisible();
+  await page.locator('select[name="rl_window"]').selectOption('5m');
+  expect(await save()).toBe(200);
   await page.reload();
   await expect(page.getByText('Rate limit: 150 / 5m')).toBeVisible();
 

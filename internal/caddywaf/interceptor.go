@@ -216,7 +216,7 @@ func (i *rwInterceptor) writeBufferedResponseBodyToDownstream() error {
 		return caddyhttp.HandlerError{
 			ID:         i.tx.ID(),
 			StatusCode: http.StatusInternalServerError,
-			Err:        fmt.Errorf("failed to release the response body reader: %v", err),
+			Err:        fmt.Errorf("failed to release the response body reader: %w", err),
 		}
 	}
 
@@ -228,7 +228,7 @@ func (i *rwInterceptor) writeBufferedResponseBodyToDownstream() error {
 		return caddyhttp.HandlerError{
 			ID:         i.tx.ID(),
 			StatusCode: http.StatusInternalServerError,
-			Err:        fmt.Errorf("failed to copy the response body: %v", err),
+			Err:        fmt.Errorf("failed to copy the response body: %w", err),
 		}
 	}
 
