@@ -325,7 +325,14 @@ func (s *Server) saveSiteGeo(w http.ResponseWriter, r *http.Request) {
 	}) {
 		return
 	}
-	inplace(w, "Saved and applied — the rule is live immediately; Caddy did not restart.")
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	fresh, ok := s.freshSite(w, r, id)
+	if !ok {
+		return
+	}
+	s.oobLine(w, "Saved and applied — the rule is live immediately; Caddy did not restart.",
+		[]string{"geostatus"}, siteViewData{Site: fresh, Active: "countries", Title: siteTabTitle["countries"],
+			CountryText: strings.Join(strings.Fields(fresh.Countries), ", ")})
 }
 
 // saveSiteWaf writes the site's WAF preset, engine mode and rate limit in place. The custom
@@ -372,7 +379,13 @@ func (s *Server) saveSiteWaf(w http.ResponseWriter, r *http.Request) {
 	}) {
 		return
 	}
-	inplace(w, "Saved and applied — the WAF and the rate limit are live immediately; Caddy did not restart.")
+	id, _ := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	fresh, ok := s.freshSite(w, r, id)
+	if !ok {
+		return
+	}
+	s.oobLine(w, "Saved and applied — the WAF and the rate limit are live immediately; Caddy did not restart.",
+		[]string{"wafstatus", "wafexcl"}, siteViewData{Site: fresh, Active: "waf", Title: siteTabTitle["waf"], WafExcl: fresh.Exclusions})
 }
 
 // saveWafExclusion adds exclusion rows — one form submission, an event row's Disable, or
@@ -429,7 +442,12 @@ func (s *Server) saveWafExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.waf.exclusion", rt.Hostnames[0])
-	inplace(w, "Exclusion saved and applied — the rule stops matching on this site immediately; Caddy did not restart.")
+	fresh, ok := s.freshSite(w, r, rt.ID)
+	if !ok {
+		return
+	}
+	s.oobLine(w, "Exclusion saved and applied — the rule stops matching on this site immediately; Caddy did not restart.",
+		[]string{"wafstatus", "wafexcl"}, siteViewData{Site: fresh, Active: "waf", Title: siteTabTitle["waf"], WafExcl: fresh.Exclusions})
 }
 
 // undoWafExclusion deletes one exclusion row and re-applies the site's config: the
@@ -455,7 +473,12 @@ func (s *Server) undoWafExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.waf.exclusion.undo", rt.Hostnames[0])
-	inplace(w, "Exclusion removed and applied — the rule matches again immediately; Caddy did not restart.")
+	fresh, ok := s.freshSite(w, r, rt.ID)
+	if !ok {
+		return
+	}
+	s.oobLine(w, "Exclusion removed and applied — the rule matches again immediately; Caddy did not restart.",
+		[]string{"wafstatus", "wafexcl"}, siteViewData{Site: fresh, Active: "waf", Title: siteTabTitle["waf"], WafExcl: fresh.Exclusions})
 }
 
 // validateExclusion checks one new exclusion row and pre-compiles its line so a narrow
@@ -575,6 +598,37 @@ func (s *Server) renderPart(w http.ResponseWriter, pageName, def string, data an
 		return
 	}
 	_, _ = buf.WriteTo(w)
+}
+
+// freshSite re-reads the site a save just changed; the save then answers its state from
+// the row as committed, never from the parsed form.
+func (s *Server) freshSite(w http.ResponseWriter, r *http.Request, id int64) (store.Site, bool) {
+	rt, err := s.deps.Store.GetSite(r.Context(), id)
+	if err != nil {
+		fail(w, http.StatusInternalServerError, err.Error())
+		return store.Site{}, false
+	}
+	return rt, true
+}
+
+// oobLine answers a scoped save the way inplace does — the status line into the form's
+// message target — plus the tab's saved-state fragments (chips, tables) rendered from
+// the data as htmx out-of-band swaps, so the visible page never keeps pre-save values.
+// Fragments render before anything is written: a template error is a clean 500.
+func (s *Server) oobLine(w http.ResponseWriter, msg string, defs []string, d siteViewData) {
+	parts := make([]bytes.Buffer, len(defs))
+	for i, def := range defs {
+		if err := s.pages["siteview"].ExecuteTemplate(&parts[i], def, d); err != nil {
+			slog.Error("render fragment", "define", def, "error", err)
+			fail(w, http.StatusInternalServerError, "This update failed to render; the error is in the ServanaGo log.")
+			return
+		}
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = fmt.Fprint(w, msg)
+	for i := range parts {
+		_, _ = parts[i].WriteTo(w)
+	}
 }
 
 // saveSiteDNSIP writes the DNS record IP overrides in place.

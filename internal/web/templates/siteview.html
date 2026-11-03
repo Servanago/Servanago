@@ -319,7 +319,7 @@
 {{if eq .Active "countries"}}
 <section class="sect" id="panel-countries">
 <h2>Country filter</h2>
-{{if .Site.CountryMode}}<p>Current rule: {{if eq .Site.CountryMode "deny"}}<strong>denying</strong>{{else}}<strong>allowing only</strong>{{end}} <span class="chip">{{.CountryText}}</span></p>{{else}}<p class="empty">Off — the site is open to every country.</p>{{end}}
+{{template "geostatus" .}}
 {{if .GeoOn}}
 <form hx-post="/sites/{{$id}}/geo" hx-target="#msg">
 <label>Rule <select name="country_mode" aria-describedby="hint-country_mode">
@@ -342,7 +342,7 @@
 {{if eq .Active "waf"}}
 <section class="sect" id="panel-waf">
 <h2>Web application firewall</h2>
-{{if .Site.Waf}}<p>Current preset: <span class="chip">{{.Site.Waf}}</span>{{if eq .Site.WafMode "block"}} <span class="chip bad">Engine: blocking</span>{{else}} <span class="chip warn">Engine: DetectionOnly</span>{{end}}{{if gt .Site.RLRequests 0}} <span class="chip info">Rate limit: {{.Site.RLRequests}} / {{.Site.RLWindow}}</span>{{end}} <a class="mini" href="/sites/{{$id}}/waf/rules">Rules browser</a></p>{{else}}<p class="empty">Off — the site's requests are not inspected.</p>{{end}}
+{{template "wafstatus" .}}
 <form hx-post="/sites/{{$id}}/waf" hx-target="#msg">
 <label>Ruleset <select name="waf" aria-describedby="hint-waf">
 <option value=""{{if not .Site.Waf}} selected{{end}}>Off (no inspection)</option>
@@ -414,7 +414,18 @@
 </tbody>
 </table>
 {{else}}<p class="empty">Nothing recorded yet — the events appear once the site serves requests through the WAF.</p>{{end}}
-<div class="sect-events">
+{{template "wafexcl" .}}
+</div>
+</section>
+{{end}}
+{{end}}
+{{end}}
+
+{{define "wafstatus"}}{{$id := .Site.ID}}<div id="waf-status" hx-swap-oob="true">{{if .Site.Waf}}<p>Current preset: <span class="chip">{{.Site.Waf}}</span>{{if eq .Site.WafMode "block"}} <span class="chip bad">Engine: blocking</span>{{else}} <span class="chip warn">Engine: DetectionOnly</span>{{end}}{{if gt .Site.RLRequests 0}} <span class="chip info">Rate limit: {{.Site.RLRequests}} / {{.Site.RLWindow}}</span>{{end}} <a class="mini" href="/sites/{{$id}}/waf/rules">Rules browser</a></p>{{else}}<p class="empty">Off — the site's requests are not inspected.</p>{{end}}</div>{{end}}
+
+{{define "geostatus"}}<div id="geo-status" hx-swap-oob="true">{{if .Site.CountryMode}}<p>Current rule: {{if eq .Site.CountryMode "deny"}}<strong>denying</strong>{{else}}<strong>allowing only</strong>{{end}} <span class="chip">{{.CountryText}}</span></p>{{else}}<p class="empty">Off — the site is open to every country.</p>{{end}}</div>{{end}}
+
+{{define "wafexcl"}}{{$id := .Site.ID}}<div class="sect-events" id="waf-excl" hx-swap-oob="true">
 <h3>Exclusions</h3>
 <p class="sect-note">The rules you removed or narrowed on this site — distinct from what a preset ships. Revert an exclusion by deleting its row.</p>
 {{if .WafExcl}}
@@ -467,8 +478,4 @@ function wafPrefill(ruleId, kind) {
   document.getElementById('excl-target').focus();
 }
 </script>
-</div>
-</section>
-{{end}}
-{{end}}
-{{end}}
+</div>{{end}}

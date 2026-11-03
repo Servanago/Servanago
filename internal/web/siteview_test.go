@@ -481,6 +481,56 @@ func TestSiteWafTabSaves(t *testing.T) {
 	}
 }
 
+// Saving on the WAF and countries tabs answers the status line plus the saved-state
+// fragments, fresh from the store: the chips, the exclusion rows and the current-rule
+// line must not keep their pre-save text.
+func TestWafSaveAnswersFreshState(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"wafstale.example.com"}, Kind: "static", StaticRoot: "/srv/www/wafstale", Enabled: true})
+	body := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"waf": {"crs"}, "waf_directives": {""}, "waf_mode": {""}, "rl_requests": {""}, "rl_window": {""}, "rl_paths": {""}}.Encode()}).Body.String()
+	if strings.Contains(body, "Off — the site's requests are not inspected.") {
+		t.Errorf("save answered the stale off-line: %q", body)
+	}
+	for _, want := range []string{"Saved and applied", `id="waf-status" hx-swap-oob="true"`, `>crs<`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("waf save missing %q", want)
+		}
+	}
+}
+
+func TestWafExclusionAnswersFreshRows(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"wafexcl.example.com"}, Kind: "static", StaticRoot: "/srv/www/wafexcl", Enabled: true, Waf: "crs"})
+	body := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf/excl", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"kind": {"remove"}, "rule_id": {"attack-sqli"}, "note": {"health checks"}}.Encode()}).Body.String()
+	for _, want := range []string{"Exclusion saved", `id="waf-excl" hx-swap-oob="true"`, ">attack-sqli</td>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("exclusion save missing %q", want)
+		}
+	}
+	if strings.Contains(body, "No exclusions yet") {
+		t.Errorf("exclusion save answered the stale empty table: %q", body)
+	}
+	body = s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf/excl/delete", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"kind": {"remove"}, "rule_id": {"attack-sqli"}}.Encode()}).Body.String()
+	if strings.Contains(body, ">attack-sqli</td>") || !strings.Contains(body, "No exclusions yet") {
+		t.Errorf("undo did not refresh the exclusion rows: %q", body)
+	}
+}
+
+func TestGeoSaveAnswersFreshRuleLine(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"geo2.example.com"}, Kind: "static", StaticRoot: "/srv/www/geo2", Enabled: true})
+	body := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/geo", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"country_mode": {"deny"}, "countries": {"RU"}}.Encode()}).Body.String()
+	if strings.Contains(body, "Off — the site is open to every country.") {
+		t.Errorf("geo save answered the stale off-line: %q", body)
+	}
+	for _, want := range []string{"Saved and applied", `id="geo-status" hx-swap-oob="true"`, "denying", `>RU<`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("geo save missing %q", want)
+		}
+	}
+}
+
 func cloneForm(v url.Values) url.Values {
 	out := url.Values{}
 	for k, vs := range v {
