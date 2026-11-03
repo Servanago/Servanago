@@ -91,26 +91,55 @@ func migrate(db *sql.DB) error {
 		names = append(names, f.Name())
 	}
 	sort.Strings(names) // NNN_ prefix orders them
+
+	type migration struct {
+		name string
+		n    int
+	}
+	var pending []migration
 	for _, name := range names {
 		n, err := strconv.Atoi(strings.SplitN(name, "_", 2)[0])
 		if err != nil {
 			return fmt.Errorf("migration %s: bad NNN_ prefix", name)
 		}
-		if n <= cur {
-			continue
+		if n > cur {
+			pending = append(pending, migration{name, n})
 		}
-		body, _ := migrationFS.ReadFile("migrations/" + name)
-		tx, err := db.Begin()
+	}
+	if len(pending) == 0 {
+		return nil
+	}
+
+	// A rebuild migration (011) follows SQLite's 12-step table-rebuild procedure, whose first
+	// step is foreign_keys=OFF on the connection: with them on, DROP TABLE runs an implicit
+	// DELETE whose ON DELETE CASCADE takes the app's child rows with the old table. The pragma
+	// is a no-op inside a transaction, so it is set on here, before the migration's own
+	// transaction starts, and restored before the connection returns to the pool.
+	ctx := context.Background()
+	conn, err := db.Conn(ctx)
+	if err != nil {
+		return fmt.Errorf("migration connection: %w", err)
+	}
+	defer func() {
+		_, _ = conn.ExecContext(ctx, "PRAGMA foreign_keys=ON")
+		_ = conn.Close() // release back to the pool with FK enforcement on
+	}()
+	if _, err := conn.ExecContext(ctx, "PRAGMA foreign_keys=OFF"); err != nil {
+		return fmt.Errorf("migration connection: %w", err)
+	}
+	for _, m := range pending {
+		body, _ := migrationFS.ReadFile("migrations/" + m.name)
+		tx, err := conn.BeginTx(ctx, nil)
 		if err != nil {
 			return err
 		}
 		if _, err := tx.Exec(string(body)); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("migration %s: %w", name, err)
+			return fmt.Errorf("migration %s: %w", m.name, err)
 		}
-		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", n)); err != nil {
+		if _, err := tx.Exec(fmt.Sprintf("PRAGMA user_version = %d", m.n)); err != nil {
 			_ = tx.Rollback()
-			return fmt.Errorf("migration %s: set version: %w", name, err)
+			return fmt.Errorf("migration %s: set version: %w", m.name, err)
 		}
 		if err := tx.Commit(); err != nil {
 			return err
