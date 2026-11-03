@@ -619,16 +619,31 @@ func TestWafRendersInTheChain(t *testing.T) {
 // engine line, owned by waf_mode: detect by default, On for block, whatever the preset or
 // the tail carried.
 func TestWafDirectivesFor(t *testing.T) {
-	if d := caddywaf.DirectivesFor("crs", "", ""); strings.Count(d, "SecRuleEngine") != 1 || !strings.HasSuffix(d, "SecRuleEngine DetectionOnly\n") || !strings.Contains(d, "@owasp_crs/*.conf") {
+	if d := caddywaf.DirectivesFor("crs", "", "", nil); strings.Count(d, "SecRuleEngine") != 1 || !strings.HasSuffix(d, "SecRuleEngine DetectionOnly\n") || !strings.Contains(d, "@owasp_crs/*.conf") {
 		t.Errorf("crs preset directives wrong:\n%s", d)
 	}
 	custom := "SecRuleRemoveById 920280"
-	if d := caddywaf.DirectivesFor("custom", custom+"\n", "block"); strings.Count(d, "SecRuleEngine") != 1 ||
+	if d := caddywaf.DirectivesFor("custom", custom+"\n", "block", nil); strings.Count(d, "SecRuleEngine") != 1 ||
 		!strings.HasPrefix(d, caddywaf.Preset) || !strings.HasSuffix(d, "SecRuleEngine On\n") {
 		t.Errorf("custom block directives not preset+tail+mode:\n%s", d)
 	}
-	if d := caddywaf.DirectivesFor("custom", "   \n", ""); strings.Count(d, "SecRuleEngine") != 1 || d != caddywaf.DirectivesFor("crs", "", "") {
+	if d := caddywaf.DirectivesFor("custom", "   \n", "", nil); strings.Count(d, "SecRuleEngine") != 1 || d != caddywaf.DirectivesFor("crs", "", "", nil) {
 		t.Errorf("blank custom tail must fall back to the preset alone, got:\n%s", d)
+	}
+	// exclusion rows land before the engine line, removes rendered by kind
+	excl := []caddywaf.Exclusion{
+		{Kind: "remove", RuleID: "920280"},
+		{Kind: "remove", RuleID: "attack-rce"},
+		{Kind: "narrow", RuleID: "942330", Target: "!ARGS:address_1"},
+	}
+	d := caddywaf.DirectivesFor("crs", "", "block", excl)
+	for _, want := range []string{"SecRuleRemoveById 920280\n", "SecRuleRemoveByTag attack-rce\n", `SecRuleUpdateTargetById 942330 "!ARGS:address_1"` + "\n"} {
+		if !strings.Contains(d, want) {
+			t.Errorf("exclusion line %q missing:\n%s", want, d)
+		}
+	}
+	if !strings.HasSuffix(d, "SecRuleEngine On\n") || strings.Index(d, "SecRuleRemoveByTag") > strings.Index(d, "SecRuleEngine On") {
+		t.Errorf("exclusions must precede the engine line:\n%s", d)
 	}
 }
 

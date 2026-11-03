@@ -11,6 +11,9 @@ import (
 	"strings"
 	"time"
 
+	"regexp"
+
+	"github.com/servanago/servanago/internal/caddywaf"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/helper"
 	"github.com/servanago/servanago/internal/probe"
@@ -87,6 +90,7 @@ type siteViewData struct {
 	Routes      []routeRow
 	WafEvents   []store.WafEvent     // the WAF tab's newest matches, newest first
 	WafAggs     []store.WafEventRule // per-rule counts of the last 24 hours, loudest first
+	WafExcl     []store.WafExclusion // the site's exclusion rows, removes before narrows
 }
 
 func (s *Server) siteViewPage(w http.ResponseWriter, r *http.Request, rt store.Site, tab string) {
@@ -100,6 +104,7 @@ func (s *Server) siteViewPage(w http.ResponseWriter, r *http.Request, rt store.S
 		if ags, err := s.deps.Store.WafEventAggregates(r.Context(), rt.ID); err == nil {
 			d.WafAggs = ags
 		}
+		d.WafExcl = rt.Exclusions
 	}
 	if st, err := s.deps.Store.GetSettings(r.Context()); err == nil {
 		d.GeoOn, d.ScanOn = st.GeoDB != "", st.ScanSocket != ""
@@ -368,6 +373,141 @@ func (s *Server) saveSiteWaf(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	inplace(w, "Saved and applied. The WAF and the rate limit run in the site's Caddy route as soon as Caddy has reloaded.")
+}
+
+// saveWafExclusion adds exclusion rows — one form submission, an event row's Disable, or
+// the category boxes (one row per ticked tag) — inside one Apply.Mutate.
+func (s *Server) saveWafExclusion(w http.ResponseWriter, r *http.Request) {
+	rt, ok := s.gateSite(w, r)
+	if !ok {
+		return
+	}
+	who := "admin"
+	if u, _ := currentUser(r); u.Username != "" {
+		who = u.Username
+	}
+	now := time.Now().Unix()
+	var rows []store.WafExclusion
+	if tags := r.PostForm["tag"]; len(tags) > 0 { // the category boxes
+		for _, tag := range tags {
+			rows = append(rows, store.WafExclusion{SiteID: rt.ID, Kind: "remove", RuleID: strings.TrimSpace(tag), Note: "category box", AddedBy: who, AddedAt: now})
+		}
+	} else { // the add form (or an event row's button, which posts the same fields)
+		x := store.WafExclusion{
+			SiteID: rt.ID,
+			Kind:   r.PostFormValue("kind"),
+			RuleID: strings.TrimSpace(r.PostFormValue("rule_id")),
+			Target: strings.TrimSpace(r.PostFormValue("target")),
+			Note:   strings.TrimSpace(r.PostFormValue("note")),
+		}
+		if x.Note == "" && r.PostFormValue("event_note") != "" {
+			x.Note = strings.TrimSpace(r.PostFormValue("event_note"))
+		}
+		if len(x.Note) > 200 {
+			x.Note = x.Note[:200]
+		}
+		rows = append(rows, x)
+	}
+	for i := range rows {
+		if err := validateExclusion(rows[i]); err != nil {
+			failErr(w, userError{http.StatusUnprocessableEntity, err.Error()})
+			return
+		}
+	}
+	if err := s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
+		if _, err := tx.GetSite(r.Context(), rt.ID); err != nil {
+			return userError{http.StatusNotFound, "site not found"}
+		}
+		for _, x := range rows {
+			if err := tx.AddWafExclusion(r.Context(), x); err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		failErr(w, err)
+		return
+	}
+	s.audit(r, "site.waf.exclusion", rt.Hostnames[0])
+	inplace(w, "Exclusion saved and applied. The rule stops matching on this site as soon as Caddy has reloaded.")
+}
+
+// undoWafExclusion deletes one exclusion row and re-applies the site's config: the
+// exclusion's undo, back to the preset behavior.
+func (s *Server) undoWafExclusion(w http.ResponseWriter, r *http.Request) {
+	rt, ok := s.gateSite(w, r)
+	if !ok {
+		return
+	}
+	x := store.WafExclusion{SiteID: rt.ID, Kind: r.PostFormValue("kind"),
+		RuleID: strings.TrimSpace(r.PostFormValue("rule_id")), Target: strings.TrimSpace(r.PostFormValue("target"))}
+	if err := validateExclusionShape(x); err != nil {
+		failErr(w, userError{http.StatusUnprocessableEntity, err.Error()})
+		return
+	}
+	if err := s.deps.Apply.Mutate(r.Context(), func(tx *store.Store) error {
+		if _, err := tx.GetSite(r.Context(), rt.ID); err != nil {
+			return userError{http.StatusNotFound, "site not found"}
+		}
+		return tx.RemoveWafExclusion(r.Context(), rt.ID, x.Kind, x.RuleID, x.Target)
+	}); err != nil {
+		failErr(w, err)
+		return
+	}
+	s.audit(r, "site.waf.exclusion.undo", rt.Hostnames[0])
+	inplace(w, "Exclusion removed and applied. The rule matches again as soon as Caddy has reloaded.")
+}
+
+// validateExclusion checks one new exclusion row and pre-compiles its line so a narrow
+// row naming a rule the CRS does not ship fails at save, not at Caddy load.
+func validateExclusion(x store.WafExclusion) error {
+	if err := validateExclusionShape(x); err != nil {
+		return err
+	}
+	if err := wafval.Validate(exclusionsLinesForTest(x)); err != nil {
+		return fmt.Errorf("exclusion does not compile against the current CRS: %w", err)
+	}
+	return nil
+}
+
+func validateExclusionShape(x store.WafExclusion) error {
+	switch x.Kind {
+	case "remove":
+		if x.RuleID == "" {
+			return fmt.Errorf("a remove exclusion needs a rule id or a CRS category tag")
+		}
+	case "narrow":
+		if x.RuleID == "" {
+			return fmt.Errorf("a narrow exclusion needs a rule id")
+		}
+		if !strings.HasPrefix(x.Target, "!") || !strings.Contains(x.Target, ":") || strings.ContainsAny(x.Target, "\"\\\n") {
+			return fmt.Errorf("narrow target %q must be a negated target such as !ARGS:checkout", x.Target)
+		}
+	default:
+		return fmt.Errorf("exclusion kind %q must be remove or narrow", x.Kind)
+	}
+	if x.RuleID != "" && !isUintRule(x.RuleID) && !regexpTag(x.RuleID) {
+		return fmt.Errorf("rule %q must be a CRS rule id (digits) or a CRS tag such as attack-sqli", x.RuleID)
+	}
+	return nil
+}
+
+func isUintRule(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return len(s) > 0
+}
+
+var tagRE = regexp.MustCompile(`^[a-z][a-z0-9-]{1,40}$`)
+
+func regexpTag(s string) bool { return tagRE.MatchString(s) }
+
+// exclusionsLinesForTest composes one row's line with the CRS bootstrap for the compile check.
+func exclusionsLinesForTest(x store.WafExclusion) string {
+	return caddywaf.ExclusionLines([]caddywaf.Exclusion{{Kind: x.Kind, RuleID: x.RuleID, Target: x.Target}})
 }
 
 // siteRuntimeAction starts, stops or restarts the site's supervised unit through the helper,

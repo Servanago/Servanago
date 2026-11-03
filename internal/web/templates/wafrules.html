@@ -1,0 +1,36 @@
+{{define "content"}}{{$d := .Data}}{{$id := $d.Site.ID}}{{$h := index $d.Site.Hostnames 0}}
+<p class="crumb"><a href="/">Sites</a> <span aria-hidden="true">/</span> <a href="/sites/{{$id}}">{{$h}}</a> <span aria-hidden="true">/</span> <a href="/sites/{{$id}}/waf">WAF</a> <span aria-hidden="true">/</span> Rules</p>
+<div class="sitehead"><div class="sitehead-main">
+<h1>{{$h}} WAF rules</h1>
+<div class="kindrow"><span class="chip">read-only</span><span class="chip">the ruleset compiled into ServanaGo</span></div>
+</div></div>
+
+{{if $d.Error}}<p class="empty">The compiled ruleset failed to parse. The error is in the ServanaGo log.</p>{{else}}
+
+<section class="sect cardish">
+{{if $d.Detail}}
+<h2>{{$d.Detail.Name}}</h2>
+<p class="sect-note">{{$d.Detail.Count}} rules. <a href="/sites/{{$id}}/waf/rules">Back to all files</a>. A rule the site excluded is marked; undo the exclusion on the WAF tab's Exclusions list.</p>
+<table>
+<thead><tr><th>Id</th><th>Message</th><th>Phase</th><th>Tags</th><th>State</th></tr></thead>
+<tbody>
+{{range $d.Rules}}{{$r := .}}
+<tr><td class="mono">{{$r.ID}}</td><td>{{$r.Message}}</td><td class="num">{{$r.Phase}}</td><td>{{range $r.Tags}}{{if and (ne . "OWASP_CRS") (ne . "capec/1000/210/272")}}<span class="tag">{{.}}</span> {{end}}{{end}}</td><td>{{if index $d.Excluded $r.ID}}<span class="chip warn">excluded</span>{{else}}<span class="chip ok">active</span>{{end}}</td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}
+<h2>Rules files</h2>
+<p class="sect-note">Every file of the OWASP CRS the panel compiled in. Open one to read what its rules catch; the WAF tab's Events name the ids they matched.</p>
+<table>
+<thead><tr><th>File</th><th class="num">Rules</th><th></th></tr></thead>
+<tbody>
+{{range $d.Files}}{{$f := .}}
+<tr><td class="mono">{{$f.Name}}</td><td class="num">{{$f.Count}}{{if $f.Excluded}} <span class="chip warn">{{$f.Excluded}} excluded</span>{{end}}</td><td class="actions"><a class="mini" href="/sites/{{$id}}/waf/rules?file={{$f.Name}}">Open</a></td></tr>
+{{end}}
+</tbody>
+</table>
+{{end}}
+</section>
+{{end}}
+{{end}}

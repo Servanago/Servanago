@@ -342,7 +342,7 @@
 {{if eq .Active "waf"}}
 <section class="sect" id="panel-waf">
 <h2>Web application firewall</h2>
-{{if .Site.Waf}}<p>Current preset: <span class="chip">{{.Site.Waf}}</span>{{if eq .Site.WafMode "block"}} <span class="chip bad">Engine: blocking</span>{{else}} <span class="chip warn">Engine: DetectionOnly</span>{{end}}{{if gt .Site.RLRequests 0}} <span class="chip info">Rate limit: {{.Site.RLRequests}} / {{.Site.RLWindow}}</span>{{end}}</p>{{else}}<p class="empty">Off — the site's requests are not inspected.</p>{{end}}
+{{if .Site.Waf}}<p>Current preset: <span class="chip">{{.Site.Waf}}</span>{{if eq .Site.WafMode "block"}} <span class="chip bad">Engine: blocking</span>{{else}} <span class="chip warn">Engine: DetectionOnly</span>{{end}}{{if gt .Site.RLRequests 0}} <span class="chip info">Rate limit: {{.Site.RLRequests}} / {{.Site.RLWindow}}</span>{{end}} <a class="mini" href="/sites/{{$id}}/waf/rules">Rules browser</a></p>{{else}}<p class="empty">Off — the site's requests are not inspected.</p>{{end}}
 <form hx-post="/sites/{{$id}}/waf" hx-target="#msg">
 <label>Ruleset <select name="waf" aria-describedby="hint-waf">
 <option value=""{{if not .Site.Waf}} selected{{end}}>Off (no inspection)</option>
@@ -395,8 +395,9 @@
 <table>
 <thead><tr><th>Rule</th><th>Category</th><th class="num">Matches</th><th>Last seen</th></tr></thead>
 <tbody>
-{{range .WafAggs}}
-<tr><td class="mono">{{.RuleID}}<br><small>{{.Message}}</small></td><td>{{range .TagsList}}<span class="tag">{{.}}</span> {{end}}</td><td class="num">{{.Count}}</td><td class="num"><small>{{.ShortSeen}}</small></td></tr>
+{{range .WafAggs}}{{$row := .}}
+<tr><td class="mono">{{$row.RuleID}}<br><small>{{$row.Message}}</small></td><td>{{range $row.TagsList}}<span class="tag">{{.}}</span> {{end}}</td><td class="num">{{$row.Count}}</td><td class="num"><small>{{$row.ShortSeen}}</small></td>
+<td class="actions"><button class="mini" type="button" title="Keep the rule, stop it looking at a target of your choice: this pre-fills the exclusion form" onclick="wafPrefill('{{$row.RuleID}}','narrow'); return false">Narrow</button><button class="mini danger" type="button" title="The rule stops matching on this site" hx-post="/sites/{{$id}}/waf/excl" hx-vals='{"kind":"remove","rule_id":"{{$row.RuleID}}","note":"disabled from events; {{$row.Message}}"}' hx-target="#msg">Disable</button></td></tr>
 {{end}}
 </tbody>
 </table>
@@ -413,6 +414,59 @@
 </tbody>
 </table>
 {{else}}<p class="empty">Nothing recorded yet — the events appear once the site serves requests through the WAF.</p>{{end}}
+<div class="sect-events">
+<h3>Exclusions</h3>
+<p class="sect-note">The rules you removed or narrowed on this site — distinct from what a preset ships. Revert an exclusion by deleting its row.</p>
+{{if .WafExcl}}
+<table>
+<thead><tr><th>Kind</th><th>Rule</th><th>Target</th><th>Note</th><th>Added</th><th></th></tr></thead>
+<tbody>
+{{range .WafExcl}}{{$x := .}}
+<tr><td>{{if eq $x.Kind "narrow"}}<span class="chip info">narrow</span>{{else}}<span class="chip warn">remove</span>{{end}}</td><td class="mono">{{$x.RuleID}}</td><td class="mono">{{$x.Target}}</td><td><small>{{$x.Note}}</small></td><td class="num"><small>{{$x.AddedBy}}</small></td>
+<td class="actions"><button class="mini danger" type="button" hx-post="/sites/{{$id}}/waf/excl/delete" hx-vals='{"undo":"1","kind":"{{$x.Kind}}","rule_id":"{{$x.RuleID}}","target":"{{$x.Target}}"}' hx-target="#msg" hx-confirm="Remove this exclusion? The rule matches again as soon as Caddy reloads.">Undo</button></td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="empty">No exclusions yet — the site runs the ruleset as shipped.</p>{{end}}
+
+<h3>Add an exclusion</h3>
+<form hx-post="/sites/{{$id}}/waf/excl" hx-target="#msg">
+<label>Kind
+<select id="excl-kind" name="kind">
+<option value="remove">Remove the rule here (SecRuleRemoveById)</option>
+<option value="narrow">Narrow the rule (SecRuleUpdateTargetById)</option>
+</select></label>
+<label>Rule id or category tag
+<input id="excl-rule" name="rule_id" value="" placeholder="942100 or attack-sqli" autocomplete="off"></label>
+<label>Target (narrowing only)
+<input id="excl-target" name="target" value="" placeholder="!ARGS:q" autocomplete="off"></label>
+<label>Note (why, carried where you saved it from)
+<input id="excl-note" name="note" value="" placeholder="trips the checkout address field" autocomplete="off"></label>
+<button type="submit">Add exclusion</button>
+</form>
+
+<h3>Category boxes</h3>
+<p class="sect-note">Tick a CRS category to stop this site evaluating its rules (one exclusion row per tick).</p>
+<form hx-post="/sites/{{$id}}/waf/excl" hx-target="#msg">
+<ul class="checks">
+<li><label><input type="checkbox" name="tag" value="attack-sqli"> <span class="mono">attack-sqli</span> <span class="tag">942</span></label></li>
+<li><label><input type="checkbox" name="tag" value="attack-xss"> <span class="mono">attack-xss</span> <span class="tag">941</span></label></li>
+<li><label><input type="checkbox" name="tag" value="attack-rce"> <span class="mono">attack-rce</span> <span class="tag">932</span></label></li>
+<li><label><input type="checkbox" name="tag" value="attack-lfi"> <span class="mono">attack-lfi</span> <span class="tag">930</span></label></li>
+<li><label><input type="checkbox" name="tag" value="attack-php"> <span class="mono">attack-php</span> <span class="tag">933</span></label></li>
+<li><label><input type="checkbox" name="tag" value="attack-generic-webshell"> <span class="mono">attack-generic-webshell</span> <span class="tag">934</span></label></li>
+</ul>
+<button type="submit">Add checked categories as exclusions</button>
+</form>
+<script>// Narrow from an event row: pre-fill the exclusion form and put the cursor on the target.
+function wafPrefill(ruleId, kind) {
+  var f = document.getElementById('excl-kind');
+  if (!f) return;
+  f.value = kind;
+  document.getElementById('excl-rule').value = ruleId;
+  document.getElementById('excl-target').focus();
+}
+</script>
 </div>
 </section>
 {{end}}

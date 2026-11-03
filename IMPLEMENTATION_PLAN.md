@@ -16,7 +16,7 @@ Design: `claudedocs/design_waf_m12.md` (settled 2026-11-02, Brian's six answers 
 ## Stage 2: Events
 **Goal**: module callback → buffered channel → capped `waf_events` writer (trim past 10k, drop-on-full). WAF tab Events section: per-rule aggregates (rule, category, count, last seen, example path) + newest matches with Narrow/Disable buttons per mock.
 **Tests**: writer caps and trims; callback captures rule id/message/phase/verdict; integration: a DetectionOnly match lands a detect row, engine On lands deny.
-**Status**: Not Started
+**Status**: Complete
 
 ## Stage 3: Exclusions + category boxes
 **Goal**: `waf_exclusions` rows (remove/narrow + target + note + added_by/at); renderer appends rows as directives; WAF-tab exclusions rows + add form + category checkbox set (per-tag remove rows); remove = undo, re-apply.

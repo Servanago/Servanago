@@ -530,3 +530,85 @@ func TestSiteWafTabEventsRender(t *testing.T) {
 		t.Errorf("events leaked across sites")
 	}
 }
+
+// The rules browser: the file list carries the shipped counts, a detail page lists the
+// rules with messages and phases, and an excluded rule shows its tag without changing the
+// browser's read-only nature.
+func TestWafRulesBrowser(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"brws.example.com"}, Kind: "static", StaticRoot: "/srv/www/brws", Enabled: true, Waf: "crs"})
+	if err := s.deps.Store.AddWafExclusion(context.Background(), store.WafExclusion{SiteID: id, Kind: "remove", RuleID: "920320", Note: "health checks", AddedBy: "admin", AddedAt: 1}); err != nil {
+		t.Fatal(err)
+	}
+	body := s.do(req{path: fmt.Sprintf("/sites/%d/waf/rules", id), cookies: ck}).Body.String()
+	for _, want := range []string{"Rules files", ">REQUEST-920-PROTOCOL-ENFORCEMENT<", ">REQUEST-942-APPLICATION-ATTACK-SQLI<", ">Open</a>", "</table>"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rules list missing %q", want)
+		}
+	}
+	body = s.do(req{path: fmt.Sprintf("/sites/%d/waf/rules?file=REQUEST-920-PROTOCOL-ENFORCEMENT", id), cookies: ck}).Body.String()
+	for _, want := range []string{"REQUEST-920-PROTOCOL-ENFORCEMENT", ">920320<", "Missing User Agent Header", "excluded", ">active<", "Back to all files"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("rules detail missing %q", want)
+		}
+	}
+	// unknown file names fall through to the list
+	body = s.do(req{path: fmt.Sprintf("/sites/%d/waf/rules?file=nope-9000", id), cookies: ck}).Body.String()
+	if !strings.Contains(body, "Rules files") {
+		t.Errorf("unknown file did not fall back to the list")
+	}
+}
+
+// The tab links to the browser; unknown tabs still 404 (the browser is a separate route).
+func TestWafTabLinksRulesBrowser(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"brws2.example.com"}, Kind: "static", StaticRoot: "/srv/www/brws2", Enabled: true, Waf: "crs"})
+	if w := s.do(req{path: fmt.Sprintf("/sites/%d/waf/rules", id), cookies: ck}); w.Code != 200 || !strings.Contains(w.Body.String(), "Rules files") {
+		t.Errorf("rules page: %d", w.Code)
+	}
+}
+
+// Exclusions flow: the add form rows, an event row's Disable (the same endpoint with a
+// pre-filled note), a category box submission and the undo, each re-rendered.
+func TestSiteWafExclusionsFlow(t *testing.T) {
+	s, id, ck := signedWith(t, store.Site{Hostnames: []string{"excl.example.com"}, Kind: "static", StaticRoot: "/srv/www/excl", Enabled: true, Waf: "crs"})
+	post := func(f url.Values) *httptest.ResponseRecorder {
+		return s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf/excl", id), cookies: ck, hdr: htmxPost, body: f.Encode()})
+	}
+	if w := post(url.Values{"kind": {"remove"}, "rule_id": {"920280"}, "note": {"noisy probes"}}); w.Code != 200 {
+		t.Fatalf("add remove row: %d %s", w.Code, w.Body.String())
+	}
+	if w := post(url.Values{"kind": {"narrow"}, "rule_id": {"942330"}, "target": {"!ARGS:address_1"}, "note": {"checkout"}}); w.Code != 200 {
+		t.Fatalf("add narrow row: %d %s", w.Code, w.Body.String())
+	}
+	// a narrow row naming a rule the CRS does not ship must fail at save (the spike's twin case)
+	if w := post(url.Values{"kind": {"narrow"}, "rule_id": {"999999"}, "target": {"!ARGS:x"}}); w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "not found") {
+		t.Fatalf("retired narrow id accepted: %d %s", w.Code, w.Body.String())
+	}
+	// the event row's Disable: same endpoint, note carries the message
+	if w := post(url.Values{"kind": {"remove"}, "rule_id": {"932236"}, "note": {"disabled from events; shell probe noise"}}); w.Code != 200 {
+		t.Fatalf("event disable: %d %s", w.Code, w.Body.String())
+	}
+	// category boxes: three tags at once
+	if w := post(url.Values{"tag": {"attack-sqli", "attack-php", "attack-xss"}}); w.Code != 200 {
+		t.Fatalf("category boxes: %d %s", w.Code, w.Body.String())
+	}
+	rows, _ := s.deps.Store.GetSite(context.Background(), id)
+	if len(rows.Exclusions) != 6 {
+		t.Fatalf("site carries %d exclusion rows, want 6", len(rows.Exclusions))
+	}
+	// the tab renders the rows and the renderer picks them up (the render happens at apply)
+	body := s.do(req{path: fmt.Sprintf("/sites/%d/waf", id), cookies: ck}).Body.String()
+	for _, want := range []string{"Exclusions", ">920280<", "noisy probes", ">attack-rce<", "Undo"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("exclusions tab missing %q", want)
+		}
+	}
+	// undo the narrow row: rows drop to 5 and the render drops its line
+	undo := s.do(req{method: "POST", path: fmt.Sprintf("/sites/%d/waf/excl/delete", id), cookies: ck, hdr: htmxPost,
+		body: url.Values{"undo": {"1"}, "kind": {"narrow"}, "rule_id": {"942330"}, "target": {"!ARGS:address_1"}}.Encode()})
+	if undo.Code != 200 {
+		t.Fatalf("undo: %d %s", undo.Code, undo.Body.String())
+	}
+	if rows, _ = s.deps.Store.GetSite(context.Background(), id); len(rows.Exclusions) != 5 {
+		t.Errorf("undo left %d rows", len(rows.Exclusions))
+	}
+}

@@ -5,6 +5,7 @@ package caddywaf
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 )
@@ -125,4 +126,28 @@ func mustGet(t *testing.T, url string) *http.Request {
 	}
 	r.RemoteAddr = "1.2.3.4:9999"
 	return r
+}
+
+// Every profile tail compiles against the CRS and ships something worth shipping; the
+// exclusions inside name only rules the CRS actually carries (a retired id would be a
+// silent no-op, so the test refuses it rather than let a profile rot).
+func TestProfilesCompile(t *testing.T) {
+	for name, tail := range Profiles {
+		m := &Middleware{LoadOWASPCRS: true, Directives: Preset + tail}
+		waf, err := m.buildWAF()
+		if err != nil {
+			t.Errorf("profile %s does not compile: %v", name, err)
+		} else if c, ok := waf.(interface{ Close() error }); ok {
+			_ = c.Close()
+		}
+		if tail == "" {
+			t.Errorf("profile %s ships nothing", name)
+		}
+		if !strings.Contains(Profiles["shop"], "SecRuleRemoveById 920420") {
+			t.Errorf("shop profile lost its content-type exclusion")
+		}
+		if !strings.Contains(Profiles["php"], "SecRuleRemoveById 920320") {
+			t.Errorf("php profile lost its user-agent exclusion")
+		}
+	}
 }

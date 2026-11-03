@@ -104,7 +104,7 @@ func (s *Server) takeFlashes() []string {
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second, geo: geoip.New(), mailTries: 15}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "mail", "scan", "scanrun", "siteedit", "siteview", "snippets", "logs", "help", "php", "reference", "backups", "updates"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "mail", "scan", "scanrun", "siteedit", "siteview", "snippets", "logs", "help", "php", "reference", "backups", "updates", "wafrules"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -267,6 +267,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sites", s.protected(s.createSite))
 	mux.Handle("GET /sites/{id}", s.protected(s.editSitePage))
 	mux.Handle("GET /sites/{id}/{tab}", s.protected(s.siteTabPage))
+	mux.Handle("GET /sites/{id}/waf/rules", s.protected(s.wafrulesPage))
 	mux.Handle("PUT /sites/{id}", s.protected(s.updateSite))
 	mux.Handle("DELETE /sites/{id}", s.protected(s.deleteSite))
 	mux.Handle("POST /host/dns/resync", s.protected(s.hostDNS(false)))
@@ -279,6 +280,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sites/{id}/routes", s.protected(s.saveSiteRoutes))
 	mux.Handle("POST /sites/{id}/geo", s.protected(s.saveSiteGeo))
 	mux.Handle("POST /sites/{id}/waf", s.protected(s.saveSiteWaf))
+	mux.Handle("POST /sites/{id}/waf/excl", s.protected(s.saveWafExclusion))
+	mux.Handle("POST /sites/{id}/waf/excl/delete", s.protected(s.undoWafExclusion))
 	mux.Handle("POST /sites/{id}/dns-ip", s.protected(s.saveSiteDNSIP))
 	mux.Handle("POST /sites/{id}/runtime/{do}", s.protected(s.siteRuntimeAction))
 	mux.Handle("POST /sites/{id}/gate/grants", s.protected(s.addGateGrant))

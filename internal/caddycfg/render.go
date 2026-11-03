@@ -346,7 +346,7 @@ func wafRouteOf(r store.Site) any {
 	} else {
 		h["handler"] = "waf"
 		h["load_owasp_crs"] = true
-		h["directives"] = caddywaf.DirectivesFor(r.Waf, r.WafDirectives, r.WafMode)
+		h["directives"] = caddywaf.DirectivesFor(r.Waf, r.WafDirectives, r.WafMode, exclusionsOf(r))
 	}
 	h["site_id"] = r.ID
 	if r.RLRequests > 0 {
@@ -361,6 +361,19 @@ func wafRouteOf(r store.Site) any {
 		h["rate_limit"] = rl
 	}
 	return h
+}
+
+// exclusionsOf converts the site's exclusion rows to the composition's shapes; rows are
+// already ordered by the store (removes, then narrows, then id).
+func exclusionsOf(r store.Site) []caddywaf.Exclusion {
+	if len(r.Exclusions) == 0 {
+		return nil
+	}
+	out := make([]caddywaf.Exclusion, 0, len(r.Exclusions))
+	for _, x := range r.Exclusions {
+		out = append(out, caddywaf.Exclusion{Kind: x.Kind, RuleID: x.RuleID, Target: x.Target})
+	}
+	return out
 }
 
 // extraRoutes renders the site's extra routes (admin-entered, config.ParseExtraRoutes): each becomes

@@ -37,32 +37,33 @@ type Site struct {
 	RecordIP6      string // IPv6 override for this site's AAAA record; "" = domain default
 	Allowlist      string // newline-separated CIDRs
 	BasicUser      string
-	BasicHash      string   // bcrypt
-	Stream         bool     // no response buffering (flush_interval -1)
-	MaxBody        int64    // request body limit in bytes; 0 = Caddy default
-	GateMode       string   // "" | acl | open: the magic-link gate (gate.go)
-	GateProvider   string   // "" | smtp | postmark: how this site's magic links are mailed
-	GateFrom       string   // sender address of the links
-	GateSMTPHost   string   // smtp provider
-	GateSMTPPort   int      // smtp provider
-	GateSMTPUser   string   // smtp provider; "" = no authentication
-	GateSecret     []byte   // secretbox blob: the SMTP password or the Postmark server token; nil = none
-	ExtraRoutes    string   // one route per line, path=dial (internal/config.ParseExtraRoutes): Caddy proxies each path to its own upstream before the site's main handler
-	PHPExtensions  string   // php: space-separated shared extensions from the allowlist; "" = the core set
-	PHPHealthPath  string   // php: path requested after a PHP switch; "" = only check that the unit stays up
-	SiteUser       string   // node, php, frankenphp, cgi, static: the Unix user it runs as (one site per user); "" = the generated sg-<slug>
-	PublicDir      string   // php, frankenphp, fastcgi, static: the served folder inside StaticRoot; "" = StaticRoot itself
-	Snippets       []string // attached snippet names, sorted; ListSites and GetSite fill it, Create and UpdateSite save it
-	CountryMode    string   // "" | deny | allow: the site's country rule (see countries)
-	Countries      string   // space-separated ISO 3166-1 alpha-2 codes for country_mode; "" = the rule has no effect
-	Waf            string   // "" = off; a preset name (crs, php, wordpress, shop, goapi, node) or custom; validated by the apply path
-	WafMode        string   // "" = detect ("SecRuleEngine DetectionOnly") | block; the renderer owns the engine line
-	WafDirectives  string   // custom: extra SecLang directives on top of the preset, one per line
-	RLRequests     int64    // rate limit: requests per client IP per window; 0 = off
-	RLWindow       string   // rate limit window: "" | 1m | 5m | 1h (set together with RLRequests)
-	RLPaths        string   // rate limit scope: one path prefix per line; "" = the whole site
-	Notes          string   // admin notes for the Reference page, at most 10,000 characters
-	UpdatedAt      string   // RFC3339 UTC time of the last save; set by CreateSite and UpdateSite, never by the caller
+	BasicHash      string         // bcrypt
+	Stream         bool           // no response buffering (flush_interval -1)
+	MaxBody        int64          // request body limit in bytes; 0 = Caddy default
+	GateMode       string         // "" | acl | open: the magic-link gate (gate.go)
+	GateProvider   string         // "" | smtp | postmark: how this site's magic links are mailed
+	GateFrom       string         // sender address of the links
+	GateSMTPHost   string         // smtp provider
+	GateSMTPPort   int            // smtp provider
+	GateSMTPUser   string         // smtp provider; "" = no authentication
+	GateSecret     []byte         // secretbox blob: the SMTP password or the Postmark server token; nil = none
+	ExtraRoutes    string         // one route per line, path=dial (internal/config.ParseExtraRoutes): Caddy proxies each path to its own upstream before the site's main handler
+	PHPExtensions  string         // php: space-separated shared extensions from the allowlist; "" = the core set
+	PHPHealthPath  string         // php: path requested after a PHP switch; "" = only check that the unit stays up
+	SiteUser       string         // node, php, frankenphp, cgi, static: the Unix user it runs as (one site per user); "" = the generated sg-<slug>
+	PublicDir      string         // php, frankenphp, fastcgi, static: the served folder inside StaticRoot; "" = StaticRoot itself
+	Snippets       []string       // attached snippet names, sorted; ListSites and GetSite fill it, Create and UpdateSite save it
+	Exclusions     []WafExclusion // the site's WAF exclusion rows; ListSites and GetSite fill it, the renderer composes the lines
+	CountryMode    string         // "" | deny | allow: the site's country rule (see countries)
+	Countries      string         // space-separated ISO 3166-1 alpha-2 codes for country_mode; "" = the rule has no effect
+	Waf            string         // "" = off; a preset name (crs, php, wordpress, shop, goapi, node) or custom; validated by the apply path
+	WafMode        string         // "" = detect ("SecRuleEngine DetectionOnly") | block; the renderer owns the engine line
+	WafDirectives  string         // custom: extra SecLang directives on top of the preset, one per line
+	RLRequests     int64          // rate limit: requests per client IP per window; 0 = off
+	RLWindow       string         // rate limit window: "" | 1m | 5m | 1h (set together with RLRequests)
+	RLPaths        string         // rate limit scope: one path prefix per line; "" = the whole site
+	Notes          string         // admin notes for the Reference page, at most 10,000 characters
+	UpdatedAt      string         // RFC3339 UTC time of the last save; set by CreateSite and UpdateSite, never by the caller
 }
 
 // MLHost is the magic-link host of a gated site, ml.<primary>; "" for an ungated site. It serves only the gate's own
@@ -261,6 +262,11 @@ func (s *Store) GetSite(ctx context.Context, id int64) (Site, error) {
 		return Site{}, err
 	}
 	r.Snippets = sn[id]
+	exc, err := s.siteExclusions(ctx)
+	if err != nil {
+		return Site{}, err
+	}
+	r.Exclusions = exc[id]
 	return r, nil
 }
 
@@ -271,6 +277,10 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 		return nil, err
 	}
 	sn, err := s.siteSnippets(ctx)
+	if err != nil {
+		return nil, err
+	}
+	exc, err := s.siteExclusions(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +298,7 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 		}
 		r.Hostnames = hs[r.ID]
 		r.Snippets = sn[r.ID]
+		r.Exclusions = exc[r.ID]
 		out = append(out, r)
 	}
 	return out, rows.Err()
