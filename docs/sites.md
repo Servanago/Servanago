@@ -20,6 +20,7 @@ Every site has a control view at `/sites/<id>`: one page per area, shared by a t
 | `/sites/<id>/routes` | Extra routes and a proxy site's TLS/stream/upload tuning. |
 | `/sites/<id>/countries` | The site's country rule. |
 | `/sites/<id>/waf` | The site's web application firewall. |
+| `/sites/<id>/waf/rules` | The compiled CRS, read-only: rules files and every rule's facts. |
 
 Tabs save in place: a form posts from its tab, the button shows the save, and the page does not reload. Actions that came from the dashboard rows (resync, scan, backup saves, access list rows) accept a return-to tab.
 
@@ -95,7 +96,19 @@ The DNS page is a full independent record view of every Cloudflare zone the toke
 
 A site's Country filter (the access area of its editor) answers whole countries with a plain 403: **Deny these countries** keeps the listed ones out, **Allow only these countries** keeps everyone else out. Codes are ISO 3166-1 two-letter codes (DE, US), space or comma separated. Everything from the machine itself, a home network or a tailnet (private addresses) is never judged, and the `/.well-known/` paths always stay open so certificates keep renewing. A record proxied through Cloudflare is judged by the address Cloudflare names in `CF-Connecting-IP` (a header Cloudflare sets itself); otherwise the visiting address is. The database is MaxMind's GeoLite2-Country, read from Settings' path — ServanaGo never installs it: `apt install geoipupdate` keeps the file current with your license key in `/etc/GeoIP.conf`. A rule that cannot read the database lets everyone in.
 
-A site's **Web application firewall** (the WAF tab) inspects every request against the OWASP Coreruleset (CRS v4, compiled into the binary via Coraza — no rule files to install). The ruleset starts in **detection-only** mode: violations are written to the log, nothing is blocked, so you can read a day of your traffic and tune first. **OWASP CRS** keeps that mode; **OWASP CRS plus custom rules** appends your SecLang lines after the preset — turn the engine on with `SecRuleEngine On`, remove a rule of yours the site trips with `SecRuleRemoveById <id>` (the rule's id), or add your own `SecRule`. The custom tail is validated when you save (compiles against the CRS, so a removed id must exist) and file-reading or DNS-resolving operators (`@inspectFile`, `@pmFromFile`, `@rbl`, ...) are refused. The WAF runs after the country rule and before the gate; requests to the gate's own `ml.` host are never inspected. A custom tail that fails inside Caddy's load restores the site's last-known-good config automatically.
+A site's **Web application firewall** (the WAF tab) inspects every request against the OWASP Coreruleset (CRS v4, compiled into the binary via Coraza — no rule files to install). The **ruleset select** picks what runs: the bare CRS preset, one of the profiles (`PHP generic`, `WordPress`, `PHP ecommerce`, `Go / generic API`, `Node / JSON API` — each ships the CRS with the health-check false positives that class of app always needs, nothing more), or **custom**, which appends your own SecLang lines. File-reading or DNS-resolving operators (`@inspectFile`, `@pmFromFile`, `@rbl`, ...) are refused; the tail compiles against the CRS at save, so a rule id that no longer ships fails there instead of inside Caddy's load.
+
+The **engine mode** is its own select: log only (detection) records every match in **Events** without refusing anything — tune there first — and Block answers 403 the moment a rule fires. It owns the single `SecRuleEngine` line of the composed ruleset; a custom tail may not set the engine itself. The mode applies to any preset.
+
+**Events** are the tab's tuning feed: one row per matched rule with a verdict (blocked or detection-only), capped at 10,000 like the audit log, plus per-rule aggregates over the last 24 hours. Each of the loudest rules carries its CRS tags and two buttons: **Disable** removes the rule for this site (one exclusion row); **Narrow** pre-fills the exclusions form to stop the rule looking at one request item (`!ARGS:checkout` style) — the surgical fix.
+
+**Exclusions** are the per-site rows your clicks and forms created — remove a rule by id, remove a whole CRS category (the **category boxes**), or narrow a rule to a target — each with note and who added it. Undo = delete the row; the next save re-renders without its line. Exclusion rows compose after the preset and before the engine line.
+
+The **rules browser** (`/sites/<id>/waf/rules`, read-only) lists every compiled CRS file with its rule count and opens one to show every rule's id, message, phase and tags, and which files the site has excluded rules from.
+
+**Rate limiting** sits at the bottom of the tab: N requests per client IP per window (1m, 5m or 1h; the address Cloudflare names, else the connecting one), optionally scoped to path prefixes (`/login`, one per line — children included). Over the limit answers 429 with a `Retry-After` until the window passes; every other address is unaffected, and the panel's own probes are never counted. A limit without a ruleset still runs (engine-off). Counters live in the panel process — bounded to a million addresses — and reset at a restart.
+
+The WAF runs after the country rule and before the gate; requests to the gate's own `ml.` host are never inspected. A ruleset that fails inside Caddy's load restores the site's last-known-good config automatically.
 
 ## Virus scanning
 

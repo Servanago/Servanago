@@ -15,7 +15,7 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 - **DNS record management** for every Cloudflare zone the token sees: full CRUD in the UI and MCP, independent of the site model. [MCP](docs/mcp.md)
 - **Virus scanning** of site folders through the host's ClamAV daemon: quarantine, restore/ignore, ntfy + email alerts, scanned backups. [MCP](docs/mcp.md)
 - **Country filter** per site and for the panel: deny or allow ISO country lists, judged from MaxMind's GeoLite2 (kept fresh by geoipupdate, never configured by ServanaGo). [Sites](docs/sites.md)
-- **Web application firewall** per site: the OWASP CRS v4 ruleset (compiled into the binary via Coraza) inspects every request; detection-only first, custom SecLang tuning per site. [Sites](docs/sites.md)
+- **Web application firewall** per site: the OWASP CRS v4 ruleset (compiled into the binary via the panel's own Coraza handler) inspects every request; five app profiles, an engine-mode select (detection first), per-app exclusions with one-click tuning from a WAF events feed, a read-only rules browser, and rate limiting per client IP. [Sites](docs/sites.md)
 - **Mail bridge** per domain: Postmark handles internet-facing mail, inbound messages reach your LMTP server through the panel's webhook, MX/SPF/DKIM/Return-Path and verification are managed end to end. [MCP](docs/mcp.md)
 - **PHP built from source** when a security release can't wait for your distribution. [PHP](docs/php.md)
 - **Encrypted backups** of sites and the panel, with restore from the UI. [Backups](docs/backups.md)
