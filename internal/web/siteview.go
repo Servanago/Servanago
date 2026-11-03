@@ -325,7 +325,7 @@ func (s *Server) saveSiteGeo(w http.ResponseWriter, r *http.Request) {
 	}) {
 		return
 	}
-	inplace(w, "Saved and applied. The rule applies to requests as soon as Caddy has reloaded.")
+	inplace(w, "Saved and applied — the rule is live immediately; Caddy did not restart.")
 }
 
 // saveSiteWaf writes the site's WAF preset, engine mode and rate limit in place. The custom
@@ -372,7 +372,7 @@ func (s *Server) saveSiteWaf(w http.ResponseWriter, r *http.Request) {
 	}) {
 		return
 	}
-	inplace(w, "Saved and applied. The WAF and the rate limit run in the site's Caddy route as soon as Caddy has reloaded.")
+	inplace(w, "Saved and applied — the WAF and the rate limit are live immediately; Caddy did not restart.")
 }
 
 // saveWafExclusion adds exclusion rows — one form submission, an event row's Disable, or
@@ -429,7 +429,7 @@ func (s *Server) saveWafExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.waf.exclusion", rt.Hostnames[0])
-	inplace(w, "Exclusion saved and applied. The rule stops matching on this site as soon as Caddy has reloaded.")
+	inplace(w, "Exclusion saved and applied — the rule stops matching on this site immediately; Caddy did not restart.")
 }
 
 // undoWafExclusion deletes one exclusion row and re-applies the site's config: the
@@ -455,7 +455,7 @@ func (s *Server) undoWafExclusion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.waf.exclusion.undo", rt.Hostnames[0])
-	inplace(w, "Exclusion removed and applied. The rule matches again as soon as Caddy has reloaded.")
+	inplace(w, "Exclusion removed and applied — the rule matches again immediately; Caddy did not restart.")
 }
 
 // validateExclusion checks one new exclusion row and pre-compiles its line so a narrow

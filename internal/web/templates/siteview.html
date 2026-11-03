@@ -423,7 +423,7 @@
 <tbody>
 {{range .WafExcl}}{{$x := .}}
 <tr><td>{{if eq $x.Kind "narrow"}}<span class="chip info">narrow</span>{{else}}<span class="chip warn">remove</span>{{end}}</td><td class="mono">{{$x.RuleID}}</td><td class="mono">{{$x.Target}}</td><td><small>{{$x.Note}}</small></td><td class="num"><small>{{$x.AddedBy}}</small></td>
-<td class="actions"><button class="mini danger" type="button" hx-post="/sites/{{$id}}/waf/excl/delete" hx-vals='{"undo":"1","kind":"{{$x.Kind}}","rule_id":"{{$x.RuleID}}","target":"{{$x.Target}}"}' hx-target="#msg" hx-confirm="Remove this exclusion? The rule matches again as soon as Caddy reloads.">Undo</button></td></tr>
+<td class="actions"><button class="mini danger" type="button" hx-post="/sites/{{$id}}/waf/excl/delete" hx-vals='{"undo":"1","kind":"{{$x.Kind}}","rule_id":"{{$x.RuleID}}","target":"{{$x.Target}}"}' hx-target="#msg" hx-confirm="Remove this exclusion? The rule starts matching again immediately; Caddy does not restart.">Undo</button></td></tr>
 {{end}}
 </tbody>
 </table>
