@@ -12,11 +12,10 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
-      - uses: golangci/golangci-lint-action@v6
+      - uses: golangci/golangci-lint-action@v9
         with:
-          version: v1.64.8
+          version: v2.15.0
           args: --timeout=20m ./cmd/... ./internal/...
-          install-mode: goinstall # release binary is built with go1.24, go.mod needs 1.26
           verify: false # config verify downloads a schema from golangci-lint.run; its timeout failed a release run
       - uses: oven-sh/setup-bun@v2
       - name: Install Playwright browser
