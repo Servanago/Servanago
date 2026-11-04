@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/servanago/servanago/internal/store"
 	"github.com/servanago/servanago/internal/update"
 )
 
@@ -108,5 +109,21 @@ func TestUpdateCheckDisabledMakesNoRequest(t *testing.T) {
 	}
 	if *gets != 0 {
 		t.Errorf("%d requests while the check is off", *gets)
+	}
+}
+
+func TestReleaseMailNamesTheReportingHost(t *testing.T) {
+	s, _, _ := updateServer(t, "0.1.0", "0.2.0")
+	s.deps.Cfg.Host = "bee.example.test"
+	if err := s.deps.Store.SaveSettings(context.Background(), store.Settings{SMTPHost: "mail", SMTPPort: 587, MailFrom: "ops@example.com"}); err != nil {
+		t.Fatal(err)
+	}
+	var subject, body string
+	s.sendMail = func(_, _, sub, b string) error { subject, body = sub, b; return nil }
+	if err := s.runUpdateCheck(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(subject, "bee.example.test") || !strings.Contains(body, "available on bee.example.test") {
+		t.Errorf("host missing: %q / %q", subject, body)
 	}
 }

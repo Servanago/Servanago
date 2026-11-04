@@ -182,9 +182,10 @@ func (s *Server) mailUpdates(ctx context.Context, pending []phpUpdate) error {
 	for _, u := range pending {
 		lines = append(lines, fmt.Sprintf("PHP %s is available for the %s branch%s.", u.Version, u.Branch, map[bool]string{true: " (a security release)"}[u.Security]))
 	}
-	body := strings.Join(lines, "\n") + "\n\nOpen the PHP page in ServanaGo to build it and switch your sites. Nothing was changed.\n"
+	host := s.deps.Cfg.Host
+	body := strings.Join(lines, "\n") + "\n\nOpen the PHP page on " + host + " to build it and switch your sites. Nothing was changed.\n"
 	// ponytail: no admin email address exists in ServanaGo, so the notice goes to the MAIL FROM mailbox
-	return s.sendMail(set.MailFrom, set.MailFrom, "ServanaGo: a new PHP release is available", body)
+	return s.sendMail(set.MailFrom, set.MailFrom, "ServanaGo ("+host+"): a new PHP release is available", body)
 }
 
 // smtpMail sends through the Settings page's SMTP account; the password is unsealed only here.

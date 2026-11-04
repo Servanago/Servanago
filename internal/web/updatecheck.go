@@ -93,9 +93,10 @@ func (s *Server) mailRelease(ctx context.Context, m update.Manifest) error {
 	if !set.MailReady() {
 		return errors.New("email delivery is not set up")
 	}
-	body := fmt.Sprintf("ServanaGo %s is available (this host runs %s).\n\nRelease notes: %s\n\nOpen the Updates page in ServanaGo for the details. Nothing was changed.\n", m.Version, s.runningVersion(), m.NotesURL)
+	host := s.deps.Cfg.Host
+	body := fmt.Sprintf("ServanaGo %s is available on %s (it runs %s).\n\nRelease notes: %s\n\nOpen the Updates page on %s for the details. Nothing was changed.\n", m.Version, host, s.runningVersion(), m.NotesURL, host)
 	// ponytail: as in the PHP notice, there is no admin address, so it goes to the MAIL FROM mailbox
-	return s.sendMail(set.MailFrom, set.MailFrom, "ServanaGo: version "+m.Version+" is available", body)
+	return s.sendMail(set.MailFrom, set.MailFrom, "ServanaGo ("+host+"): version "+m.Version+" is available", body)
 }
 
 // RunUpdateChecks checks once a week (and at start when the last check is older) until ctx ends. Off = no request.
