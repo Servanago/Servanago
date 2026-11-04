@@ -5,6 +5,8 @@ import (
 	"crypto/tls"
 	"net"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -245,5 +247,54 @@ func TestRateLimitServesAndBlocks(t *testing.T) {
 	status, _ := caddytest.GetPath(t, o.HTTPSPort, "rl.test", "/login/2fa") // a scoped child shares the budget
 	if status != 429 {
 		t.Errorf("third scoped request: %d; want 429", status)
+	}
+}
+
+// TestPHPDirRedirectStaysSameOrigin: the trailing-slash redirect for a directory with an index.php
+// never answers with a Location a browser resolves to another host (Caddy 2.11.8 #8285).
+func TestPHPDirRedirectStaysSameOrigin(t *testing.T) {
+	storage := caddytest.TempDir(t)
+	caddytest.Cleanup(t)
+	t.Cleanup(func() { _ = caddy.Stop() })
+	root := t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "sub"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "sub", "index.php"), []byte("<?php"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	site := asPHP(store.Site{ID: 2, Hostnames: []string{"php.test"}, Enabled: true}, "phpt", "8.2")
+	site.StaticRoot = root
+	o := opts()
+	o.Issuer = Internal
+	o.HTTPPort, o.HTTPSPort = caddytest.FreePort(t), caddytest.FreePort(t)
+	o.StoragePath = storage
+	b, err := Render(State{[]store.Domain{}, []store.Site{site}}, o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := caddy.Load(b, false); err != nil {
+		t.Fatalf("caddy rejected the php config: %v", err)
+	}
+	caddytest.WaitCert(t, o.HTTPSPort, "php.test")
+	c := &http.Client{
+		CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true, ServerName: "php.test"},
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, "127.0.0.1:"+strconv.Itoa(o.HTTPSPort))
+			},
+		},
+	}
+	for _, path := range []string{"/sub", "/%2Fevil.com%2F..%2Fsub"} {
+		resp, err := c.Get("https://php.test" + path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		loc := resp.Header.Get("Location")
+		if resp.StatusCode != 308 || loc == "" || strings.HasPrefix(loc, "//") || strings.Contains(loc, "://") {
+			t.Errorf("GET %s = %d Location %q; want a 308 to a same-origin reference", path, resp.StatusCode, loc)
+		}
 	}
 }

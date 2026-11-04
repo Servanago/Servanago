@@ -427,7 +427,7 @@ func phpRoute(r store.Site, extras []any) any {
 	routes = append(routes,
 		m{
 			"match":  []any{m{"file": m{"root": root, "try_files": []any{"{http.request.uri.path}/index.php"}}, "not": []any{m{"path": []any{"*/"}}}}},
-			"handle": []any{m{"handler": "static_response", "status_code": "308", "headers": m{"Location": []any{"{http.request.orig_uri.path}/{http.request.orig_uri.prefixed_query}"}}}},
+			"handle": []any{m{"handler": "static_response", "status_code": "308", "headers": m{"Location": []any{"./{http.request.orig_uri.path.file_escaped}/{http.request.orig_uri.prefixed_query}"}}}}, // relative to the last segment: cannot leave the origin (Caddy 2.11.8 #8285)
 		},
 		m{
 			"match":  []any{m{"file": m{"root": root, "try_files": []any{"{http.request.uri.path}", "{http.request.uri.path}/index.php", "index.php"}, "try_policy": "first_exist_fallback", "split_path": []any{".php"}}}},
