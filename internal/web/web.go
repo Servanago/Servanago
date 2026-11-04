@@ -80,6 +80,9 @@ type Server struct {
 	healthGet func(ctx context.Context, host, path string) (int, error)
 	sendMail  func(from, to, subject, body string) error
 
+	// Host stats (hoststats.go): the sampler the strip and its poll render.
+	hostSamples func(ctx context.Context) hostStats
+
 	// Mail bridge (mail.go): the Postmark base URL test hook and verify-watch pacing.
 	pmBase      string // empty = the real Postmark API (mail.go postmarkAdmin)
 	applyInline bool   // test seam: run the detached DNS/verify pass in the request goroutine
@@ -104,6 +107,7 @@ func (s *Server) takeFlashes() []string {
 func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second, geo: geoip.New(), mailTries: 15}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
+	s.hostSamples = s.realHostStats
 	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "mail", "scan", "scanrun", "siteedit", "siteview", "snippets", "logs", "help", "php", "reference", "backups", "updates", "wafrules"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
@@ -204,6 +208,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /users/{id}/reset-2fa", s.security(s.resetSecondFactor, false))
 	mux.Handle("POST /users/{id}/delete", s.security(s.removeUser, false))
 	mux.Handle("GET /{$}", s.protected(s.dashboard))
+	mux.Handle("GET /hoststats", s.protected(s.hostStatsPanel))
 	mux.Handle("GET /help", s.protected(s.helpPage))
 	mux.Handle("GET /settings", s.protected(settingsIndex))
 	mux.Handle("GET /settings/{tab}", s.protected(s.settingsPage))
@@ -368,6 +373,7 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 	}
 	host := s.hostCard(r.Context())
 	items := s.checklist(r.Context(), routes, host)
+	stats := s.hostSamples(r.Context())
 	s.render(w, "dashboard", http.StatusOK, page{Title: "Dashboard", Data: struct {
 		Domains   []domainRow
 		Sites     []siteRow
@@ -376,5 +382,6 @@ func (s *Server) dashboard(w http.ResponseWriter, r *http.Request) {
 		SetupDone bool
 		DNSOn     bool
 		Runtimes  runtimes.Report
-	}{domains, routes, host, items, setupDone(items), s.dnsOn(), s.detect(r.Context())}})
+		HostStats hostStats
+	}{domains, routes, host, items, setupDone(items), s.dnsOn(), s.detect(r.Context()), stats}})
 }

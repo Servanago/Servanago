@@ -22,6 +22,9 @@ test('login reaches the dashboard and logout returns to login', async ({ page })
   await page.getByRole('button', { name: 'Sign in' }).click();
   await expect(page).toHaveURL(/\/$/);
   await expect(page.getByRole('heading', { name: 'Sites' })).toBeVisible();
+  // The host stats strip polls itself every 30s; disk count depends on the site roots.
+  await expect(page.locator('#hoststats')).toContainText('Memory');
+  await expect(page.locator('#hoststats')).toContainText('CPU');
   await signout(page);
   await expect(page).toHaveURL(/\/login$/);
 });

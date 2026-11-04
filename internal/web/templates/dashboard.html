@@ -1,5 +1,17 @@
 {{/* One row per site: the summary carries the rolled-up status, the opened row carries certificate, DNS, access and actions.
      Data: []siteRow. The 10s poll replaces #sites, so the script below reopens the rows the admin had open. */}}
+{{define "hoststats"}}
+<div class="statstrip" id="hoststats" hx-get="/hoststats" hx-trigger="every 30s" hx-swap="outerHTML">
+{{if .Err}}<span class="dim">{{.Err}}</span>
+{{else}}
+<div class="tile"><h3>Memory</h3><meter min="0" max="100" value="{{.Mem.Pct}}"></meter><span>{{bytes .Mem.Used}} of {{bytes .Mem.Total}}</span></div>
+<div class="tile">{{if .SwapOn}}<h3>Swap</h3><meter min="0" max="100" value="{{.Swap.Pct}}"></meter><span>{{bytes .Swap.Used}} of {{bytes .Swap.Total}}</span>{{else}}<h3>Swap</h3><span class="dim">no swap</span>{{end}}</div>
+<div class="tile"><h3>CPU</h3><span>{{.CPU}}%</span><small>load {{printf "%.2f" .Load1}} {{printf "%.2f" .Load5}} {{printf "%.2f" .Load15}}</small></div>
+{{range .Disks}}<div class="tile" title="{{.Path}}"><h3>Disk</h3><meter min="0" max="100" value="{{.Pct}}"></meter><span>{{bytes .Used}} of {{bytes .Total}} ({{.Pct}}%)</span></div>{{end}}
+{{end}}
+</div>
+{{end}}
+
 {{define "sites"}}
 {{if .}}
 {{$att := needsAttention .}}
@@ -66,6 +78,7 @@
 <h1>Sites</h1>
 <a class="add-site" href="/sites/new">{{icon "plus"}}Add site</a>
 </div>
+{{template "hoststats" .Data.HostStats}}
 {{with .Data}}
 {{if not .SetupDone}}
 <article class="checklist">

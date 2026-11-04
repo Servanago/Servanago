@@ -300,6 +300,7 @@ func newHelpPage() helpPage {
 
 // helpFuncs are the template functions that render help consistently.
 var helpFuncs = template.FuncMap{
+	"bytes": humanBytes, // file sizes the host stats strip renders
 	"hint": func(key string) template.HTML {
 		return template.HTML("<small>" + html.EscapeString(hints[key]) + "</small>") // #nosec: escaped above
 	},
