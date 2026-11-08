@@ -30,8 +30,8 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 **1. Install the package** from the [latest release](https://github.com/Servanago/Servanago/releases/latest):
 
 ```sh
-curl -LO https://github.com/Servanago/Servanago/releases/download/v0.20.6/servanago_0.20.6_amd64.deb
-sudo apt-get install ./servanago_0.20.6_amd64.deb
+curl -LO https://github.com/Servanago/Servanago/releases/download/v0.20.7/servanago_0.20.7_amd64.deb
+sudo apt-get install ./servanago_0.20.7_amd64.deb
 ```
 
 **2. Point DNS at the server.** Create an A record for your panel hostname that points at the server's IP. (With a Cloudflare token ServanaGo creates it for you; see [Install](docs/install.md#cloudflare-token-optional).) Without Cloudflare the server must be reachable from the internet on ports 80 and 443, because Let's Encrypt checks the hostname over HTTP.
