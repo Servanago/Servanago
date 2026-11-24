@@ -162,8 +162,8 @@ func TestDashboardAndDialogNameTheHostnameOfEachRecord(t *testing.T) {
 	s, _, d := newDNSServer(t)
 	addRoute(t, s, d, "hostnames", "sonarr.example.com\nalias.example.com")
 	body := s.do(req{path: "/"}).Body.String()
-	if !strings.Contains(body, `data-dns-ip="sonarr.example.com A 10.0.0.1, alias.example.com A 10.0.0.1"`) &&
-		!strings.Contains(body, `data-dns-ip="alias.example.com A 10.0.0.1, sonarr.example.com A 10.0.0.1"`) {
+	if !strings.Contains(body, `data-dns-ip="sonarr.example.com A 10.0.0.1, alias.example.com CNAME sonarr.example.com"`) &&
+		!strings.Contains(body, `data-dns-ip="alias.example.com CNAME sonarr.example.com, sonarr.example.com A 10.0.0.1"`) {
 		t.Errorf("delete dialog summary lacks hostnames: %s", body)
 	}
 	if strings.Count(body, `<small class="alias">alias.example.com</small> <span class="dns-synced"`) != 1 {

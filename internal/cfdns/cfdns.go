@@ -90,27 +90,31 @@ type Record struct{ ID, Name, Content string }
 // rows) to badge rows that the next reconcile may rewrite.
 const ManagedComment = "managed by servanago"
 
-// Record families ServanaGo manages: A (IPv4) and AAAA (IPv6).
+// Record families ServanaGo manages: A (IPv4), AAAA (IPv6) and CNAME (aliases point at their primary).
 const (
-	FamilyA    = "A"
-	FamilyAAAA = "AAAA"
+	FamilyA     = "A"
+	FamilyAAAA  = "AAAA"
+	FamilyCNAME = "CNAME"
 )
 
 func checkFamily(family string) error {
-	if family != FamilyA && family != FamilyAAAA {
-		return fmt.Errorf("unsupported record family %q (want A or AAAA)", family)
+	if family != FamilyA && family != FamilyAAAA && family != FamilyCNAME {
+		return fmt.Errorf("unsupported record family %q (want A, AAAA or CNAME)", family)
 	}
 	return nil
 }
 
-// FindRecord returns the record of the given family (A or AAAA) named name, or nil if there is none.
+// FindRecord returns the record of the given family (A, AAAA or CNAME) named name, or nil if there is none.
 func (c *Client) FindRecord(ctx context.Context, zoneID, name, family string) (*Record, error) {
 	if err := checkFamily(family); err != nil {
 		return nil, err
 	}
 	listType := dns.RecordListParamsTypeA
-	if family == FamilyAAAA {
+	switch family {
+	case FamilyAAAA:
 		listType = dns.RecordListParamsTypeAAAA
+	case FamilyCNAME:
+		listType = dns.RecordListParamsTypeCNAME
 	}
 	page, err := c.api.DNS.Records.List(ctx, dns.RecordListParams{
 		ZoneID: cloudflare.F(zoneID),
@@ -140,15 +144,21 @@ type recordParam interface {
 }
 
 // recordBody is the DNS-only record body for the family.
-func recordBody(name, family, ip string) recordParam {
-	if family == FamilyAAAA {
+func recordBody(name, family, content string) recordParam {
+	switch family {
+	case FamilyAAAA:
 		return dns.AAAARecordParam{
-			Name: cloudflare.F(name), Content: cloudflare.F(ip), Type: cloudflare.F(dns.AAAARecordTypeAAAA),
+			Name: cloudflare.F(name), Content: cloudflare.F(content), Type: cloudflare.F(dns.AAAARecordTypeAAAA),
+			TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(ManagedComment),
+		}
+	case FamilyCNAME:
+		return dns.CNAMERecordParam{
+			Name: cloudflare.F(name), Content: cloudflare.F(content), Type: cloudflare.F(dns.CNAMERecordTypeCNAME),
 			TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(ManagedComment),
 		}
 	}
 	return dns.ARecordParam{
-		Name: cloudflare.F(name), Content: cloudflare.F(ip), Type: cloudflare.F(dns.ARecordTypeA),
+		Name: cloudflare.F(name), Content: cloudflare.F(content), Type: cloudflare.F(dns.ARecordTypeA),
 		TTL: cloudflare.F(dns.TTL1), Proxied: cloudflare.F(false), Comment: cloudflare.F(ManagedComment),
 	}
 }

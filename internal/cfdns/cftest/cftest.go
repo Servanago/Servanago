@@ -15,7 +15,7 @@ import (
 
 type Record struct {
 	ID, Name, Content string
-	Type              string // "A" or "AAAA"
+	Type              string // "A", "AAAA", "CNAME", ...
 	Proxied           bool
 	Comment           string
 	TTL               int // 0 behaves as 1 (Auto), like the real API
@@ -243,6 +243,12 @@ func (f *Fake) serve(w http.ResponseWriter, r *http.Request) {
 			Data                         map[string]any
 		}
 		_ = json.NewDecoder(r.Body).Decode(&b)
+		for _, o := range f.records { // like Cloudflare: a CNAME cannot share its name with any other record
+			if strings.EqualFold(o.Name, b.Name) && (o.Type == "CNAME" || b.Type == "CNAME") {
+				reply(w, 400, false, nil, "a record with that host already exists (CNAME conflict)")
+				return
+			}
+		}
 		f.writes++
 		f.next++
 		rec := Record{ID: fmt.Sprintf("rec%d", f.next), Name: b.Name, Content: b.Content, Type: b.Type, Proxied: b.Proxied, Comment: b.Comment,

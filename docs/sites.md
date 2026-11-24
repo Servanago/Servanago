@@ -1,6 +1,6 @@
 # Sites
 
-A site is one or more free hostnames (FQDNs; the first is the main one) served by one backend. Each hostname gets its own A (and optional AAAA) record when Cloudflare is configured.
+A site is one or more free hostnames (FQDNs; the first is the main one) served by one backend. With Cloudflare configured, the main hostname gets the A (and optional AAAA) record and every other hostname, plus the magic-link host of a gated site, gets a CNAME to the main one, so changing the main record's IP moves them all. A CNAME cannot share its name: a foreign A/AAAA at an alias shows as a conflict (take over replaces it), and a TXT or MX record there makes Cloudflare refuse the CNAME. ServanaGo's own A/AAAA on an alias are converted at the first start after upgrading (the name does not resolve for a few seconds).
 
 ## The site view
 
@@ -9,7 +9,7 @@ Every site has a control view at `/sites/<id>`: one page per area, shared by a t
 | Tab page | What lives there |
 |---|---|
 | `/sites/<id>` (Settings) | The editor: hostnames, kind and its fields, notes; the delete button. |
-| `/sites/<id>/dns` | The site's A/AAAA records with their sync state, resync and take-over, and the per-site record IP overrides. |
+| `/sites/<id>/dns` | The site's A/AAAA/CNAME records with their sync state, resync and take-over, and the per-site record IP overrides. |
 | `/sites/<id>/ssl` | Certificate facts per hostname: issuer, valid-until, state. |
 | `/sites/<id>/scan` | This site's scan runs and findings, with a manual scan now. |
 | `/sites/<id>/backups` | Per-site schedule, database dumps, container volumes, run now. |

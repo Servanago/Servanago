@@ -77,7 +77,7 @@ func TestAddSiteReusesExistingDomain(t *testing.T) {
 	if code, body := postSite(s, siteForm()); code != 204 {
 		t.Fatalf("%d %q", code, body)
 	}
-	if cf.calls.Load()-before > 2 { // only the DNS record calls, no zone lookup
+	if cf.calls.Load()-before > 3 { // only the DNS record calls (find CNAME, find A, create A), no zone lookup
 		t.Errorf("zone looked up again for a managed domain: %d calls", cf.calls.Load()-before)
 	}
 	ds, _ := s.deps.Store.ListDomains(ctx)

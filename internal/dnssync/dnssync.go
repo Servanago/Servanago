@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/servanago/servanago/internal/cfdns"
@@ -27,6 +28,47 @@ func New(cf *cfdns.Client, st *store.Store) *Syncer { return &Syncer{cf: cf, st:
 
 // families is the order records are synced and listed in: A first.
 var families = [...]string{store.FamilyA, store.FamilyAAAA}
+
+// clearOthers removes the records of the families a name must not have (a CNAME cannot share its name with
+// anything). An owned one, or any with takeOver, is deleted and its row dropped; a foreign one stays and comes
+// back as a blocker (state "conflict"), a failed delete or lookup as state "error".
+func (s *Syncer) clearOthers(ctx context.Context, zone, name string, others []string, takeOver bool) (state, msg string, err error) {
+	for _, fam := range others {
+		row, gerr := s.st.GetDNS(ctx, name, fam)
+		if gerr != nil && !errors.Is(gerr, sql.ErrNoRows) {
+			return "", "", gerr
+		}
+		has := gerr == nil
+		found, ferr := s.cf.FindRecord(ctx, zone, name, fam)
+		if ferr != nil {
+			return "error", ferr.Error(), nil
+		}
+		if found != nil {
+			if !(has && row.Owned && row.CFRecordID == found.ID) && !takeOver {
+				return "conflict", fmt.Sprintf("%s has a %s record (%s) that ServanaGo does not own", name, fam, found.Content), nil
+			}
+			if derr := s.cf.DeleteRecord(ctx, zone, found.ID); derr != nil {
+				return "error", derr.Error(), nil
+			}
+		}
+		if has {
+			if err := s.st.DeleteDNSRecord(ctx, name, fam); err != nil {
+				return "", "", err
+			}
+		}
+	}
+	return "", "", nil
+}
+
+// hasAddress reports whether the primary has an A or AAAA row, i.e. whether a CNAME to it resolves to us.
+func (s *Syncer) hasAddress(ctx context.Context, primary string) bool {
+	for _, fam := range families {
+		if _, err := s.st.GetDNS(ctx, primary, fam); err == nil {
+			return true
+		}
+	}
+	return false
+}
 
 func first(a, b string) string {
 	if a != "" {
@@ -55,6 +97,7 @@ func (s *Syncer) run(ctx context.Context, siteID int64, takeOver bool) error {
 	}
 	var errs []error
 	names := rt.Hostnames
+	primary := names[0]
 	if ml := rt.MLHost(); ml != "" { // a gated site also answers on its magic-link host
 		names = append(slices.Clone(names), ml)
 	}
@@ -73,18 +116,38 @@ func (s *Syncer) run(ctx context.Context, siteID int64, takeOver bool) error {
 		if !ok { // no domain, no zone: nothing to sync for this name
 			continue
 		}
+		// The primary answers with addresses; every other name (alias, ml host) is a CNAME to it.
+		fams, others := families[:], []string{store.FamilyCNAME}
 		want := map[string]string{
 			store.FamilyA:    first(rt.RecordIP, dom.DefaultIP),
 			store.FamilyAAAA: first(rt.RecordIP6, dom.DefaultIP6),
 		}
-		for _, fam := range families {
+		if name != primary {
+			fams, others = []string{store.FamilyCNAME}, families[:]
+			want = map[string]string{store.FamilyCNAME: primary}
+		}
+		blockState, blockMsg, err := s.clearOthers(ctx, dom.ZoneID, name, others, takeOver)
+		if err != nil {
+			return err
+		}
+		for _, fam := range fams {
 			row, err := s.st.GetDNS(ctx, name, fam)
 			if err != nil && !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 			has := err == nil
 			row.Hostname, row.SiteID, row.Family = name, siteID, fam
-			next, drop := s.syncFamily(ctx, dom.ZoneID, name, fam, want[fam], row, has, takeOver)
+			var next store.DNSRecord
+			drop := false
+			if blockMsg != "" {
+				next = row
+				next.State, next.Error = blockState, blockMsg
+			} else {
+				next, drop = s.syncFamily(ctx, dom.ZoneID, name, fam, want[fam], row, has, takeOver)
+				if fam == store.FamilyCNAME && next.State == "synced" && !s.hasAddress(ctx, primary) {
+					next.Error = "target " + primary + " has no record managed by ServanaGo"
+				}
+			}
 			next.Hostname, next.SiteID = name, siteID
 			if drop {
 				err = s.st.DeleteDNSRecord(ctx, name, fam)
@@ -153,13 +216,13 @@ func (s *Syncer) step(ctx context.Context, zone, name, family, want string, row 
 		}
 		return synced(id, true), nil
 	case row.Owned && row.CFRecordID == found.ID, takeOver:
-		if found.Content != want {
+		if !strings.EqualFold(found.Content, want) {
 			if err := s.cf.UpdateRecord(ctx, zone, found.ID, name, family, want); err != nil {
 				return row, err
 			}
 		}
 		return synced(found.ID, true), nil
-	case found.Content == want:
+	case strings.EqualFold(found.Content, want):
 		return synced(found.ID, false), nil // adopt
 	default:
 		return store.DNSRecord{SiteID: row.SiteID, Family: family, CFRecordID: found.ID, Content: found.Content, State: "conflict",

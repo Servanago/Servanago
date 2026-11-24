@@ -119,6 +119,8 @@ func (s Site) IsRuntime() bool {
 const (
 	FamilyA    = "A"
 	FamilyAAAA = "AAAA"
+	// FamilyCNAME is an alias (or ml host) pointing at the site's primary hostname.
+	FamilyCNAME = "CNAME"
 )
 
 type DNSRecord struct {

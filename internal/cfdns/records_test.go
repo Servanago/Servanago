@@ -16,6 +16,27 @@ func recordClient(t *testing.T) (*Client, *cftest.Fake) {
 	return New("tok", option.WithBaseURL(f.URL), option.WithMaxRetries(0)), f
 }
 
+func TestCNAMERecordRoundTripAndShareNameRule(t *testing.T) {
+	c, f := recordClient(t)
+	ctx := context.Background()
+	id, err := c.CreateRecord(ctx, "z", "tv.example.com", FamilyCNAME, "app.example.com")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r, err := c.FindRecord(ctx, "z", "tv.example.com", FamilyCNAME); err != nil || r == nil || r.ID != id || r.Content != "app.example.com" {
+		t.Fatalf("%+v %v", r, err)
+	}
+	if _, err := c.CreateRecord(ctx, "z", "tv.example.com", FamilyA, "203.0.113.5"); err == nil {
+		t.Fatal("an A record next to a CNAME must be refused, as Cloudflare does")
+	}
+	if err := c.UpdateRecord(ctx, "z", id, "tv.example.com", FamilyCNAME, "web.example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if recs := f.Records(); len(recs) != 1 || recs[0].Type != "CNAME" || recs[0].Content != "web.example.com" {
+		t.Fatalf("%+v", recs)
+	}
+}
+
 func TestRecordFamiliesAreIndependent(t *testing.T) {
 	c, f := recordClient(t)
 	ctx := context.Background()
