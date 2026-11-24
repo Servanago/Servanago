@@ -1,6 +1,6 @@
 # Sites
 
-A site is one or more free hostnames (FQDNs; the first is the main one) served by one backend. With Cloudflare configured, the main hostname gets the A (and optional AAAA) record and every other hostname, plus the magic-link host of a gated site, gets a CNAME to the main one, so changing the main record's IP moves them all. A CNAME cannot share its name: a foreign A/AAAA at an alias shows as a conflict (take over replaces it), and a TXT or MX record there makes Cloudflare refuse the CNAME. ServanaGo's own A/AAAA on an alias are converted at the first start after upgrading (the name does not resolve for a few seconds).
+A site is one or more free hostnames (FQDNs; the first is the main one) served by one backend. With Cloudflare configured, the main hostname gets the A (and optional AAAA) record and every other hostname, plus the magic-link host of a gated site, gets a CNAME to the main one, so changing the main record's IP moves them all. A CNAME cannot share its name: a foreign A/AAAA at an alias shows as a conflict (take over replaces it), and a TXT or MX record there makes Cloudflare refuse the CNAME. An existing alias keeps its ServanaGo-owned A/AAAA until its site is next saved or resynced (the site's DNS page); that converts it to a CNAME, and the name does not resolve for a few seconds.
 
 ## The site view
 
