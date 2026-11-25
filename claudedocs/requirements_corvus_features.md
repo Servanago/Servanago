@@ -53,9 +53,12 @@ Concern recorded: this is a big-bang across Caddy modules, migrations, UI and MC
 - Localized waiting page; live active/waiting counts in the UI; emergency release.
 
 ### F5 Alerts
-- Destinations: Slack, Mattermost, Discord, Teams, Telegram, signed generic webhook; email via the existing Settings SMTP.
-- Events: under-attack on/off, ban burst, backend down/up, certificate problems, queue full.
+- Destinations (settled 2026-11-25): **ntfy**, **signed generic webhook** (HMAC; the bridge to Slack, Discord, Mattermost, Teams), **email** (existing Settings SMTP), **Pushover**, **Twilio SMS**. Dropped: Slack, Mattermost, Discord, Teams, Telegram.
+- ntfy is not new: the Settings Notifications tab (topic URL + token) already feeds scan alerts and backup failures. It becomes a destination kind; on upgrade the saved topic/token migrates into one `ntfy` destination, and scan and backup alerts route through the same Alerts page and per-site override (one notification system, not two).
+- Events: under-attack on/off, ban burst, backend down/up, queue full, x402 facilitator trouble; plus the existing scan-found and backup-failed events. Certificate problems dropped (nothing emits them).
+- Delivery: one attempt, failure logged and counted, shown as "last error" per destination.
 - Secrets sealed with `secretbox`; test-send button; audit entries.
+- Twilio SMS needs account SID, auth token, from and to numbers; US numbers may need a registered sender (10DLC): documented, not detectable. Pushover needs app token + user key.
 
 ### F6 Proxy extras
 - Multi-backend per proxy/node site: round-robin, passive failover (Caddy native), shown in site form.

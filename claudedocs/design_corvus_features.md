@@ -127,13 +127,19 @@ CREATE TABLE guard_settings (       -- single row id=1, seeded like settings
 );
 INSERT INTO guard_settings (id) VALUES (1);
 
-CREATE TABLE alert_dests (          -- every enabled destination gets every event
+CREATE TABLE alert_dests (          -- settled 2026-11-25: kinds ntfy, webhook, email, pushover, twilio
   id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE,
-  kind TEXT NOT NULL CHECK (kind IN ('slack', 'discord', 'webhook', 'email')),   -- slack = Slack/Mattermost-compatible {"text"}
-  target_sealed TEXT NOT NULL,      -- URL or address, sealed (URLs carry secrets)
-  secret_sealed TEXT NOT NULL DEFAULT '',   -- webhook HMAC key
+  kind TEXT NOT NULL CHECK (kind IN ('ntfy', 'webhook', 'email', 'pushover', 'twilio')),
+  target_sealed BLOB NOT NULL,      -- secretbox blob (same format as settings.scan_ntfy): ntfy topic URL, webhook URL, email address, pushover user key, twilio "from>to"
+  secret_sealed BLOB,               -- ntfy token, webhook HMAC key, pushover app token, twilio "sid:authtoken"; NULL = none
+  events TEXT NOT NULL,             -- space-separated: underattack ban queue backend x402 scan backup (per-destination checkboxes; SMS must not get every event)
+  last_error TEXT NOT NULL DEFAULT '', last_error_at INTEGER NOT NULL DEFAULT 0,   -- shown on /alerts
   enabled INTEGER NOT NULL DEFAULT 1
 );
+-- Upgrade copy (same migration, plain INSERT ... SELECT, blobs copied as they are):
+--   'ntfy: scan'   from settings.scan_ntfy + scan_ntfy_token WHERE scan_ntfy IS NOT NULL, events 'scan'
+--   'ntfy: backup' from settings.backup_ntfy (no token column) WHERE backup_ntfy IS NOT NULL, events 'backup'
+-- The old columns stay (never dropped); after this release nothing reads them.
 CREATE TABLE site_alert_dests (     -- per-site override: rows present = only these destinations for that site
   site_id INTEGER NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
   dest_id INTEGER NOT NULL REFERENCES alert_dests(id) ON DELETE CASCADE,
@@ -235,9 +241,13 @@ Never 402: `/.well-known/*`, `/__servanago/*`, allowlisted addresses. Wallet val
 ## 10. Alerts (`internal/alerts`)
 
 - `Notify(event)`: dedupe key `kind|site`, 5 min cooldown; **[P]** one goroutine drains a bounded queue (256), 5 s timeout, no retries; failure is logged (never the target) and counted.
-- Destinations **[P]**: `slack` (Slack and Mattermost take the same `{"text"}`), `discord` (`{"content"}`), `webhook` (JSON + `X-ServanaGo-Signature: sha256=HMAC(secret, body)` + timestamp header), `email` (existing `smtpx` + Settings SMTP). Telegram and Teams only when asked.
+- Destinations (settled 2026-11-25): `ntfy` (POST to topic URL, bearer token optional, priority by event: urgent for under-attack/scan, default otherwise; the code of `scan.Notify` moves here), `webhook` (JSON + `X-ServanaGo-Signature: sha256=HMAC(secret, body)` + timestamp header; the bridge to Slack/Discord/Mattermost/Teams), `email` (existing `smtpx` + Settings SMTP), `pushover` (POST `https://api.pushover.net/1/messages.json`, app token + user key, priority 1 for under-attack/x402), `twilio` (POST `api.twilio.com/2010-04-01/Accounts/<sid>/Messages.json`, basic auth, text capped at 320 chars; US sender registration is the admin's problem, documented). Dropped: Slack, Mattermost, Discord, Teams, Telegram.
+- **Split for out-of-process callers**: `alerts.Send(ctx, dest, event) error` is a pure function (no queue, no dedupe) used by the in-process `Notify` queue AND by the backup/scan job (`cmd/servanago/backupjob.go`, which today unseals `ScanNtfy`/`Ntfy` itself). The job loads destinations through the store and unseals with the env secret key; it filters by each destination's `events` (`scan`, `backup`). `scan.Notify` and the job's private ntfy sender are deleted after the move (the plain ntfy HTTP call exists once).
+- **ntfy migration**: migration 013 copies `settings.scan_ntfy`(+token) and `settings.backup_ntfy` into `alert_dests` as `ntfy: scan` and `ntfy: backup` (sealed blobs copied untouched; `events` = `scan` / `backup`), leaves the old columns in place unused. The Settings Notifications tab becomes a link to `/alerts`; `saveNotify`, its tests and the `scan.html`/`backups.html` ntfy fields are removed or redirected (blast radius: `web/settings.go:91-133`, `web/scan.go:262`, `web/backups.go`, `web/mcp_backup.go`, `store/backup.go`, `store/settings.go`, templates, `help.go`). Rehearse on a bee copy; a copy that finds no ntfy configured creates nothing.
+- **Per-destination events** (settled; reverses a ponytail cut because SMS costs money): the form shows checkboxes for `underattack ban queue backend x402 scan backup`. New-destination defaults: ntfy/webhook/email all; pushover and twilio `underattack x402` only. A per-site override (`site_alert_dests`) narrows the destination set for that site's events; `scan`/`backup` events are not site-routed unless the event carries a site (scan does).
+- Delivery (settled): one attempt, 5 s timeout, no retries, no fallback; failure sets `last_error`/`last_error_at` on the destination, shown on `/alerts`.
 - Safety: https required for webhooks; the dialer refuses loopback, link-local and private ranges after resolution; redirects off. Targets and secrets sealed (`secretbox`), write-only in the UI, never logged.
-- Routing: a site with `site_alert_dests` rows uses only those; none → all enabled destinations. Events: `underattack` (on/off), `ban` (burst), `queue` (full), `backend` (down/up), `x402` (facilitator down, settle failure).
+- Routing: a site with `site_alert_dests` rows uses only those; none → every enabled destination whose `events` include the event kind. Events: `underattack` (on/off), `ban` (burst), `queue` (full), `backend` (down/up), `x402` (facilitator down, settle failure).
 - Page `/alerts` (list, add, enable, test-send button, delete; edit = delete and add); per-site picker in the site form; audit `alert.*`.
 - Certificate-problem alerts dropped: nothing in the code base emits them today.
 
@@ -294,7 +304,7 @@ Docs updated at release only (shipped-behavior docs would be wrong before): `doc
 3. Ban engine + module + `/bans`.
 4. Challenge + under-attack (manual, then auto evaluator).
 5. Access queue.
-6. Alerts + event wiring from 3–5.
+6. Alerts: `alerts.Send` + five kinds + `/alerts`, move scan/backup ntfy onto it (migration copy, job rewired, Settings tab replaced), then event wiring from 3–5.
 7. Proxy extras (failover, page/redirect kind, check-connection).
 8. x402 (WAF vars, facilitator client, module, UI, docs warning).
 9. Protection section on the site form, remaining pages polish.
@@ -322,6 +332,6 @@ Each step: failing test first, `make check` (single run, CLAUDE.md local-machine
 
 ## 18. Ponytail cuts applied (2026-11-25, approved)
 
-SSE hub + `live.js` → htmx polling and server-rendered SVG; live dashboard strip and request-path diagram; Protection regroup; `/metrics`; unique-IP counts; traffic.db migration list; `ban_history`; `site_guard` 17 → 12 columns (`ch_bind_ip`, `ua_auto_block_pct`, `log_on`, `q_queue_ttl_s`, `q_admit_per_min`, `q_max_new_per_ip` removed; `backends` text added in place of a table); `guard_settings` (`ban_count_ratelimited`, `ban_reset_hours`, per-site log cap setting); auto-raise difficulty and single-use salt; queue token bucket, per-IP limit, poll budget, leave endpoint; x402 per-route `pay_to`, `token_requests`, `description`, facilitator test button; alerts `events` column, retries, worker pool, Mattermost/Teams/Telegram kinds; `page` + `redirect` merged into one kind, three templates → one; `site_backends` table; upstream error classification; check-connection rate limit; seven `internal/guard/*` packages → one; MCP 16 → 11 tools; fuzz targets 6 → 2; JSON export.
+SSE hub + `live.js` → htmx polling and server-rendered SVG; live dashboard strip and request-path diagram; Protection regroup; `/metrics`; unique-IP counts; traffic.db migration list; `ban_history`; `site_guard` 17 → 12 columns (`ch_bind_ip`, `ua_auto_block_pct`, `log_on`, `q_queue_ttl_s`, `q_admit_per_min`, `q_max_new_per_ip` removed; `backends` text added in place of a table); `guard_settings` (`ban_count_ratelimited`, `ban_reset_hours`, per-site log cap setting); auto-raise difficulty and single-use salt; queue token bucket, per-IP limit, poll budget, leave endpoint; x402 per-route `pay_to`, `token_requests`, `description`, facilitator test button; alerts retries, worker pool, Slack/Mattermost/Discord/Teams/Telegram kinds (the `events` column came back per destination, and ntfy/Pushover/Twilio were added, 2026-11-25); `page` + `redirect` merged into one kind, three templates → one; `site_backends` table; upstream error classification; check-connection rate limit; seven `internal/guard/*` packages → one; MCP 16 → 11 tools; fuzz targets 6 → 2; JSON export.
 
 Not designed (requirements said no): TCP/UDP streams, OIDC, API tokens, NPM import, signed feeds, admin allowlist, header presets, i18n, in-process x402 facilitator, per-event/threshold alert override, CIDR manual bans.
