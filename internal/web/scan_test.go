@@ -12,7 +12,6 @@ import (
 
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/scan/fake"
-	"github.com/servanago/servanago/internal/secretbox"
 	"github.com/servanago/servanago/internal/store"
 )
 
@@ -38,45 +37,6 @@ func scanTestServer(t *testing.T) (*Server, store.Site) {
 		t.Fatal(err)
 	}
 	return s, x
-}
-
-// TestNotifySettingsSealKeepAndClear: the Notifications tab seals the topic and token, a blank
-// topic keeps them, a non-https topic is refused whole, and the scan tab never touches them.
-func TestNotifySettingsSealKeepAndClear(t *testing.T) {
-	s, _ := scanTestServer(t)
-	key := strings.Repeat("k", 32)
-	post := func(path string, kv ...string) int {
-		return s.do(req{method: "POST", path: path, hdr: htmxPost, body: form(kv...).Encode()}).Code
-	}
-	get := func() store.Settings {
-		st, _ := s.deps.Store.GetSettings(context.Background())
-		return st
-	}
-	if c := post("/settings/notify", "scan_ntfy", "https://ntfy.example.com/t", "scan_ntfy_token", "tok123"); c != 204 {
-		t.Fatalf("save: %d", c)
-	}
-	st := get()
-	if b, err := secretbox.Open(key, st.ScanNtfy); err != nil || string(b) != "https://ntfy.example.com/t" {
-		t.Errorf("ntfy unseal: %q %v", b, err)
-	}
-	if st.ScanNtfyToken == nil {
-		t.Error("token not sealed")
-	}
-	if st.ScanSocket == "" {
-		t.Error("the notify save wiped the scan socket")
-	}
-	if c := post("/settings/scan", "scan_socket", "/tmp/other.sock"); c != 204 || get().ScanNtfy == nil {
-		t.Errorf("scan save: %d, ntfy kept=%v", c, get().ScanNtfy != nil)
-	}
-	if c := post("/settings/notify", "scan_ntfy", ""); c != 204 || get().ScanNtfy == nil || get().ScanNtfyToken == nil {
-		t.Errorf("blank topic must keep the pair: %d", c)
-	}
-	if c := post("/settings/notify", "scan_ntfy", "http://ntfy.example.com/t"); c != 422 {
-		t.Errorf("http topic: %d, want 422", c)
-	}
-	if c := post("/settings/notify", "clear_ntfy", "1"); c != 204 || get().ScanNtfy != nil || get().ScanNtfyToken != nil {
-		t.Errorf("clear left the secrets: %d", c)
-	}
 }
 
 func TestScanSettingsSaveSealAndClear(t *testing.T) {
@@ -326,40 +286,6 @@ func TestGeoGuardBlocksPublicClients(t *testing.T) {
 	}
 }
 
-// TestScanSettingsFeedback checks the save is legible: a flash lands, the ntfy topic URL is
-// shown back on the page, the token is not.
-func TestScanSettingsFeedback(t *testing.T) {
-	s, _ := scanTestServer(t)
-	w := s.do(req{method: "POST", path: "/settings/notify", hdr: htmxPost,
-		body: form("scan_ntfy", "https://ntfy.example.com/t", "scan_ntfy_token", "tok9").Encode()})
-	if w.Code != 204 {
-		t.Fatalf("save: %d %s", w.Code, w.Body.String())
-	}
-	page := s.do(req{path: "/settings/notify"}).Body.String()
-	if !strings.Contains(page, "The ntfy topic is set: https://ntfy.example.com/t") {
-		t.Error("no ntfy flash")
-	}
-	if !strings.Contains(page, `value="https://ntfy.example.com/t"`) {
-		t.Error("the stored topic URL is not shown")
-	}
-	if strings.Contains(page, "tok9") {
-		t.Error("the access token leaked onto the page")
-	}
-
-	// clearing notes itself and empties the shown URL
-	if w := s.do(req{method: "POST", path: "/settings/notify", hdr: htmxPost,
-		body: form("scan_ntfy", "", "clear_ntfy", "1").Encode()}); w.Code != 204 {
-		t.Fatalf("clear: %d", w.Code)
-	}
-	page = s.do(req{path: "/settings/notify"}).Body.String()
-	if !strings.Contains(page, "The ntfy topic and its access token were removed.") {
-		t.Error("no removal flash")
-	}
-	if strings.Contains(page, "ntfy.example.com/t") {
-		t.Error("the removed URL still shows")
-	}
-}
-
 // TestSettingsTabs: /settings goes to the first tab, each tab shows only its own group
 // (the rail on all of them), and an unknown tab is a 404.
 func TestSettingsTabs(t *testing.T) {
@@ -367,7 +293,7 @@ func TestSettingsTabs(t *testing.T) {
 	if w := s.do(req{path: "/settings"}); w.Code != 303 || w.Header().Get("Location") != "/settings/email" {
 		t.Fatalf("index: %d %q", w.Code, w.Header().Get("Location"))
 	}
-	own := map[string]string{"email": "Email delivery", "scan": "Virus scanning", "notify": "Notifications", "geo": "Country filter", "mail": "Mail bridge"}
+	own := map[string]string{"email": "Email delivery", "scan": "Virus scanning", "notify": "Notifications", "guard": "Protection", "geo": "Country filter", "mail": "Mail bridge"}
 	for tab, h2 := range own {
 		w := s.do(req{path: "/settings/" + tab})
 		body := w.Body.String()
@@ -385,5 +311,17 @@ func TestSettingsTabs(t *testing.T) {
 	}
 	if w := s.do(req{path: "/settings/nope"}); w.Code != 404 {
 		t.Errorf("unknown tab: %d", w.Code)
+	}
+}
+
+// The Notifications tab no longer stores an ntfy topic: it points to the Alerts page, where the old topics became destinations.
+func TestNotificationsTabPointsToAlerts(t *testing.T) {
+	s, _ := scanTestServer(t)
+	page := s.do(req{path: "/settings/notify"}).Body.String()
+	if !strings.Contains(page, `href="/alerts"`) || strings.Contains(page, `name="scan_ntfy"`) {
+		t.Error("the Notifications tab should link to /alerts and carry no ntfy field")
+	}
+	if w := s.do(req{method: "POST", path: "/settings/notify", hdr: htmxPost, body: form("scan_ntfy", "https://x.example.com/t").Encode()}); w.Code == 204 {
+		t.Error("the old save endpoint still answers")
 	}
 }

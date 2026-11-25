@@ -23,9 +23,6 @@
 {{hint "backup_keep"}}
 <label>Archive passphrase {{if $d.PassSet}}(set; leave blank to keep){{end}} <input type="password" name="passphrase" autocomplete="new-password" placeholder="{{if $d.PassSet}}leave blank to keep{{else}}at least 20 characters{{end}}"></label>
 {{hint "backup_pass"}}
-<label>ntfy topic address (optional) {{if $d.NtfySet}}(set; leave blank to keep){{end}} <input name="ntfy" autocomplete="off" placeholder="https://ntfy.example.com/backups"></label>
-<label><input type="checkbox" name="clear_ntfy"> Remove the ntfy address</label>
-{{hint "backup_ntfy"}}
 <p>Changing the passphrase or switching backups on or off asks for your password{{if $d.NeedCode}} and a code{{end}}:</p>
 {{template "reauth" $d.NeedCode}}
 <button type="submit">Save</button>

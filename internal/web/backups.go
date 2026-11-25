@@ -90,7 +90,6 @@ func (s *Server) volumeUsers(ctx context.Context, vols []string) map[string]stri
 type backupsData struct {
 	Set      store.BackupSettings
 	PassSet  bool
-	NtfySet  bool
 	HasKey   bool
 	NeedCode bool
 	Running  bool
@@ -168,7 +167,7 @@ func (s *Server) backupsPage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	now := s.auth.now()
-	d := backupsData{Set: set, PassSet: set.Pass != nil, NtfySet: set.Ntfy != nil, HasKey: s.deps.Cfg.SecretKey != "", NeedCode: s.needCode(r), Warn: s.backupWarnText()}
+	d := backupsData{Set: set, PassSet: set.Pass != nil, HasKey: s.deps.Cfg.SecretKey != "", NeedCode: s.needCode(r), Warn: s.backupWarnText()}
 	if resp, err := s.helperClient().Call(ctx, helper.ActionBackupStatus, helper.Spec{}); err == nil && resp.Status != nil {
 		d.JobState = resp.Status.ActiveState
 		d.Running = resp.Status.ActiveState == "active" || resp.Status.ActiveState == "activating"
@@ -183,7 +182,7 @@ func (s *Server) backupsPage(w http.ResponseWriter, r *http.Request) {
 			fail(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		v := mk(site.Slug, site.Hostnames[0], site.ID, sb, false, site.Kind != "" && site.Kind != "proxy")
+		v := mk(site.Slug, site.Hostnames[0], site.ID, sb, false, site.Kind != "" && site.Kind != "proxy" && site.Kind != "page")
 		ps, _ := st.ListProfiles(ctx, site.ID)
 		for _, p := range ps {
 			t := p.Container + " / " + p.DB
@@ -210,7 +209,7 @@ func (s *Server) backupsPage(w http.ResponseWriter, r *http.Request) {
 	s.render(w, "backups", http.StatusOK, page{Title: "Backups", Data: d})
 }
 
-// saveBackupSettings stores the global settings, seals the passphrase and ntfy URL, and installs or removes the timer.
+// saveBackupSettings stores the global settings, seals the passphrase, and installs or removes the timer.
 func (s *Server) saveBackupSettings(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		fail(w, http.StatusBadRequest, err.Error())
@@ -243,9 +242,9 @@ func (s *Server) saveBackupSettings(w http.ResponseWriter, r *http.Request) {
 		fail(w, http.StatusUnprocessableEntity, "Keep weekly must be a number from 0 to 52.")
 		return
 	}
-	pass, ntfy := r.PostFormValue("passphrase"), strings.TrimSpace(r.PostFormValue("ntfy"))
-	if (pass != "" || ntfy != "") && s.deps.Cfg.SecretKey == "" {
-		fail(w, http.StatusUnprocessableEntity, "Storing the passphrase or the ntfy address needs SERVANAGO_SECRET_KEY (at least 32 characters) in the environment file.")
+	pass := r.PostFormValue("passphrase")
+	if pass != "" && s.deps.Cfg.SecretKey == "" {
+		fail(w, http.StatusUnprocessableEntity, "Storing the passphrase needs SERVANAGO_SECRET_KEY (at least 32 characters) in the environment file.")
 		return
 	}
 	if pass != "" {
@@ -254,19 +253,6 @@ func (s *Server) saveBackupSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if next.Pass, err = secretbox.Seal(s.deps.Cfg.SecretKey, []byte(pass)); err != nil {
-			fail(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-	}
-	switch {
-	case r.PostFormValue("clear_ntfy") != "":
-		next.Ntfy = nil
-	case ntfy != "":
-		if !strings.HasPrefix(ntfy, "https://") || len(ntfy) > 500 || strings.ContainsAny(ntfy, " \r\n\t") {
-			fail(w, http.StatusUnprocessableEntity, "The ntfy address must be an https:// topic URL.")
-			return
-		}
-		if next.Ntfy, err = secretbox.Seal(s.deps.Cfg.SecretKey, []byte(ntfy)); err != nil {
 			fail(w, http.StatusInternalServerError, err.Error())
 			return
 		}

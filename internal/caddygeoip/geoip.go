@@ -61,6 +61,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	if ip, ok := clientOf(r); ok {
 		if s := Current(); s != nil && s.Lookup != nil {
 			if country, lerr := s.Lookup(ip); lerr == nil && geoip.Blocked(h.Mode, country, h.want) {
+				caddyhttp.SetVar(r.Context(), "sg_outcome", "blocked")
 				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 				w.WriteHeader(http.StatusForbidden)
 				_, _ = w.Write([]byte("Access from your location is not allowed.\n"))
@@ -134,3 +135,6 @@ func inCloudflare(ip netip.Addr) bool {
 	}
 	return false
 }
+
+// ClientOf is the visitor address the guard layers judge, with the same skip rules as the country filter.
+func ClientOf(r *http.Request) (netip.Addr, bool) { return clientOf(r) }

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"os"
 	"os/signal"
 	"os/user"
@@ -20,6 +19,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/servanago/servanago/internal/alerts"
 	"github.com/servanago/servanago/internal/backup"
 	"github.com/servanago/servanago/internal/helper"
 	"github.com/servanago/servanago/internal/scan"
@@ -193,7 +193,7 @@ func (j *job) sitePlan(ctx context.Context, s store.Site) (jobPlan, error) {
 	if sb.Sched != "" {
 		p.Sched = sb.Sched
 	}
-	if s.Kind != "" && s.Kind != "proxy" {
+	if s.Kind != "" && s.Kind != "proxy" && s.Kind != "page" {
 		p.Root = s.StaticRoot
 	}
 	ps, err := j.st.ListProfiles(ctx, s.ID)
@@ -316,19 +316,7 @@ func (j *job) notifyScan(ctx context.Context, scope string, res backup.Result) {
 	}
 	body := fmt.Sprintf("The backup of %s skipped %d infected file(s) and quarantined them:\n%s", scope, len(res.Infected), strings.Join(lines, "\n"))
 	if set, err := j.st.GetSettings(ctx); err == nil {
-		if set.ScanNtfy != nil {
-			if u, err := j.unseal(set.ScanNtfy); err == nil {
-				tok := ""
-				if set.ScanNtfyToken != nil {
-					if b, err := j.unseal(set.ScanNtfyToken); err == nil {
-						tok = string(b)
-					}
-				}
-				if err := scan.Notify(ctx, string(u), tok, "ServanaGo: virus found in "+scope, body); err != nil {
-					slog.Error("scan ntfy", "error", err)
-				}
-			}
-		}
+		j.fire(ctx, alerts.Event{Kind: "scan", Site: scope, Title: "ServanaGo: virus found in " + scope, Text: body})
 		if set.MailReady() {
 			pass := ""
 			if set.SMTPPass != nil {
@@ -422,39 +410,6 @@ func pruneResults(dir string) {
 			_ = os.Remove(filepath.Join(resultsDir(dir), e.Name()))
 		}
 	}
-}
-
-// notify posts a failure to the ntfy topic. The text carries the scope and a clipped error, never a secret.
-func (j *job) notify(ctx context.Context, r backup.Result) {
-	if j.set.Ntfy == nil {
-		return
-	}
-	u, err := j.unseal(j.set.Ntfy)
-	if err != nil || !strings.HasPrefix(u, "https://") {
-		slog.Error("ntfy url unusable", "error", err)
-		return
-	}
-	body := fmt.Sprintf("%s: %s", r.Scope, r.Error)
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, u, strings.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Title", "ServanaGo backup "+r.Status)
-	req.Header.Set("Priority", "high")
-	c := http.Client{CheckRedirect: func(req *http.Request, _ []*http.Request) error {
-		if req.URL.Scheme != "https" {
-			return errors.New("refusing a redirect to a non-https URL")
-		}
-		return nil
-	}}
-	resp, err := c.Do(req)
-	if err != nil {
-		slog.Error("ntfy post", "error", err)
-		return
-	}
-	resp.Body.Close()
 }
 
 // finish records one result: the file, the log line, and the ntfy push on a failure that is new for the scope.
@@ -601,4 +556,19 @@ func readPassphrase(path string, stdin io.Reader) (string, error) {
 		return "", errors.New("the passphrase is empty")
 	}
 	return p, nil
+}
+
+// fire delivers an alert to every destination that listens for the event. The text carries the scope and a clipped error, never a secret.
+func (j *job) fire(ctx context.Context, ev alerts.Event) {
+	n := alerts.NewNotifier(&alerts.Sender{Mail: alerts.MailSource(j.st, j.key)})
+	n.Resolve = alerts.StoreResolver(j.st, j.key)
+	n.Result = alerts.StoreResult(j.st)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	n.Fire(ctx, ev)
+}
+
+// notify tells the destinations that listen for backup events about a failure.
+func (j *job) notify(ctx context.Context, r backup.Result) {
+	j.fire(ctx, alerts.Event{Kind: "backup", Title: "ServanaGo backup " + r.Status, Text: fmt.Sprintf("%s: %s", r.Scope, r.Error)})
 }

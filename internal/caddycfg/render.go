@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/servanago/servanago/internal/caddygeoip"
+	_ "github.com/servanago/servanago/internal/caddyguard" // registers the guard handler modules the render emits
 	"github.com/servanago/servanago/internal/caddywaf"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/store"
@@ -120,6 +121,8 @@ func Render(st State, o Options) ([]byte, error) {
 		}
 	}
 
+	routes = append(routes, catchAll()) // after every host route: a host no site owns is counted and answered 404
+
 	policies := []any{policy([]string{o.UIHost}, o)}
 	ds := append([]store.Domain(nil), st.Domains...)
 	sort.Slice(ds, func(i, j int) bool { return ds[i].Name < ds[j].Name })
@@ -211,10 +214,12 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 	}
 	if host == r.MLHost() {
 		gate := m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}
+		chain := []any{observer(r)}
+		chain = append(chain, guardHandlers(r, "ban")...)
 		if geo := geoRouteOf(r); geo != nil { // a blocked country never reaches the gate's form
-			return m{"handler": "subroute", "routes": []any{m{"handle": []any{geo, gate}}}}, nil
+			chain = append(chain, geo)
 		}
-		return gate, nil
+		return m{"handler": "subroute", "routes": []any{m{"handle": append(chain, gate)}}}, nil
 	}
 	var extras []any
 	if r.ExtraRoutes != "" {
@@ -251,8 +256,14 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 			m{"handle": []any{m{"handler": "file_server", "root": r.WebRoot()}}},
 		)
 		handlers = []any{m{"handler": "subroute", "routes": routes}}
+	case "page": // a status page or a redirect; path routes keep proxying to their own upstreams
+		routes := append([]any(nil), extras...)
+		routes = append(routes, m{"handle": []any{pageHandler(r)}})
+		handlers = []any{m{"handler": "subroute", "routes": routes}}
 	default:
-		proxy := m{"handler": "reverse_proxy", "upstreams": []any{m{"dial": net.JoinHostPort(r.UpstreamHost, strconv.Itoa(r.UpstreamPort))}}}
+		ups := backends(r)
+		proxy := m{"handler": "reverse_proxy", "upstreams": ups}
+		failover(proxy, ups)
 		if r.Scheme == "https" {
 			tls := m{}
 			if r.TLSSkipVerify {
@@ -279,16 +290,19 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 			handlers = []any{m{"handler": "subroute", "routes": routes}}
 		}
 	}
-	if r.CountryMode == "" && r.Waf == "" && r.RLRequests <= 0 && r.GateMode == "" && r.Allowlist == "" && r.BasicUser == "" && len(snip) == 0 && len(handlers) == 1 {
-		return handlers[0], nil
+	// The observer leads every enabled site, so there is no bare-handler fast path: even a plain proxy site is a subroute.
+	sub := []any{m{"handle": []any{observer(r)}}}
+	for _, h := range guardHandlers(r, "ban") { // a banned address is refused before any other layer works for it
+		sub = append(sub, m{"handle": []any{h}})
 	}
-
-	var sub []any
 	if geo := geoRouteOf(r); geo != nil { // the country rule leads: a blocked country is 403 before the gate or the site
 		sub = append(sub, m{"handle": []any{geo}})
 	}
 	if waf := wafRouteOf(r); waf != nil { // the WAF inspects the request before any panel access control
 		sub = append(sub, m{"handle": []any{waf}})
+	}
+	for _, h := range guardHandlers(r, "challenge") { // under-attack: a flood is challenged before it reaches the gate's mail form
+		sub = append(sub, m{"handle": []any{h}})
 	}
 	cidrs := strings.Fields(r.Allowlist)
 	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
@@ -301,7 +315,7 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 	if len(cidrs) > 0 && r.GateMode == "" {
 		sub = append(sub, m{
 			"match":    []any{m{"not": []any{m{"client_ip": m{"ranges": cidrs}}}}},
-			"handle":   []any{m{"handler": "static_response", "status_code": "403"}},
+			"handle":   []any{m{"handler": "vars", guardOutcomeVar: "blocked"}, m{"handler": "static_response", "status_code": "403"}},
 			"terminal": true,
 		})
 	}
@@ -310,6 +324,11 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 			"hash":     m{"algorithm": "bcrypt"},
 			"accounts": []any{m{"username": r.BasicUser, "password": r.BasicHash}},
 		}}}}})
+	}
+	for _, pos := range []string{"paywall", "queue"} {
+		for _, h := range guardHandlers(r, pos) {
+			sub = append(sub, m{"handle": []any{h}})
+		}
 	}
 	if len(snip) > 0 { // ACME-adjacent and app well-known endpoints must never be hidden or recompressed by a snippet
 		sub = append(sub, m{

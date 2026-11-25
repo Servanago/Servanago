@@ -1,0 +1,30 @@
+{{define "content"}}
+<h1>Bans {{helplink "bans"}}</h1>
+{{$d := .Data}}
+{{if $d.Off}}<div class="banner warn">The protection service is not running, so bans are not enforced.</div>{{end}}
+<article>
+{{if $d.Bans}}
+<table>
+<thead><tr><th>Client</th><th>Level</th><th>Source</th><th>Reason</th><th>Until</th><th></th></tr></thead>
+<tbody>
+{{range $d.Bans}}<tr>
+<td><code>{{.Client}}</code>{{if .SiteSlug}}<br><small>{{.SiteSlug}}</small>{{end}}</td><td>{{.Level}}</td><td>{{.Source}}{{if .CreatedBy}} ({{.CreatedBy}}){{end}}</td><td>{{.Reason}}</td>
+<td>{{unixts .Until}}{{if not .Active}} <small>(expired)</small>{{end}}</td>
+<td><button type="button" class="outline" hx-post="/bans/delete" hx-vals='{"client":"{{.Client}}"}' hx-target="#msg" hx-confirm="Lift the ban on {{.Client}} and forget its history?">Unban</button></td></tr>
+{{end}}
+</tbody>
+</table>
+{{else}}<p class="empty">No bans in the last seven days.</p>{{end}}
+<p id="msg" role="alert"></p>
+</article>
+<article>
+<header>Ban an address</header>
+<form hx-post="/bans" hx-target="#msg">
+<label>IP address, or an IPv6 /64 <input name="client" placeholder="203.0.113.5" required autocomplete="off"></label>
+<label>Hours <input name="hours" type="number" min="1" max="8760" value="24" required></label>
+<label>Reason (optional) <input name="reason" maxlength="200" autocomplete="off"></label>
+{{hint "ban_manual"}}
+<button type="submit">Ban</button>
+</form>
+</article>
+{{end}}

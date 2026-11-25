@@ -16,6 +16,7 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 - **Virus scanning** of site folders through the host's ClamAV daemon: quarantine, restore/ignore, ntfy + email alerts, scanned backups. [MCP](docs/mcp.md)
 - **Country filter** per site and for the panel: deny or allow ISO country lists, judged from MaxMind's GeoLite2 (kept fresh by geoipupdate, never configured by ServanaGo). [Sites](docs/sites.md)
 - **Web application firewall** per site: the OWASP CRS v4 ruleset (compiled into the binary via the panel's own Coraza handler) inspects every request; five app profiles, an engine-mode select (detection first), per-app exclusions with one-click tuning from a WAF events feed, a read-only rules browser, and rate limiting per client IP. [Sites](docs/sites.md)
+- **Traffic, protection and alerts** (0.22.0): live and historical traffic per site with a request log, escalating auto-ban, an under-attack challenge (proof of work or Turnstile), an access queue, an x402 USDC paywall, multi-backend failover, maintenance, parked and redirect pages, and alerts to ntfy, a signed webhook, email, Pushover or SMS.
 - **Mail bridge** per domain: Postmark handles internet-facing mail, inbound messages reach your LMTP server through the panel's webhook, MX/SPF/DKIM/Return-Path and verification are managed end to end. [MCP](docs/mcp.md)
 - **PHP built from source** when a security release can't wait for your distribution. [PHP](docs/php.md)
 - **Encrypted backups** of sites and the panel, with restore from the UI. [Backups](docs/backups.md)
@@ -30,8 +31,8 @@ A lightweight, self-hosted web runtime manager: a small Go app with a web UI, an
 **1. Install the package** from the [latest release](https://github.com/Servanago/Servanago/releases/latest):
 
 ```sh
-curl -LO https://github.com/Servanago/Servanago/releases/download/v0.21.0/servanago_0.21.0_amd64.deb
-sudo apt-get install ./servanago_0.21.0_amd64.deb
+curl -LO https://github.com/Servanago/Servanago/releases/download/v0.22.0/servanago_0.22.0_amd64.deb
+sudo apt-get install ./servanago_0.22.0_amd64.deb
 ```
 
 **2. Point DNS at the server.** Create an A record for your panel hostname that points at the server's IP. (With a Cloudflare token ServanaGo creates it for you; see [Install](docs/install.md#cloudflare-token-optional).) Without Cloudflare the server must be reachable from the internet on ports 80 and 443, because Let's Encrypt checks the hostname over HTTP.

@@ -25,6 +25,9 @@
 <a href="/backups"{{if eq .Nav "backups"}} aria-current="page"{{end}}>{{icon "archive"}}Backups</a>
 <a href="/scan"{{if eq .Nav "scan"}} aria-current="page"{{end}}>{{icon "shield"}}Scan</a>
 <a href="/mail"{{if eq .Nav "mail"}} aria-current="page"{{end}}>{{icon "mail"}}Mail</a>
+<a href="/traffic"{{if eq .Nav "traffic"}} aria-current="page"{{end}}>{{icon "list"}}Traffic</a>
+<a href="/bans"{{if eq .Nav "bans"}} aria-current="page"{{end}}>{{icon "shield"}}Bans</a>
+<a href="/alerts"{{if eq .Nav "alerts"}} aria-current="page"{{end}}>{{icon "mail"}}Alerts</a>
 <a href="/logs"{{if eq .Nav "logs"}} aria-current="page"{{end}}>{{icon "list"}}Logs</a>
 </nav>
 {{if .LoggedIn}}<details class="usermenu">
@@ -85,6 +88,7 @@ document.addEventListener('htmx:afterSwap', function (e) {
 <a{{if eq $act "routes"}} class="sel"{{end}} href="/sites/{{$id}}/routes">Routes</a>
 <a{{if eq $act "countries"}} class="sel"{{end}} href="/sites/{{$id}}/countries">Countries</a>
 <a{{if eq $act "waf"}} class="sel"{{end}} href="/sites/{{$id}}/waf">WAF</a>
+<a{{if eq $act "protection"}} class="sel"{{end}} href="/sites/{{$id}}/protection">Protection</a>
 </nav>{{end}}
 
 {{/* sitehead: the identity block of a site's pages — crumb, name, badges, status pills, hostnames,

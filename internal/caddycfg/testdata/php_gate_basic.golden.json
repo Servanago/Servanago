@@ -41,11 +41,24 @@
             {
               "handle": [
                 {
-                  "handler": "servanago_gate",
-                  "host": "ml.sonarr.example.com",
-                  "mode": "acl",
-                  "primary": "sonarr.example.com",
-                  "site_id": 1
+                  "handler": "subroute",
+                  "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "servanago_traffic",
+                          "site": "blog"
+                        },
+                        {
+                          "handler": "servanago_gate",
+                          "host": "ml.sonarr.example.com",
+                          "mode": "acl",
+                          "primary": "sonarr.example.com",
+                          "site_id": 1
+                        }
+                      ]
+                    }
+                  ]
                 }
               ],
               "match": [
@@ -62,6 +75,14 @@
                 {
                   "handler": "subroute",
                   "routes": [
+                    {
+                      "handle": [
+                        {
+                          "handler": "servanago_traffic",
+                          "site": "blog"
+                        }
+                      ]
+                    },
                     {
                       "handle": [
                         {
@@ -214,6 +235,23 @@
                   "host": [
                     "sonarr.example.com"
                   ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "servanago_traffic",
+                  "site": "",
+                  "unknown": true
+                },
+                {
+                  "handler": "servanago_ban"
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": "404"
                 }
               ],
               "terminal": true

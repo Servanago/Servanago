@@ -21,7 +21,7 @@ type Domain struct {
 type Site struct {
 	ID             int64
 	Slug           string   // immutable; derived from the first hostname on create
-	Kind           string   // proxy | static | node | php | frankenphp | fastcgi | cgi; "" means proxy on create
+	Kind           string   // proxy | static | node | php | frankenphp | fastcgi | cgi | page; "" means proxy on create
 	Hostnames      []string // primary first; each is a free FQDN, unique across sites
 	Scheme         string   // http | https (proxy)
 	UpstreamHost   string   // proxy; fastcgi: a host, or an absolute socket path (then UpstreamPort is 0)
@@ -62,6 +62,10 @@ type Site struct {
 	RLRequests     int64          // rate limit: requests per client IP per window; 0 = off
 	RLWindow       string         // rate limit window: "" | 1m | 5m | 1h (set together with RLRequests)
 	RLPaths        string         // rate limit scope: one path prefix per line; "" = the whole site
+	Guard          *SiteGuard     // protection settings; GetSite and ListSites always fill it. Create and UpdateSite save Guard, Page, X402 and AlertDests together, and only when Guard is non-nil
+	Page           SitePage       // kind page: status page or redirect
+	X402           []X402Route    // paywalled path prefixes
+	AlertDests     []int64        // alert destination override: only these receive this site's events; empty = every matching destination
 	Notes          string         // admin notes for the Reference page, at most 10,000 characters
 	UpdatedAt      string         // RFC3339 UTC time of the last save; set by CreateSite and UpdateSite, never by the caller
 }
@@ -241,7 +245,10 @@ func (s *Store) CreateSite(ctx context.Context, r Site) (Site, error) {
 		if err := tx.setHostnames(ctx, id, r.Hostnames); err != nil {
 			return err
 		}
-		return tx.setSnippets(ctx, id, r.Snippets)
+		if err := tx.setSnippets(ctx, id, r.Snippets); err != nil {
+			return err
+		}
+		return tx.saveProtection(ctx, id, r)
 	})
 	if err != nil {
 		return Site{}, err
@@ -269,6 +276,9 @@ func (s *Store) GetSite(ctx context.Context, id int64) (Site, error) {
 		return Site{}, err
 	}
 	r.Exclusions = exc[id]
+	if err := s.loadProtection(ctx, []*Site{&r}); err != nil {
+		return Site{}, err
+	}
 	return r, nil
 }
 
@@ -303,7 +313,20 @@ func (s *Store) ListSites(ctx context.Context) ([]Site, error) {
 		r.Exclusions = exc[r.ID]
 		out = append(out, r)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := rows.Close(); err != nil { // the protection queries below need the connection
+		return nil, err
+	}
+	ptrs := make([]*Site, len(out))
+	for i := range out {
+		ptrs[i] = &out[i]
+	}
+	if err := s.loadProtection(ctx, ptrs); err != nil {
+		return nil, err
+	}
+	return out, nil
 }
 
 // UpdateSite saves every field except the slug, which never changes, and replaces the hostnames.
@@ -322,7 +345,10 @@ func (s *Store) UpdateSite(ctx context.Context, r Site) error {
 		if err := tx.setHostnames(ctx, r.ID, r.Hostnames); err != nil {
 			return err
 		}
-		return tx.setSnippets(ctx, r.ID, r.Snippets)
+		if err := tx.setSnippets(ctx, r.ID, r.Snippets); err != nil {
+			return err
+		}
+		return tx.saveProtection(ctx, r.ID, r)
 	})
 }
 

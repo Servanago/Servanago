@@ -19,4 +19,4 @@ What 013 does to live data: rebuilds `sites` (new kind `page` in the CHECK), add
 Any count mismatch, a `foreign_key_check` row, or a changed `sites` checksum: stop, fix the migration, rerun from step 3. Three failed attempts: stop and report.
 
 ## Deploy note (when asked)
-Pre-upgrade copy `servanago.db.pre-0.21.0` as in the v1 upgrade procedure; the rebuild is not reversible except by that copy.
+Pre-upgrade copy `servanago.db.pre-0.22.0` as in the v1 upgrade procedure; the rebuild is not reversible except by that copy.

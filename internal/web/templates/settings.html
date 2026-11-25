@@ -23,7 +23,7 @@
 </article>{{end}}
 {{if eq .Data.Tab "scan"}}<article>
 <h2>Virus scanning</h2>
-{{if .Data.ScanOn}}<p>On. Site folders are checked against clamd on this server; hit alerts also reach ntfy{{if .Data.NtfySet}} (set){{else}} when its topic is set{{end}} and email{{if .Data.MailReady}} (set){{else}} when email delivery is set up{{end}}. The ntfy topic is on the Notifications tab.</p>
+{{if .Data.ScanOn}}<p>On. Site folders are checked against clamd on this server; hit alerts go to the destinations on the <a href="/alerts">Alerts</a> page and by email{{if .Data.MailReady}} (set){{else}} when email delivery is set up{{end}}.</p>
 {{else}}<p>Off. Set the clamd socket path to turn scanning on — the daemon itself comes from <code>apt install clamav-daemon</code>; ServanaGo never installs or updates it.</p>{{end}}
 <form hx-post="/settings/scan" hx-target="#scan-msg">
 <label>clamd socket <input name="scan_socket" value="{{.Data.Socket}}" placeholder="/run/clamav/clamd.ctl" autocomplete="off"></label>
@@ -36,17 +36,50 @@
 </article>{{end}}
 {{if eq .Data.Tab "notify"}}<article>
 <h2>Notifications</h2>
-{{if .Data.NtfySet}}<p>On. Every scan with hits posts an urgent message to the ntfy topic below.</p>
-{{else}}<p>Off. Set an ntfy topic URL to get a push message when a scan finds something. Hits also email the MAIL FROM mailbox when email delivery is set up.</p>{{end}}
-<form hx-post="/settings/notify" hx-target="#notify-msg">
-<label>ntfy topic URL {{if .Data.NtfySet}}(set; leave blank to keep){{end}} <input name="scan_ntfy" value="{{.Data.NtfyURL}}" placeholder="https://ntfy.example.com/servanago" autocomplete="off"></label>
-{{hint "scan_ntfy"}}
-<label>ntfy access token {{if .Data.TokenSet}}(set; leave blank to keep){{end}} <input type="password" name="scan_ntfy_token" autocomplete="new-password" placeholder="{{if .Data.TokenSet}}leave blank to keep{{end}}"></label>
-{{hint "scan_ntfy_token"}}
+<p>Alerts for scans, backups and everything the protection layers notice (ntfy, a signed webhook, email, Pushover, SMS) are set up on their own page: <a href="/alerts">Alerts</a>. The ntfy topics you had here became destinations named <em>ntfy: scan</em> and <em>ntfy: backup</em>.</p>
+</article>{{end}}
+{{if eq .Data.Tab "guard"}}<article>
+<h2>Protection</h2>
+<p>Rules shared by every site: when the auto-ban fires, how long logs are kept, which crawlers count as bots, and the wallet for the x402 paywall. Each site switches its layers on from its own Protection tab.</p>
+{{$g := .Data.Guard}}
+<form hx-post="/settings/guard" hx-target="#guard-msg">
+<fieldset><legend>Auto-ban</legend>
+<label>Status codes that count (space separated) <input name="ban_codes" value="{{$g.S.BanCodes}}" autocomplete="off" aria-describedby="hint-ban_codes"></label>
+{{hintid "ban_codes"}}
+<div class="grid">
+<label>Responses in the window <input name="ban_threshold" type="number" min="2" value="{{$g.S.BanThreshold}}"></label>
+<label>Window (seconds) <input name="ban_window_s" type="number" min="5" max="3600" value="{{$g.S.BanWindowS}}"></label>
+</div>
+<label>Escalation, minutes per step <input name="ban_steps_min" value="{{$g.S.BanStepsMin}}" autocomplete="off" aria-describedby="hint-ban_steps"></label>
+{{hintid "ban_steps"}}
+<label>Never ban (CIDR ranges, one per line) <textarea name="ban_exempt" rows="2" placeholder="203.0.113.0/24">{{$g.S.BanExempt}}</textarea></label>
+<label><input type="checkbox" name="ban_unknown_host"{{if $g.S.BanUnknownHost}} checked{{end}}> Also count requests for hosts no site owns</label>
+{{hint "ban_unknown_host"}}
+</fieldset>
+<fieldset><legend>Records</legend>
+<div class="grid">
+<label>Keep the request log (days) <input name="log_days" type="number" min="1" max="365" value="{{$g.S.LogDays}}"></label>
+<label>Keep the minute rollups (days) <input name="rollup_days" type="number" min="1" max="3650" value="{{$g.S.RollupDays}}"></label>
+</div>
+</fieldset>
+<fieldset><legend>Bots</legend>
+<label>User agents that count as bots (space separated, matched anywhere in the name) <textarea name="ua_list" rows="2">{{$g.S.UAList}}</textarea></label>
+{{hint "ua_list"}}
+</fieldset>
+<fieldset><legend>x402 paywall</legend>
+<p><strong>Payments are real money on Base mainnet.</strong> Start on Base Sepolia (test network) and switch when it works.</p>
+<label>Facilitator URL <input name="x402_facilitator" value="{{$g.S.X402Facilitator}}" placeholder="https://x402.org/facilitator" autocomplete="off" aria-describedby="hint-x402_facilitator"></label>
+{{hintid "x402_facilitator"}}
+<label>Network <select name="x402_network">
+{{range $n := $g.Networks}}<option value="{{$n}}"{{if eq $n $g.S.X402Network}} selected{{end}}>{{if eq $n "eip155:8453"}}Base (real money){{else}}Base Sepolia (test){{end}}</option>{{end}}
+</select></label>
+<label>Your wallet address (receives the USDC) <input name="x402_pay_to" value="{{$g.S.X402PayTo}}" placeholder="0x…" autocomplete="off"></label>
+<label>Facilitator key {{if $g.KeySet}}(set; leave blank to keep){{end}} <input type="password" name="x402_api_key" autocomplete="new-password"></label>
+{{if $g.KeySet}}<label><input type="checkbox" name="clear_x402_key"> Remove the stored facilitator key</label>{{end}}
+</fieldset>
 <button type="submit">Save</button>
-<button type="button" class="outline" hx-post="/settings/notify" hx-target="#notify-msg" hx-vals='{"clear_ntfy":"1"}' hx-confirm="Forget the ntfy topic and its access token?">Forget ntfy</button>
 </form>
-<p id="notify-msg" role="alert"></p>
+<p id="guard-msg" role="alert"></p>
 </article>{{end}}
 {{if eq .Data.Tab "geo"}}<article>
 <h2>Country filter</h2>

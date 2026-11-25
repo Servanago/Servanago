@@ -274,6 +274,11 @@ func (s *Server) deleteSite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r, "site.deleted", host)
+	if s.deps.Traffic != nil && deleted.Slug != "" { // the site's request log and rollups go with it; bans are address data and stay
+		if err := s.deps.Traffic.DeleteSite(r.Context(), deleted.Slug); err != nil {
+			slog.Warn("prune traffic of a deleted site", "slug", deleted.Slug, "error", err)
+		}
+	}
 	if deleted.IsRuntime() {
 		s.runtimeRemove(r, deleted)
 	}

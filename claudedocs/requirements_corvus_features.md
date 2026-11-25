@@ -23,7 +23,7 @@ Concern recorded: this is a big-bang across Caddy modules, migrations, UI and MC
 | Retention | 7 days raw request log, 90 days per-minute rollups, configurable in Settings |
 | Alerts | Global destinations plus optional per-site override |
 | Charts | Hand-rolled inline SVG, no chart library |
-| Release | One release, 0.21.0 |
+| Release | One release, 0.22.0 |
 
 ## Functional requirements
 

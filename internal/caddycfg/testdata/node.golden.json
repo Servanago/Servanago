@@ -41,10 +41,27 @@
             {
               "handle": [
                 {
-                  "handler": "reverse_proxy",
-                  "upstreams": [
+                  "handler": "subroute",
+                  "routes": [
                     {
-                      "dial": "127.0.0.1:3000"
+                      "handle": [
+                        {
+                          "handler": "servanago_traffic",
+                          "site": "app11"
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [
+                            {
+                              "dial": "127.0.0.1:3000"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }
@@ -54,6 +71,23 @@
                   "host": [
                     "sonarr.example.com"
                   ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "servanago_traffic",
+                  "site": "",
+                  "unknown": true
+                },
+                {
+                  "handler": "servanago_ban"
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": "404"
                 }
               ],
               "terminal": true

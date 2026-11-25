@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -74,6 +75,10 @@ type Monitor struct {
 
 	mu sync.Mutex
 	up map[int64]Upstream
+
+	backends backendState
+	// OnBackend, when set, hears every failover backend going down or coming back (the alerts layer).
+	OnBackend func(slug, addr string, up bool)
 }
 
 func NewMonitor(st *store.Store, httpsAddr string) *Monitor {
@@ -120,6 +125,9 @@ func (m *Monitor) Sweep(ctx context.Context) {
 	m.mu.Lock()
 	m.up = next
 	m.mu.Unlock()
+	if m.OnBackend != nil {
+		m.WatchBackends(ctx, routes, m.OnBackend)
+	}
 }
 
 // Run sweeps immediately and then every interval until ctx ends.
@@ -191,4 +199,51 @@ func Parallel(n int, fn func(i int)) {
 		}()
 	}
 	wg.Wait()
+}
+
+// backendState remembers the last state of every probed upstream address (the site's own and its extra backends), by slug|addr.
+type backendState struct {
+	mu   sync.Mutex
+	last map[string]bool
+}
+
+// WatchBackends probes each enabled proxy site's upstreams (the main one and the extra failover backends) and calls
+// notify on a change: the first sighting of a dead one, and every later up/down transition.
+func (m *Monitor) WatchBackends(ctx context.Context, sites []store.Site, notify func(slug, addr string, up bool)) {
+	type probeJob struct {
+		slug, addr string
+	}
+	var jobs []probeJob
+	seen := map[string]bool{}
+	for _, r := range sites {
+		if !r.Enabled || (r.Kind != "proxy" && r.Kind != "") || r.Guard == nil || r.Guard.Backends == "" {
+			continue // only sites with failover backends: a single upstream has the dashboard's own health column
+		}
+		for _, a := range append([]string{upstreamAddr(r)}, strings.Fields(r.Guard.Backends)...) {
+			if k := r.Slug + "|" + a; !seen[k] {
+				seen[k] = true
+				jobs = append(jobs, probeJob{r.Slug, a})
+			}
+		}
+	}
+	up := make([]bool, len(jobs))
+	Parallel(len(jobs), func(i int) { up[i] = m.Dial(ctx, jobs[i].addr, dialTimeout) == nil })
+	if ctx.Err() != nil {
+		return
+	}
+	m.backends.mu.Lock()
+	defer m.backends.mu.Unlock()
+	if m.backends.last == nil {
+		m.backends.last = map[string]bool{}
+	}
+	now := map[string]bool{}
+	for i, j := range jobs {
+		k := j.slug + "|" + j.addr
+		prev, known := m.backends.last[k]
+		now[k] = up[i]
+		if (known && prev != up[i]) || (!known && !up[i]) {
+			notify(j.slug, j.addr, up[i])
+		}
+	}
+	m.backends.last = now
 }

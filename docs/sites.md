@@ -35,6 +35,7 @@ Tabs save in place: a form posts from its tab, the button shows the save, and th
 | FrankenPHP | One `frankenphp php-server` unit per site behind a loopback port. |
 | FastCGI | Caddy's FastCGI transport to an admin-run socket path or host:port. Nothing is supervised. |
 | CGI | Socket-activated fcgiwrap (`servanago-<slug>.socket` and `.service`). |
+| Page | No folder and no upstream: a status page (maintenance, coming soon, parked) from a built-in template or your own HTML (up to 64 KB, served as written), or a redirect (301, 302, 303, 307 or 308 with a target URL, optionally keeping path and query). Path routes on the site keep proxying. Since 0.22.0. |
 
 Node.js, PHP, FrankenPHP and CGI sites need the packaged install (the root helper does the privileged work).
 
@@ -117,3 +118,23 @@ The Scan page shows the runs and their hits. ServanaGo streams each site's serve
 ## Built-in help
 
 A hint under every field, a live preview of what *Add site* will create, plain-language explanations of errors and status words, a getting-started checklist and a Help page.
+
+## Protection, traffic and alerts
+
+Since 0.22.0 ServanaGo records every request per site and can defend a site with layers you switch on from its **Protection** tab. The layers run in this order, after the traffic recorder: **ban**, country filter, firewall (with its rate limit), **under-attack challenge**, gate or IP allowlist, basic authentication, **x402 paywall**, **access queue**, snippets, then the site. Addresses on a site's IP allowlist skip the challenge, the paywall and the queue and are never banned. `/.well-known/` (certificates) and `/__servanago/` (the challenge and queue endpoints) are never held back.
+
+**The visitor's address.** Behind a Cloudflare proxied record the server now trusts `CF-Connecting-IP`, but only from Cloudflare's published ranges (a forged header from anyone else is ignored). Every layer, the firewall's rate limit and its events, and the IP allowlist and the gate's allowlist branch use that address. **Upgrade note:** on a Cloudflare-proxied name an allowlist used to be compared with Cloudflare's address, so it let nobody in or everybody in depending on the setup; it now matches the visitor. Check allowlists on proxied records before upgrading.
+
+**Traffic** (`/traffic`). Live counters (requests per second, 2xx to 5xx, p50, p95 and p99 latency, what each layer answered) refresh every two seconds while the page is open; the 1 hour to 90 day ranges read per-minute rollups. The request log keeps path (no query string), client, user agent, referrer origin and, for a failed upstream, the error text (this is the "why 502" view: filter by status 502 or 504), for 7 days by default, up to 200,000 rows per site; export as CSV. The data lives in `traffic.db` next to the main database. It is disposable: if it cannot be opened the panel and every site keep working and the page says so. Requests for a name no site owns get an empty 404 and are counted.
+
+**Auto-ban** (per site; rules in Settings, Protection). Responses with the listed status codes (401, 403 and 429 by default; 404 is opt-in) count per visitor address (an IPv6 /64 for IPv6). 20 in 60 seconds bans for 15 minutes, a repeat within a week for an hour, then a day. Pages the layers themselves answer and the firewall's own rate-limit 429 never count. Never banned: loopback and private addresses, Cloudflare's nodes, the never-ban list and the site's allowlist. `/bans` lists, adds (never your own address) and lifts bans; bans survive a restart.
+
+**Under-attack mode.** Off, on, or auto (on while requests per second over the last ten seconds stay above a trigger, off after a cool-down). Visitors solve a short proof of work in the browser (no third party; difficulty low, medium or high) or pass a Cloudflare Turnstile check (needs `TURNSTILE_SITE_KEY` and `TURNSTILE_SECRET`, and the site's names allowed in the widget). A pass cookie is bound to the site and the visitor's address. No JavaScript means the page says so with a 403, never a 5xx. Test the difficulty on your own phones before relying on it.
+
+**Access queue.** A capacity, how long an admitted visitor stays active, and a longest line. Visitors above the capacity wait in a page that polls every three seconds and reloads when their turn comes. Admitted visitors are never blocked again while active (a restart does not eject them). The release button admits everyone for ten minutes.
+
+**x402 paywall.** Per site, a path prefix with a price in US dollars, `all` visitors or only `bots` (the crawler list in Settings, visitors with no challenge pass on a site that has a challenge, requests the firewall flagged), and a grant: pay per `request`, or a `token` that lets the payer in for a time. Payments are USDC on Base through an x402 facilitator you name (the test network Base Sepolia is the default; **Base mainnet moves real money**), to your own wallet, set in Settings, Protection. ServanaGo computes the price itself, claims the payment's nonce before verifying, settles before any content leaves and answers 503 if the facilitator is down: it never serves paid content unverified.
+
+**Failover and pages.** A proxy site takes extra `host:port` backends: requests rotate across all of them and one that fails is skipped for 30 seconds. **Check connection** (a button on the proxy fields, `run_upstream_check` over MCP) tests DNS, TCP and TLS without saving and names the failing stage.
+
+**Alerts** (`/alerts`). Destinations: ntfy, a signed webhook (JSON with `X-ServanaGo-Timestamp` and `X-ServanaGo-Signature: sha256=` over `timestamp.body` with your key; the way to reach Slack, Discord, Mattermost or Teams through a relay), email (uses Settings, Email delivery), Pushover and SMS through Twilio. Each destination picks the events it hears (under-attack on and off, bans, a full waiting room, backend down or up, x402 trouble, virus scans, failed backups); a site may name its own destinations. One attempt of up to five seconds is made; the last error shows on the destination. Webhooks must be https and nothing goes to private addresses. The ntfy topics that used to live under Settings and Backups became the destinations *ntfy: scan* and *ntfy: backup* when you upgraded.

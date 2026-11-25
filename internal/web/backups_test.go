@@ -139,7 +139,7 @@ func TestBackupsPageRendersCompleteWithAndWithoutSites(t *testing.T) {
 
 func TestSaveSettingsSealsSecretsAndInstallsTheTimer(t *testing.T) {
 	b := backupServer(t)
-	if w := b.settings("ntfy", "https://ntfy.example.com/topic-secret"); w.Code != 204 {
+	if w := b.settings(); w.Code != 204 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
 	set, _ := b.s.deps.Store.GetBackupSettings(context.Background())
@@ -149,18 +149,15 @@ func TestSaveSettingsSealsSecretsAndInstallsTheTimer(t *testing.T) {
 	if p, err := secretbox.Open(backupKey, set.Pass); err != nil || string(p) != goodPass {
 		t.Errorf("passphrase did not round trip: %q %v", p, err)
 	}
-	if u, err := secretbox.Open(backupKey, set.Ntfy); err != nil || !strings.Contains(string(u), "topic-secret") || strings.Contains(string(set.Ntfy), "topic-secret") {
-		t.Errorf("ntfy not sealed: %v", err)
-	}
 	if got := b.host.log(); !strings.Contains(got, "backup-enable") || !strings.Contains(got, "enabled=true") {
 		t.Errorf("helper calls: %s", got)
 	}
 	// a second save without the secrets keeps them
-	if w := b.settings("passphrase", "", "ntfy", ""); w.Code != 204 {
+	if w := b.settings("passphrase", ""); w.Code != 204 {
 		t.Fatalf("%d %s", w.Code, w.Body)
 	}
-	if again, _ := b.s.deps.Store.GetBackupSettings(context.Background()); string(again.Pass) != string(set.Pass) || string(again.Ntfy) != string(set.Ntfy) {
-		t.Error("a blank passphrase or ntfy field must keep the stored value")
+	if again, _ := b.s.deps.Store.GetBackupSettings(context.Background()); string(again.Pass) != string(set.Pass) {
+		t.Error("a blank passphrase must keep the stored value")
 	}
 	if rows, _ := b.s.deps.Store.ListAudit(context.Background(), 20); !hasAudit(rows, "backup.passphrase") || !hasAudit(rows, "backup.settings") {
 		t.Errorf("audit rows %v", rows)
@@ -188,7 +185,6 @@ func TestSaveSettingsRejections(t *testing.T) {
 		{"denied folder", []string{"dir", "/etc/backups"}, "Backup folder", 422},
 		{"relative folder", []string{"dir", "backups"}, "absolute", 422},
 		{"keep out of range", []string{"keep", "0"}, "Keep the newest", 422},
-		{"ntfy over http", []string{"ntfy", "http://ntfy.example.com/x"}, "https", 422},
 		{"wrong password", []string{"password", "nope"}, "Wrong password", 401},
 		{"no password", []string{"password", ""}, "Wrong password", 401},
 	} {

@@ -23,12 +23,9 @@ type smtpData struct {
 	PassSet   bool // a sealed password exists
 	MailReady bool // host and sender set: the gate can send
 	// The virus-scanning section.
-	ScanOn   bool   // a clamd socket is set
-	Socket   string // the configured path
-	Hour     string
-	NtfySet  bool
-	NtfyURL  string // the stored topic URL, unsealed for display; empty when unreadable
-	TokenSet bool
+	ScanOn bool   // a clamd socket is set
+	Socket string // the configured path
+	Hour   string
 	// The country-filter section.
 	GeoOn          bool
 	GeoDB          string
@@ -41,11 +38,13 @@ type smtpData struct {
 	MailTLS      bool
 	MailUser     string
 	MailPassSet  bool
+	// The protection section.
+	Guard guardData
 }
 
 // settingsTabs are the Settings page's tabs in order; the key is the /settings/{tab} path segment.
 var settingsTabs = []struct{ Key, Label string }{
-	{"email", "Email delivery"}, {"scan", "Virus scanning"}, {"notify", "Notifications"},
+	{"email", "Email delivery"}, {"scan", "Virus scanning"}, {"notify", "Notifications"}, {"guard", "Protection"},
 	{"geo", "Country filter"}, {"mail", "Mail bridge"},
 }
 
@@ -74,69 +73,16 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		Host: st.SMTPHost, Port: strconv.Itoa(st.SMTPPort), User: st.SMTPUser, From: st.MailFrom,
 		PassSet: st.SMTPPass != nil, MailReady: st.MailReady(),
 		ScanOn: st.ScanSocket != "", Socket: st.ScanSocket, Hour: strconv.Itoa(st.ScanHour),
-		NtfySet: st.ScanNtfy != nil, TokenSet: st.ScanNtfyToken != nil,
 		GeoOn: st.GeoDB != "", GeoDB: st.GeoDB, WebUIMode: st.WebUIMode, WebUICountries: st.WebUICountries,
 		MailOn: st.MailToken != nil, MailTokenSet: st.MailToken != nil, MailLMTP: st.MailLMTP,
 		MailTLS: st.MailTLS == "starttls", MailUser: st.MailUser, MailPassSet: st.MailPass != nil}
-	if st.ScanNtfy != nil && s.deps.Cfg.SecretKey != "" { // the topic URL is not itself a secret: show it
-		if url, err := secretbox.Open(s.deps.Cfg.SecretKey, st.ScanNtfy); err == nil {
-			d.NtfyURL = string(url)
-		} else {
-			slog.Error("unseal the ntfy topic URL", "error", err)
+	if tab == "guard" {
+		if d.Guard, err = s.guardSettingsData(r.Context()); err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
 		}
 	}
 	s.render(w, "settings", http.StatusOK, page{Title: "Settings", Data: d})
-}
-
-// saveNotify stores the Notifications tab: the ntfy topic URL and its access token. A blank
-// topic keeps the stored pair; clear_ntfy drops both.
-func (s *Server) saveNotify(w http.ResponseWriter, r *http.Request) {
-	cur, err := s.deps.Store.GetSettings(r.Context())
-	if err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	st := cur
-	clear := r.PostFormValue("clear_ntfy") != ""
-	ntfy := strings.TrimSpace(r.PostFormValue("scan_ntfy"))
-	switch {
-	case clear:
-		st.ScanNtfy, st.ScanNtfyToken = nil, nil
-	case ntfy == "":
-	case s.deps.Cfg.SecretKey == "":
-		fail(w, http.StatusUnprocessableEntity, "Storing the ntfy address needs SERVANAGO_SECRET_KEY (at least 32 characters) in the environment file.")
-		return
-	default:
-		if !strings.HasPrefix(ntfy, "https://") || len(ntfy) > 500 || strings.ContainsAny(ntfy, " \r\n\t") {
-			fail(w, http.StatusUnprocessableEntity, "The ntfy address must be an https:// topic URL.")
-			return
-		}
-		if st.ScanNtfy, err = secretbox.Seal(s.deps.Cfg.SecretKey, []byte(ntfy)); err != nil {
-			fail(w, http.StatusInternalServerError, err.Error())
-			return
-		}
-		if tok := r.PostFormValue("scan_ntfy_token"); tok != "" {
-			if st.ScanNtfyToken, err = secretbox.Seal(s.deps.Cfg.SecretKey, []byte(tok)); err != nil {
-				fail(w, http.StatusInternalServerError, err.Error())
-				return
-			}
-		}
-	}
-	st.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-	if err := s.deps.Store.SaveSettings(r.Context(), st); err != nil {
-		fail(w, http.StatusInternalServerError, err.Error())
-		return
-	}
-	s.audit(r, "settings.notify", "")
-	switch {
-	case clear:
-		s.flash("The ntfy topic and its access token were removed.")
-	case ntfy != "":
-		s.flash("The ntfy topic is set: " + ntfy)
-	default:
-		s.flash("Notification settings saved.")
-	}
-	hxRedirect(w, "/settings/notify")
 }
 
 // saveSMTP replaces the email delivery settings wholesale; a blank password keeps the stored one.

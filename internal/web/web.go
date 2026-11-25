@@ -17,14 +17,17 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/servanago/servanago/internal/alerts"
 	"github.com/servanago/servanago/internal/caddylog"
 	"github.com/servanago/servanago/internal/cfdns"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/dnssync"
 	"github.com/servanago/servanago/internal/geoip"
+	"github.com/servanago/servanago/internal/guard"
 	"github.com/servanago/servanago/internal/probe"
 	"github.com/servanago/servanago/internal/runtimes"
 	"github.com/servanago/servanago/internal/store"
+	"github.com/servanago/servanago/internal/trafficdb"
 )
 
 //go:embed templates static
@@ -44,6 +47,10 @@ type Deps struct {
 	DNS   *dnssync.Syncer
 	Probe *probe.Monitor
 	Logs  *caddylog.Ring
+	// Guard is the protection registry (bans, queue, live counters); Traffic the request log (nil = degraded); Alerts the sender used for test messages.
+	Guard   *guard.Service
+	Traffic *trafficdb.DB
+	Alerts  *alerts.Sender
 	// HelperSocket and Exec are test seams for node/php sites: the helper's socket (empty = helper.SocketPath)
 	// and the runtime detector (nil = the real host).
 	HelperSocket string
@@ -108,7 +115,7 @@ func New(d Deps) *Server {
 	s := &Server{deps: d, pages: map[string]*template.Template{}, auth: newAuthn(), phpSettle: 3 * time.Second, phpPoll: 5 * time.Second, geo: geoip.New(), mailTries: 15}
 	s.healthGet, s.sendMail = s.localHealthGet, s.smtpMail
 	s.hostSamples = s.realHostStats
-	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "mail", "scan", "scanrun", "siteedit", "siteview", "snippets", "logs", "help", "php", "reference", "backups", "updates", "wafrules"} {
+	for _, p := range []string{"dashboard", "login", "login_totp", "security", "users", "audit", "settings", "domains", "dns", "dnszone", "mail", "scan", "scanrun", "siteedit", "siteview", "snippets", "logs", "help", "php", "reference", "backups", "updates", "wafrules", "traffic", "bans", "alerts"} {
 		s.pages[p] = template.Must(template.New(p).Funcs(helpFuncs).ParseFS(assets, "templates/layout.html", "templates/deletedlg.html", "templates/"+p+".html"))
 	}
 	if d.Apply != nil {
@@ -212,7 +219,6 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /help", s.protected(s.helpPage))
 	mux.Handle("GET /settings", s.protected(settingsIndex))
 	mux.Handle("GET /settings/{tab}", s.protected(s.settingsPage))
-	mux.Handle("POST /settings/notify", s.protected(s.saveNotify))
 	mux.Handle("POST /settings/smtp", s.protected(s.saveSMTP))
 	mux.Handle("POST /settings/scan", s.protected(s.saveScan))
 	mux.Handle("POST /settings/geo", s.protected(s.saveGeo))
@@ -251,6 +257,20 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /updates", s.protected(s.updatesPage))
 	mux.Handle("POST /updates/check", s.protected(s.updatesCheckNow))
 	mux.Handle("POST /updates/upgrade", s.protected(s.upgradeNow))
+	mux.Handle("GET /traffic", s.protected(s.trafficPage))
+	mux.Handle("GET /traffic/snapshot", s.protected(s.trafficSnapshot))
+	mux.Handle("GET /traffic/rows", s.protected(s.trafficRows))
+	mux.Handle("GET /traffic/export", s.protected(s.trafficExport))
+	mux.Handle("GET /bans", s.protected(s.bansPage))
+	mux.Handle("POST /bans", s.protected(s.createBan))
+	mux.Handle("POST /bans/delete", s.protected(s.deleteBan))
+	mux.Handle("GET /alerts", s.protected(s.alertsPage))
+	mux.Handle("POST /alerts", s.protected(s.createAlertDest))
+	mux.Handle("POST /alerts/{id}/toggle", s.protected(s.toggleAlertDest))
+	mux.Handle("POST /alerts/{id}/test", s.protected(s.testAlertDest))
+	mux.Handle("POST /alerts/{id}/delete", s.protected(s.deleteAlertDest))
+	mux.Handle("POST /sites/check", s.protected(s.checkConnection))
+	mux.Handle("POST /settings/guard", s.protected(s.saveGuardSettings))
 	mux.Handle("GET /logs", s.protected(s.logsPage))
 	mux.Handle("GET /logs/rows", s.protected(s.logRows))
 	mux.Handle("GET /domains", s.protected(s.domainsPage))
@@ -285,6 +305,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /sites/{id}/routes", s.protected(s.saveSiteRoutes))
 	mux.Handle("POST /sites/{id}/geo", s.protected(s.saveSiteGeo))
 	mux.Handle("POST /sites/{id}/waf", s.protected(s.saveSiteWaf))
+	mux.Handle("POST /sites/{id}/protection", s.protected(s.saveSiteProtection))
+	mux.Handle("POST /sites/{id}/underattack", s.protected(s.setUnderAttack))
+	mux.Handle("POST /sites/{id}/queue/release", s.protected(s.releaseQueue))
 	mux.Handle("POST /sites/{id}/waf/excl", s.protected(s.saveWafExclusion))
 	mux.Handle("POST /sites/{id}/waf/excl/delete", s.protected(s.undoWafExclusion))
 	mux.Handle("POST /sites/{id}/dns-ip", s.protected(s.saveSiteDNSIP))

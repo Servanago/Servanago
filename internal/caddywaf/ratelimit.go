@@ -2,6 +2,8 @@ package caddywaf
 
 import (
 	"net/http"
+
+	"github.com/caddyserver/caddy/v2/modules/caddyhttp"
 	"strconv"
 	"strings"
 	"sync"
@@ -141,6 +143,7 @@ func (m *Middleware) serveRateLimit(w http.ResponseWriter, r *http.Request) bool
 	if retry < 1 {
 		retry = 1
 	}
+	caddyhttp.SetVar(r.Context(), "sg_outcome", "ratelimited")
 	w.Header().Set("Retry-After", strconv.Itoa(retry))
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.WriteHeader(http.StatusTooManyRequests)

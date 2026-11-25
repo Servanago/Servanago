@@ -50,6 +50,8 @@ func (r siteRow) KindLabel() string {
 		return "FrankenPHP"
 	case "fastcgi":
 		return "FastCGI"
+	case "page":
+		return "Page"
 	case "cgi":
 		return "CGI"
 	}
@@ -58,6 +60,12 @@ func (r siteRow) KindLabel() string {
 
 // Target is where the site's content comes from: the upstream address, or the folder for sites Caddy serves itself.
 func (r siteRow) Target() string {
+	if r.Kind == "page" {
+		if r.Page.IsRedirect() {
+			return "redirects to " + r.Page.Target
+		}
+		return fmt.Sprintf("page, status %d", r.Page.Status)
+	}
 	if r.HasUpstream() && r.UpstreamHost != "" {
 		return fmt.Sprintf("%s:%d", r.UpstreamHost, r.UpstreamPort)
 	}

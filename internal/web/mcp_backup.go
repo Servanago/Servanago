@@ -89,7 +89,8 @@ func (s *Server) addBackupTools(srv *mcp.Server, ip string, ro *mcp.ToolAnnotati
 				return nil, out, err
 			}
 			out.Enabled, out.Panel, out.Folder, out.Schedule, out.Keep, out.KeepWeekly = set.Enabled, set.Panel, set.Dir, set.Sched, set.Keep, set.KeepWeekly
-			out.PassphraseSet, out.NtfySet, out.Warning, out.Last = set.Pass != nil, set.Ntfy != nil, s.backupWarnText(), []backupRunOut{}
+			dests, _ := s.deps.Store.ListAlertDests(ctx) // ntfy_set keeps its name: true when any alert destination listens for backup failures
+			out.PassphraseSet, out.NtfySet, out.Warning, out.Last = set.Pass != nil, len(store.RouteAlert(dests, nil, "backup")) > 0, s.backupWarnText(), []backupRunOut{}
 			if resp, err := s.helperClient().Call(ctx, helper.ActionBackupStatus, helper.Spec{}); err == nil && resp.Status != nil {
 				out.JobState = resp.Status.ActiveState
 			}

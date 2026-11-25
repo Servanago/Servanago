@@ -418,6 +418,69 @@
 </div>
 </section>
 {{end}}
+{{if eq .Active "protection"}}
+<section class="sect" id="panel-protection">
+<h2>Protection {{helplink "protection"}}</h2>
+<p class="sect-note">Layers run in this order, after the traffic recorder: ban, country filter, firewall, under-attack challenge, gate or allowlist, basic auth, paywall, access queue, snippets, then the site. Addresses on this site's IP allowlist skip the challenge, the paywall and the queue and are never banned.</p>
+{{$g := .Site.Guard}}{{$id := .Site.ID}}
+<div class="acts">
+{{if eq $g.UAMode "on"}}<form hx-post="/sites/{{$id}}/underattack" hx-vals='{"mode":"off"}' hx-target="#msg"><button type="submit" class="outline danger">Turn under-attack mode off</button></form>
+{{else}}<form hx-post="/sites/{{$id}}/underattack" hx-vals='{"mode":"on"}' hx-target="#msg"><button type="submit" class="danger">Turn under-attack mode on</button></form>{{end}}
+{{if $g.QOn}}<form hx-post="/sites/{{$id}}/queue/release" hx-target="#msg" hx-confirm="Admit everyone for ten minutes?"><button type="submit" class="secondary">Release the waiting room for 10 minutes</button></form>{{end}}
+</div>
+<form hx-post="/sites/{{$id}}/protection" hx-target="#msg">
+<fieldset><legend>Auto-ban</legend>
+<label><input type="checkbox" name="ban_on"{{if $g.BanOn}} checked{{end}} aria-describedby="hint-ban_on"> Ban addresses that keep getting error responses</label>
+{{hintid "ban_on"}}
+</fieldset>
+<fieldset><legend>Under-attack challenge</legend>
+<label>Mode <select name="ua_mode" aria-describedby="hint-ua_mode">
+<option value=""{{if not $g.UAMode}} selected{{end}}>Off</option>
+<option value="on"{{if eq $g.UAMode "on"}} selected{{end}}>On: every visitor is challenged</option>
+<option value="auto"{{if eq $g.UAMode "auto"}} selected{{end}}>Auto: on while traffic is above the trigger</option>
+</select></label>
+{{hintid "ua_mode"}}
+<label>Challenge <select name="ch_kind" aria-describedby="hint-ch_kind">
+<option value="pow"{{if eq $g.CHKind "pow"}} selected{{end}}>Proof of work (no third party)</option>
+<option value="turnstile"{{if eq $g.CHKind "turnstile"}} selected{{end}}>Cloudflare Turnstile</option>
+</select></label>
+{{hintid "ch_kind"}}
+<label>Difficulty (proof of work) <select name="ch_difficulty" aria-describedby="hint-ch_difficulty">
+{{range $d := list "low" "medium" "high"}}<option value="{{$d}}"{{if eq $g.CHDifficulty $d}} selected{{end}}>{{$d}}</option>{{end}}
+</select></label>
+{{hintid "ch_difficulty"}}
+<label>Pass lasts (minutes) <input name="ch_ttl_min" type="number" min="1" max="10080" value="{{$g.CHTTLMin}}"></label>
+<label>Auto trigger: requests per second (0 = never) <input name="ua_auto_rps" type="number" min="0" value="{{$g.UAAutoRPS}}"></label>
+<label>Auto cool-down (minutes) <input name="ua_cooldown_min" type="number" min="1" max="1440" value="{{$g.UACooldownMin}}"></label>
+{{hintid "ua_auto"}}
+</fieldset>
+<fieldset><legend>Access queue</legend>
+<label><input type="checkbox" name="q_on"{{if $g.QOn}} checked{{end}} aria-describedby="hint-q_on"> Hold visitors in a waiting room above the capacity</label>
+{{hintid "q_on"}}
+<label>Visitors admitted at once <input name="q_capacity" type="number" min="1" value="{{$g.QCapacity}}"></label>
+<label>An admitted visitor stays (seconds) <input name="q_active_ttl_s" type="number" min="30" max="86400" value="{{$g.QActiveTTLs}}"></label>
+<label>Longest line <input name="q_max_queue" type="number" min="1" value="{{$g.QMaxQueue}}"></label>
+</fieldset>
+{{if eq .Site.Kind "proxy"}}<fieldset><legend>More backends</legend>
+<label>Extra backends, host:port one per line <textarea name="backends" rows="3" placeholder="10.0.0.12:9200" aria-describedby="hint-backends">{{$g.Backends}}</textarea></label>
+{{hintid "backends"}}
+<button type="button" class="secondary" hx-post="/sites/check" hx-include="[name=backends]" hx-vals='{"upstream_host":"{{.Site.UpstreamHost}}","upstream_port":"{{.Site.UpstreamPort}}","scheme":"{{.Site.Scheme}}"}' hx-target="#check-out">Check connections</button>
+<div id="check-out" role="status"></div>
+</fieldset>{{end}}
+<fieldset><legend>Paywall (x402)</legend>
+<label>Paid paths, one per line: path price all|bots request|token [token seconds] <textarea name="x402_routes" rows="3" placeholder="/api/ 0.001 bots token 600" aria-describedby="hint-x402_routes">{{.X402Text}}</textarea></label>
+{{hintid "x402_routes"}}
+</fieldset>
+{{if .Dests}}<fieldset><legend>Alerts for this site</legend>
+{{range .Dests}}<label><input type="checkbox" name="alert_dest" value="{{.ID}}"{{if .On}} checked{{end}}> {{.Name}}</label>
+{{end}}
+{{hintid "alert_site"}}
+</fieldset>{{end}}
+<button type="submit">Save protection</button>
+</form>
+<p id="msg" role="alert" data-toast></p>
+</section>
+{{end}}
 {{end}}
 {{end}}
 

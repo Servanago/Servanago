@@ -46,6 +46,14 @@
                     {
                       "handle": [
                         {
+                          "handler": "servanago_traffic",
+                          "site": ""
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
                           "handler": "subroute",
                           "routes": [
                             {
@@ -132,6 +140,23 @@
                   "host": [
                     "sonarr.example.com"
                   ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "servanago_traffic",
+                  "site": "",
+                  "unknown": true
+                },
+                {
+                  "handler": "servanago_ban"
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": "404"
                 }
               ],
               "terminal": true

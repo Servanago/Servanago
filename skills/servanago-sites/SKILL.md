@@ -30,6 +30,7 @@ A hostname's DNS record points at `record_ip`/`record_ip6` if the site sets one,
 | `frankenphp` | `static_root`, `port` |
 | `fastcgi` | `static_root`, `fcgi_addr`: absolute socket path or host:port |
 | `cgi` | `static_root` (socket-activated fcgiwrap) |
+| `page` | since 0.22.0: no folder or upstream; `page_status`, `page_title`, `page_message`, `page_html` or a redirect (`page_status` 301/302/303/307/308 + `page_target`) |
 
 Common optional fields: `allowlist` (CIDRs or IPs, one per line), `enabled` (default true), `record_ip` / `record_ip6` (DNS record for this site), `snippets` (names), `extra_routes` (since 0.11.0; paths sent to another app, one `path=dial` per line, e.g. `/api=127.0.0.1:3303`; dial is host:port or an absolute socket path), `notes` (plain text, at most 10,000 characters; since 0.6.0).
 
@@ -63,6 +64,18 @@ For each provisioned domain, mail arrives at Postmark, Postmark calls the panel'
 - DNS, inbound domain and verification are applied in the background: poll `get_mail_domain {name}` for `dns_notes` and the `dkim_state`/`return_path_state` states.
 - `delete_mail_domain {domain}` forgets ServanaGo's state only: the Postmark server, the domain and the DNS records stay. Say so before removing.
 - `list_mail_events {domain?, limit?}`: stored notifications — deliveries, bounces (with the DSN state), spam complaints.
+
+## Protection, traffic and alerts (since 0.22.0)
+
+Every site is recorded on the Traffic page (requests, status classes, latency, what the protection layers answered) and can switch layers on. Layer order per request: traffic recorder, ban, country filter, firewall, under-attack challenge, gate or allowlist, basic auth, x402 paywall, access queue, snippets, the site. Addresses on the site's allowlist skip the challenge, the paywall and the queue and are never banned.
+
+- `get_traffic` (`site?`, `range?`: live|1h|24h|7d|90d) and `list_requests` (`site?`, `client?`, `status?`, `outcome?`, `path?`, `errors_only?`, `limit?`) read the counters and the request log (paths only, never query strings). `errors_only` lists failed upstream requests: use it to explain a 502 or 504.
+- Bans: `list_bans`, `create_ban` (`client` an IPv4 address or an IPv6 /64, `hours`, `reason?`) and `delete_ban` (`client`). Auto-ban is the site field `ban_on`; its rules are UI-only (Settings, Protection). A ban of the caller's own address is refused.
+- `set_under_attack` (`id`, `mode` on, off or auto) switches the challenge now; `set_queue_release` (`id`) admits everyone to a waiting room for ten minutes. Both are emergency valves: say what you did.
+- Site fields on `create_site`/`update_site`: `ban_on`, `queue_on`, `queue_capacity`, `backends` (proxy: extra `host:port` upstreams, one per line, for failover), `x402_routes` (one paid path per line: `path price all|bots request|token [seconds]`), `alert_destinations` (ids), and for kind `page` the fields `page_status`, `page_title`, `page_message`, `page_html`, `page_target`, `page_keep_path` (a 301/302/303/307/308 status with a target redirects; any other status serves the page). Leaving a field out keeps the stored value.
+- Alerts: `list_alert_destinations`, `create_alert_destination` (`name`, `kind`, `target`, `secret?`, `events?`; kind ntfy|webhook|email|pushover|twilio; addresses and secrets are sealed and never shown again), `delete_alert_destination` (`id`).
+- `run_upstream_check` (`address`, `https?`, `skip_verify?`) tests DNS, TCP and TLS of an upstream and names the failing stage; it saves nothing.
+- The x402 paywall moves real money on Base mainnet. Never switch the network or the wallet without the user saying so; the wallet and facilitator are set in the panel, not through MCP.
 
 ## Do not
 

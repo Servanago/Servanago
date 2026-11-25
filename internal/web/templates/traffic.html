@@ -1,0 +1,61 @@
+{{define "content"}}
+<h1>Traffic {{helplink "traffic"}}</h1>
+{{$d := .Data}}
+<form method="get" action="/traffic" class="filters">
+<label>Site <select name="site" onchange="this.form.submit()">
+<option value="">All sites</option>
+{{range $d.Sites}}<option value="{{.Slug}}"{{if eq .Slug $d.Site}} selected{{end}}>{{.Name}}</option>{{end}}
+</select></label>
+<label>Range <select name="range" onchange="this.form.submit()">
+{{range $d.Ranges}}<option value="{{.Key}}"{{if eq .Key $d.Range}} selected{{end}}>{{.Label}}</option>{{end}}
+</select></label>
+<noscript><button type="submit">Show</button></noscript>
+</form>
+{{if $d.Degraded}}<div class="banner warn">The request log file (traffic.db) could not be opened. Live counters work; the log, history ranges and export are off.</div>{{end}}
+<div id="snap"{{if $d.Snap.Live}} hx-get="/traffic/snapshot?site={{$d.Site}}&amp;range={{$d.Range}}" hx-trigger="every 2s" hx-swap="innerHTML"{{end}}>
+{{template "trafficsnap" $d.Snap}}
+</div>
+<article>
+<header>Requests {{helplink "traffic"}}</header>
+<form method="get" action="/traffic" class="filters">
+<input type="hidden" name="site" value="{{$d.Site}}"><input type="hidden" name="range" value="{{$d.Range}}">
+<label>Client <input name="client" value="{{$d.Filter.Client}}" placeholder="203.0.113.5" autocomplete="off"></label>
+<label>Path contains <input name="path" value="{{$d.Filter.Path}}" autocomplete="off"></label>
+<label>Status <input name="status" value="{{$d.Filter.Status}}" inputmode="numeric" size="4"></label>
+<label>Outcome <select name="outcome">
+<option value="">Any</option>
+{{range $o := list "pass" "blocked" "banned" "challenged" "queued" "payment" "ratelimited" "unknown_host"}}<option value="{{$o}}"{{if eq $o $d.Filter.Outcome}} selected{{end}}>{{$o}}</option>{{end}}
+</select></label>
+<button type="submit">Filter</button>
+<a role="button" class="secondary" href="/traffic/export?site={{$d.Site}}&amp;client={{$d.Filter.Client}}&amp;path={{$d.Filter.Path}}&amp;status={{$d.Filter.Status}}&amp;outcome={{$d.Filter.Outcome}}&amp;range={{$d.Range}}">Export CSV</a>
+</form>
+<table>
+<thead><tr><th>Time</th><th>Site</th><th>Client</th><th>Request</th><th>Status</th><th>ms</th><th>Outcome</th></tr></thead>
+<tbody id="rows"{{if $d.Snap.Live}} hx-get="/traffic/rows?site={{$d.Site}}&amp;client={{$d.Filter.Client}}&amp;path={{$d.Filter.Path}}&amp;status={{$d.Filter.Status}}&amp;outcome={{$d.Filter.Outcome}}" hx-trigger="every 3s" hx-swap="innerHTML"{{end}}>
+{{template "trafficrows" $d.Rows}}
+</tbody>
+</table>
+</article>
+{{end}}
+
+{{define "trafficsnap"}}
+{{if .NoData}}<p class="empty">No data for this range yet.</p>{{else}}
+<div class="grid">
+<article><header>{{if .Live}}Last minute{{else}}Range{{end}}</header>
+<p><strong>{{.Stats.Req}}</strong> requests{{if .Live}}, {{printf "%.1f" .Stats.RPS}} per second{{end}}</p>
+{{bar .Stats}}
+<p><small>2xx {{.Stats.S2}} · 3xx {{.Stats.S3}} · 4xx {{.Stats.S4}} · 5xx {{.Stats.S5}}</small></p>
+{{spark .Series}}</article>
+<article><header>Latency</header>
+<p>p50 {{ms .Stats.P50}} · p95 {{ms .Stats.P95}} · p99 {{ms .Stats.P99}}</p>
+<p><small>{{ubytes .Stats.Bytes}} sent</small></p></article>
+<article><header>Protection</header>
+<p>Blocked {{.Stats.Blocked}} · Challenged {{.Stats.Challenged}} · Queued {{.Stats.Queued}}<br>Banned {{.Stats.Banned}} · Paywalled {{.Stats.Paid}} · Rate limited {{.Stats.RateLimited}}{{if .Stats.Unknown}}<br>Unknown host {{.Stats.Unknown}}{{end}}</p>
+<p><small>{{.Bans}} active ban(s){{if .UnderAttack}} · <strong>under-attack mode on</strong>{{end}}{{if .QueueOn}} · queue {{.Queue.Active}} in, {{.Queue.Waiting}} waiting{{end}}{{if .Dropped}} · {{.Dropped}} log rows dropped{{end}}</small></p></article>
+</div>{{end}}
+{{end}}
+
+{{define "trafficrows"}}{{range .}}<tr>
+<td>{{unixts .TS}}</td><td>{{.Site}}</td><td><code>{{.Client}}</code></td><td>{{.Method}} {{.Host}}{{.Path}}{{if .Err}}<br><small class="explain">{{.Err}}</small>{{end}}</td>
+<td>{{.Status}}</td><td>{{.MS}}</td><td>{{.Outcome}}</td></tr>
+{{else}}<tr><td colspan="7">No requests match.</td></tr>{{end}}{{end}}

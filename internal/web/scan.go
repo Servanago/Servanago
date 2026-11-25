@@ -14,22 +14,20 @@ import (
 	"strings"
 	"time"
 
+	"github.com/servanago/servanago/internal/alerts"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/scan"
-	"github.com/servanago/servanago/internal/secretbox"
 	"github.com/servanago/servanago/internal/store"
 )
 
 // scanData is the /scan page.
 type scanData struct {
-	On       bool
-	Socket   string
-	PingErr  string
-	Filter   string
-	Rows     []scanRunRow
-	Hour     string
-	NtfySet  bool
-	TokenSet bool
+	On      bool
+	Socket  string
+	PingErr string
+	Filter  string
+	Rows    []scanRunRow
+	Hour    string
 }
 
 type scanRunRow struct {
@@ -79,7 +77,6 @@ func (s *Server) scanPage(w http.ResponseWriter, r *http.Request) {
 	d := scanData{}
 	if st, err := s.deps.Store.GetSettings(r.Context()); err == nil {
 		d.On, d.Socket, d.Hour = st.ScanSocket != "", st.ScanSocket, strconv.Itoa(st.ScanHour)
-		d.NtfySet, d.TokenSet = st.ScanNtfy != nil, st.ScanNtfyToken != nil
 	}
 	if d.On {
 		pctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
@@ -251,19 +248,7 @@ func (s *Server) notifyHits(ctx context.Context, x store.Site, trigger string, r
 		lines = append(lines, fmt.Sprintf("%s — %s (%s)", h.Path, h.Virus, h.Action))
 	}
 	message := x.Hostnames[0] + ": " + strings.Join(lines, "\n")
-	if st.ScanNtfy != nil {
-		token := ""
-		if st.ScanNtfyToken != nil {
-			if b, err := secretbox.Open(s.deps.Cfg.SecretKey, st.ScanNtfyToken); err == nil {
-				token = string(b)
-			}
-		}
-		if url, err := secretbox.Open(s.deps.Cfg.SecretKey, st.ScanNtfy); err == nil {
-			if err := scan.Notify(ctx, string(url), token, "ServanaGo: virus found in "+x.Hostnames[0], message); err != nil {
-				slog.Warn("scan ntfy", "error", err)
-			}
-		}
-	}
+	s.fireAlert(ctx, alerts.Event{Kind: "scan", Site: x.Slug, Title: "ServanaGo: virus found in " + x.Hostnames[0], Text: strings.Join(lines, "\n")})
 	if st.MailReady() {
 		body := "Virus scanning found " + strconv.Itoa(len(hits)) + " infected file(s) in " + x.Hostnames[0] + " (" + trigger + ", run " + strconv.FormatInt(runID, 10) + "):\n\n" +
 			message + "\n\nOpen the Scan page to restore or ignore them; quarantined files are under " + s.quarantineDir(x.Slug) + ".\n"

@@ -31,6 +31,7 @@
 <option value="frankenphp"{{if eq .Site.Kind "frankenphp"}} selected{{end}}>PHP: a folder with FrankenPHP</option>
 <option value="fastcgi"{{if eq .Site.Kind "fastcgi"}} selected{{end}}>FastCGI: an app you run, over a socket or port</option>
 <option value="cgi"{{if eq .Site.Kind "cgi"}} selected{{end}}>CGI: scripts in cgi-bin run by fcgiwrap</option>
+<option value="page"{{if eq .Site.Kind "page"}} selected{{end}}>Page: a maintenance or parked page, or a redirect</option>
 </select></label>
 {{hintid "kind"}}
 <div data-for="proxy"{{if ne .Site.Kind "proxy"}} hidden{{end}}>
@@ -46,6 +47,8 @@
 <input name="upstream_port" id="upstream_port" type="number" min="1" max="65535" value="{{if .Site.UpstreamPort}}{{.Site.UpstreamPort}}{{end}}" placeholder="9200" required aria-describedby="hint-upstream_port"></label>
 </div>
 {{hintid "scheme"}} {{hintid "upstream_host"}} {{hintid "upstream_port"}}
+<button type="button" class="secondary" hx-post="/sites/check" hx-include="closest [data-for='proxy']" hx-target="#check-result">Check connection</button>
+<div id="check-result" role="status"></div>
 </div>
 <div data-for="static node php frankenphp fastcgi cgi"{{if eq .Site.Kind "proxy"}} hidden{{end}}>
 {{if .UserOffer}}<fieldset>
@@ -105,6 +108,18 @@
 {{if .FCGIWrap.Installed}}<p>fcgiwrap at <code>{{.FCGIWrap.Path}}</code></p>
 <p class="explain">Executable scripts under <code>cgi-bin/</code> in the folder run through fcgiwrap as the site user, started on demand. Everything else is served as a plain file.</p>
 {{else}}<p>fcgiwrap not found on this host. Install it, then reload this form: <code>{{.FCGIWrap.Install}}</code>.</p>{{end}}
+</div>
+<div data-for="page"{{if ne .Site.Kind "page"}} hidden{{end}}>
+<div class="grid">
+<label>Status <input name="page_status" type="number" min="200" max="599" value="{{.Page.Status}}" aria-describedby="hint-page_status"></label>
+<label>Target (redirects only: 301, 302, 303, 307, 308) <input name="page_target" value="{{.Page.Target}}" placeholder="https://www.example.com" autocomplete="off"></label>
+</div>
+{{hintid "page_status"}}
+<label><input type="checkbox" name="page_keep_path"{{if .Page.KeepPath}} checked{{end}}> Keep the path and query when redirecting</label>
+<label>Title <input name="page_title" value="{{.Page.Title}}" placeholder="Back soon" maxlength="200" autocomplete="off"></label>
+<label>Message <textarea name="page_message" rows="2" maxlength="2000" placeholder="We are doing maintenance.">{{.Page.Message}}</textarea></label>
+<label>Your own HTML (up to 64 KB; replaces the title and message) <textarea name="page_html" rows="5" spellcheck="false" aria-describedby="hint-page_html">{{.Page.HTML}}</textarea></label>
+{{hintid "page_html"}}
 </div>
 <div data-for="php"{{if ne .Site.Kind "php"}} hidden{{end}}>
 {{if .PHPVersions}}<label>php-fpm version

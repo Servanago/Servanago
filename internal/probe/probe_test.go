@@ -3,6 +3,7 @@ package probe
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"strconv"
 	"sync"
@@ -281,5 +282,36 @@ func TestUpstreamAddrBracketsIPv6(t *testing.T) {
 		if got := upstreamAddr(store.Site{UpstreamHost: host, UpstreamPort: 8989}); got != want {
 			t.Errorf("%q: got %q, want %q", host, got, want)
 		}
+	}
+}
+
+// A failover backend that dies is reported once, and its recovery is reported on its own.
+func TestWatchBackendsReportsTransitions(t *testing.T) {
+	st, err := store.Open(":memory:")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	m := NewMonitor(st, "127.0.0.1:1")
+	down := map[string]bool{"10.0.0.2:9000": true}
+	m.Dial = func(_ context.Context, addr string, _ time.Duration) error {
+		if down[addr] {
+			return errors.New("refused")
+		}
+		return nil
+	}
+	g := store.DefaultGuard()
+	g.Backends = "10.0.0.2:9000"
+	sites := []store.Site{{Slug: "s", Kind: "proxy", Enabled: true, UpstreamHost: "10.0.0.1", UpstreamPort: 9000, Guard: &g},
+		{Slug: "plain", Kind: "proxy", Enabled: true, UpstreamHost: "10.0.0.9", UpstreamPort: 1, Guard: &store.SiteGuard{}}}
+	var got []string
+	note := func(slug, addr string, up bool) { got = append(got, fmt.Sprintf("%s %s %v", slug, addr, up)) }
+	m.WatchBackends(context.Background(), sites, note) // first sighting of a dead backend
+	m.WatchBackends(context.Background(), sites, note) // still dead: silent
+	down["10.0.0.2:9000"] = false
+	m.WatchBackends(context.Background(), sites, note) // back
+	want := []string{"s 10.0.0.2:9000 false", "s 10.0.0.2:9000 true"}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("got %v, want %v", got, want)
 	}
 }

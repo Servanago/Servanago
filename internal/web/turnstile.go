@@ -2,22 +2,14 @@ package web
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"fmt"
 	"net"
 	"net/http"
-	"net/url"
 	"strings"
-	"time"
+
+	"github.com/servanago/servanago/internal/turnstile"
 )
 
-const turnstileURL = "https://challenges.cloudflare.com/turnstile/v0/siteverify"
-
-var errCaptcha = errors.New("captcha verification failed")
-
-// turnstileVerifier checks Cloudflare Turnstile tokens. Tokens are single use. It fails closed:
-// any network, decode or non-success outcome rejects.
+// turnstileVerifier checks Cloudflare Turnstile tokens for the panel's login (action "login"); the call itself is internal/turnstile.
 type turnstileVerifier struct {
 	secret, hostname, url string
 }
@@ -44,36 +36,5 @@ func (s *Server) turnstileOn(r *http.Request) bool {
 }
 
 func (t turnstileVerifier) Verify(ctx context.Context, token, ip string) error {
-	if token == "" {
-		return errCaptcha
-	}
-	endpoint := t.url
-	if endpoint == "" {
-		endpoint = turnstileURL
-	}
-	form := url.Values{"secret": {t.secret}, "response": {token}, "remoteip": {ip}}
-	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(form.Encode()))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	res, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("turnstile siteverify: %w", err)
-	}
-	defer res.Body.Close()
-	var out struct {
-		Success  bool   `json:"success"`
-		Hostname string `json:"hostname"`
-		Action   string `json:"action"`
-	}
-	if res.StatusCode != http.StatusOK || json.NewDecoder(res.Body).Decode(&out) != nil {
-		return fmt.Errorf("turnstile siteverify: status %d", res.StatusCode)
-	}
-	if !out.Success || out.Action != "login" || !strings.EqualFold(out.Hostname, t.hostname) {
-		return errCaptcha
-	}
-	return nil
+	return turnstile.Verify(ctx, t.url, t.secret, token, ip, "login", t.hostname)
 }

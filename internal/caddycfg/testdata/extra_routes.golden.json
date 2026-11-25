@@ -46,52 +46,69 @@
                     {
                       "handle": [
                         {
-                          "handler": "reverse_proxy",
-                          "upstreams": [
-                            {
-                              "dial": "127.0.0.1:3303"
-                            }
-                          ]
+                          "handler": "servanago_traffic",
+                          "site": ""
                         }
-                      ],
-                      "match": [
-                        {
-                          "path": [
-                            "/cryptpad_websocket",
-                            "/cryptpad_websocket/*"
-                          ]
-                        }
-                      ],
-                      "terminal": true
+                      ]
                     },
                     {
                       "handle": [
                         {
-                          "handler": "reverse_proxy",
-                          "upstreams": [
+                          "handler": "subroute",
+                          "routes": [
                             {
-                              "dial": "unix//run/api.sock"
-                            }
-                          ]
-                        }
-                      ],
-                      "match": [
-                        {
-                          "path": [
-                            "/api",
-                            "/api/*"
-                          ]
-                        }
-                      ],
-                      "terminal": true
-                    },
-                    {
-                      "handle": [
-                        {
-                          "handler": "reverse_proxy",
-                          "upstreams": [
+                              "handle": [
+                                {
+                                  "handler": "reverse_proxy",
+                                  "upstreams": [
+                                    {
+                                      "dial": "127.0.0.1:3303"
+                                    }
+                                  ]
+                                }
+                              ],
+                              "match": [
+                                {
+                                  "path": [
+                                    "/cryptpad_websocket",
+                                    "/cryptpad_websocket/*"
+                                  ]
+                                }
+                              ],
+                              "terminal": true
+                            },
                             {
-                              "dial": "192.168.1.20:8989"
+                              "handle": [
+                                {
+                                  "handler": "reverse_proxy",
+                                  "upstreams": [
+                                    {
+                                      "dial": "unix//run/api.sock"
+                                    }
+                                  ]
+                                }
+                              ],
+                              "match": [
+                                {
+                                  "path": [
+                                    "/api",
+                                    "/api/*"
+                                  ]
+                                }
+                              ],
+                              "terminal": true
+                            },
+                            {
+                              "handle": [
+                                {
+                                  "handler": "reverse_proxy",
+                                  "upstreams": [
+                                    {
+                                      "dial": "192.168.1.20:8989"
+                                    }
+                                  ]
+                                }
+                              ]
                             }
                           ]
                         }
@@ -105,6 +122,23 @@
                   "host": [
                     "sonarr.example.com"
                   ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "servanago_traffic",
+                  "site": "",
+                  "unknown": true
+                },
+                {
+                  "handler": "servanago_ban"
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": "404"
                 }
               ],
               "terminal": true

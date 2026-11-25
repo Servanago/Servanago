@@ -148,9 +148,9 @@ func parseSiteFor(v url.Values, cfg config.Config, fixed string) (store.Site, us
 		r.Kind = "proxy"
 	}
 	switch r.Kind {
-	case "proxy", "static", "node", "php", "frankenphp", "fastcgi", "cgi":
+	case "proxy", "static", "node", "php", "frankenphp", "fastcgi", "cgi", "page":
 	default:
-		return r, uc, fmt.Errorf("kind %q must be proxy, static, node, php, frankenphp, fastcgi or cgi", r.Kind)
+		return r, uc, fmt.Errorf("kind %q must be proxy, static, node, php, frankenphp, fastcgi, cgi or page", r.Kind)
 	}
 	if r.Hostnames, err = parseHostnames(v.Get("hostnames")); err != nil {
 		return r, uc, err
@@ -208,6 +208,8 @@ func parseKind(r store.Site, v url.Values, cfg config.Config, uc userChoice) (st
 		if r.UpstreamHost, r.UpstreamPort, err = parseFCGIAddr(v.Get("fcgi_addr")); err != nil {
 			return r, err
 		}
+	case "page": // a status page or a redirect: no upstream, no folder, nothing to run
+		r.Scheme = "http"
 	case "cgi":
 		if r.StaticRoot, err = rootFor("cgi", v, cfg, uc); err != nil {
 			return r, err
@@ -519,8 +521,15 @@ func (s *Server) readSiteForm(r *http.Request, base store.Site) (store.Site, []s
 	if err := applyControls(&base, r.PostForm); err != nil {
 		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
 	}
+	ensureGuard(&base) // a created site saves the defaults, and a page site its page
+	if err := s.applyProtection(&base, r.PostForm); err != nil {
+		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
+	}
+	if err := applyPage(&base, r.PostForm); err != nil {
+		return base, nil, userError{http.StatusUnprocessableEntity, err.Error()}
+	}
 	base.Enabled = in.Enabled
-	if base.Kind == "static" || base.Kind == "php" || base.Kind == "fastcgi" || base.Kind == "cgi" {
+	if base.Kind == "static" || base.Kind == "php" || base.Kind == "fastcgi" || base.Kind == "cgi" || base.Kind == "page" {
 		base.Stream, base.MaxBody = false, 0
 	}
 	if err := s.applyGateMail(&base, r.PostForm); err != nil {
@@ -772,9 +781,10 @@ type siteEditForm struct {
 	Node        runtimes.NodeReport
 	Franken     runtimes.FrankenReport
 	FCGIWrap    runtimes.FCGIWrapReport
-	Unit        *unitPanel   // node and php sites: state and journal tail; nil otherwise
-	UserOffer   bool         // a new site and the helper answers: offer to run it as a user
-	Snippets    []snippetOpt // every snippet and whether this site has it attached
+	Unit        *unitPanel     // node and php sites: state and journal tail; nil otherwise
+	UserOffer   bool           // a new site and the helper answers: offer to run it as a user
+	Snippets    []snippetOpt   // every snippet and whether this site has it attached
+	Page        store.SitePage // kind page: the status or redirect settings (defaults on a new site)
 }
 
 type snippetOpt struct {
@@ -845,6 +855,10 @@ func (s *Server) siteEditPage(w http.ResponseWriter, r *http.Request, rt store.S
 		MailOK: s.gateUsable(), ServerIP: s.deps.Cfg.HostIP, PHPVersions: phpVersionOpts(rep.PHP, rt.FPMVersion), PHPExt: extOptsIn(rt.PHPExtensions, pinnedBuild(rep, rt.FPMVersion)), Node: rep.Node, Franken: rep.Franken, FCGIWrap: rep.FCGIWrap}
 	if form.Site.Kind == "" {
 		form.Site.Kind = "proxy"
+	}
+	form.Page = rt.Page
+	if form.Page.Status == 0 {
+		form.Page = store.DefaultPage()
 	}
 	form.UserOffer = !edit && s.helperUp(r.Context())
 	if all, err := s.deps.Store.ListSnippets(r.Context()); err == nil {

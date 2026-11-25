@@ -46,26 +46,43 @@
                     {
                       "handle": [
                         {
-                          "handler": "static_response",
-                          "status_code": "404"
+                          "handler": "servanago_traffic",
+                          "site": "blog"
                         }
-                      ],
-                      "match": [
-                        {
-                          "path_regexp": {
-                            "pattern": "(^|/)\\."
-                          }
-                        }
-                      ],
-                      "terminal": true
+                      ]
                     },
                     {
                       "handle": [
                         {
-                          "handler": "reverse_proxy",
-                          "upstreams": [
+                          "handler": "subroute",
+                          "routes": [
                             {
-                              "dial": "unix//run/servanago/blog.sock"
+                              "handle": [
+                                {
+                                  "handler": "static_response",
+                                  "status_code": "404"
+                                }
+                              ],
+                              "match": [
+                                {
+                                  "path_regexp": {
+                                    "pattern": "(^|/)\\."
+                                  }
+                                }
+                              ],
+                              "terminal": true
+                            },
+                            {
+                              "handle": [
+                                {
+                                  "handler": "reverse_proxy",
+                                  "upstreams": [
+                                    {
+                                      "dial": "unix//run/servanago/blog.sock"
+                                    }
+                                  ]
+                                }
+                              ]
                             }
                           ]
                         }
@@ -79,6 +96,23 @@
                   "host": [
                     "sonarr.example.com"
                   ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "servanago_traffic",
+                  "site": "",
+                  "unknown": true
+                },
+                {
+                  "handler": "servanago_ban"
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": "404"
                 }
               ],
               "terminal": true

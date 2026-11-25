@@ -130,6 +130,10 @@ func run() error {
 			slog.Warn("waf event write failed", "error", err)
 		}
 	})
+	rt := wireGuard(cfg, st) // the guard registry is installed before Caddy loads a config that names its modules
+	if rt.Traffic != nil {
+		defer rt.Traffic.Close()
+	}
 	svc := apply.New(st, caddycfg.Options{
 		UIHost: cfg.Host, UIUpstream: uiUpstream, Email: cfg.ACMEEmail, Staging: cfg.Staging,
 		HTTPPort: cfg.HTTPPort, HTTPSPort: cfg.HTTPSPort, StoragePath: filepath.Join(cfg.DataDir, "caddy"),
@@ -152,8 +156,13 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	rt.start(ctx)
 	mon := probe.NewMonitor(st, net.JoinHostPort("127.0.0.1", strconv.Itoa(cfg.HTTPSPort)))
 	mon.LogError = caddylog.Sink.LastError
+	mon.OnBackend = func(slug, addr string, up bool) {
+		word := map[bool]string{true: "is back up", false: "is down"}[up]
+		rt.Svc.AlertKeyed("backend", slug, addr+word, "Backend "+addr+" "+word)
+	}
 	go mon.Run(ctx, 30*time.Second)
 	// Cloudflare is optional: with no token there is no zone lookup and no DNS sync, and certificates use the default ACME challenges.
 	var cf *cfdns.Client
@@ -179,7 +188,8 @@ func run() error {
 	if cfg.MCPToken != "" && !cfg.MCPPublic {
 		slog.Info("MCP is local only: https://" + cfg.Host + "/mcp answers 404; set SERVANAGO_MCP_PUBLIC=true to allow remote clients (the stdio relay `servanago mcp` works without it)")
 	}
-	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dns, Probe: mon, Logs: caddylog.Sink})
+	ui := web.New(web.Deps{Cfg: cfg, Store: st, Apply: svc, CF: cf, DNS: dns, Probe: mon, Logs: caddylog.Sink,
+		Guard: rt.Svc, Traffic: rt.Traffic, Alerts: rt.Sender})
 	ui.ShareGeo(gdb, settings) // the panel guard reuses the same reader and starts with the row's rule
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)

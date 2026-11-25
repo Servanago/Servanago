@@ -1,6 +1,6 @@
-# Design: Corvus-inspired protection, observability and proxy extras (target 0.21.0)
+# Design: Corvus-inspired protection, observability and proxy extras (target 0.22.0)
 
-Status: design v2, 2026-11-25. Requirements settled; analysis corrections and ponytail cuts applied. Not implemented.
+Status: design v2, 2026-11-25. Implemented on branch m13-guard in one pass (release 0.22.0); where the build departs from this text, the code and docs/sites.md win: the Protection tab is a site tab (not a section of the main form) with paywall rows as one line each, the x402 settle happens before the first byte of a success response, Twilio targets are written from,to, the observer is a response-writer wrapper (no native-log spike), and the traffic.db schema carries a version number.
 Related: `requirements_corvus_features.md` (what and why), `analysis_corvus_design.md` (findings A/B/C against existing code, tags below), `docs/ROADMAP.md` M13.
 Code reviewed with codegraph: `caddycfg.siteHandler`, `caddygeoip`, `caddygate`, `caddywaf` (owned Coraza module, in-process rate limit, `waf_events`), `caddylog.Ring`, `probe.Monitor`, `web` layout, migrations 001–012 (user_version 12). Corvus reference: `gateway/lua/corvus/{rules,waitroom,underattack,challenge}.lua`, `control/internal/{live,autoban,underattack,alerts}`.
 
@@ -273,7 +273,7 @@ Reuse existing handlers through `mcpRun`; `formOf` (`internal/web/mcp.go`) gains
 
 **[P]** Tools (11; verbs already in `toolLike`, no regex change): `get_traffic` (includes queue and ban counts), `list_requests`, `list_bans`, `create_ban`, `delete_ban`, `set_under_attack`, `set_queue_release`, `list_alert_destinations`, `create_alert_destination`, `delete_alert_destination`, `run_upstream_check`. Every name must appear in `skills/servanago-sites/SKILL.md` (`TestAgentSkillsMatchTheMCPTools`). No settings tools: global guard settings are UI only until asked.
 
-Docs updated at release only (shipped-behavior docs would be wrong before): `docs/sites.md`, `docs/mcp.md`, `llms.txt`, README feature line, `docs/ROADMAP.md`, SKILL.md "since 0.21.0", `docs/RELEASING.md` version places (control, build-deb.sh, install.sh, README, docs/install.md, packaging_test.go, plugin.json, llms.txt). NOTICE unchanged (no new dependency).
+Docs updated at release only (shipped-behavior docs would be wrong before): `docs/sites.md`, `docs/mcp.md`, `llms.txt`, README feature line, `docs/ROADMAP.md`, SKILL.md "since 0.22.0", `docs/RELEASING.md` version places (control, build-deb.sh, install.sh, README, docs/install.md, packaging_test.go, plugin.json, llms.txt). NOTICE unchanged (no new dependency).
 
 ## 14. Security notes
 
@@ -308,7 +308,7 @@ Docs updated at release only (shipped-behavior docs would be wrong before): `doc
 7. Proxy extras (failover, page/redirect kind, check-connection).
 8. x402 (WAF vars, facilitator client, module, UI, docs warning).
 9. Protection section on the site form, remaining pages polish.
-10. MCP tools, docs, skill, version bump to 0.21.0, release notes (dropped: certificate alerts, queue fail modes, Telegram/Teams, SSE, `/metrics`).
+10. MCP tools, docs, skill, version bump to 0.22.0, release notes (dropped: certificate alerts, queue fail modes, Telegram/Teams, SSE, `/metrics`).
 
 Each step: failing test first, `make check` (single run, CLAUDE.md local-machine notes), commit on the feature branch; fast-forward `main` only at the end. Deploy to v1 only when asked, with the standard pre-upgrade DB copy; migration 013 rebuilds `sites`, so rehearse on a bee copy through a real Store first.
 

@@ -41,10 +41,27 @@
             {
               "handle": [
                 {
-                  "handler": "reverse_proxy",
-                  "upstreams": [
+                  "handler": "subroute",
+                  "routes": [
                     {
-                      "dial": "192.168.1.20:8989"
+                      "handle": [
+                        {
+                          "handler": "servanago_traffic",
+                          "site": ""
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [
+                            {
+                              "dial": "192.168.1.20:8989"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }
@@ -61,10 +78,27 @@
             {
               "handle": [
                 {
-                  "handler": "reverse_proxy",
-                  "upstreams": [
+                  "handler": "subroute",
+                  "routes": [
                     {
-                      "dial": "192.168.1.20:8989"
+                      "handle": [
+                        {
+                          "handler": "servanago_traffic",
+                          "site": ""
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [
+                            {
+                              "dial": "192.168.1.20:8989"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }
@@ -81,10 +115,27 @@
             {
               "handle": [
                 {
-                  "handler": "reverse_proxy",
-                  "upstreams": [
+                  "handler": "subroute",
+                  "routes": [
                     {
-                      "dial": "192.168.1.20:8989"
+                      "handle": [
+                        {
+                          "handler": "servanago_traffic",
+                          "site": ""
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "reverse_proxy",
+                          "upstreams": [
+                            {
+                              "dial": "192.168.1.20:8989"
+                            }
+                          ]
+                        }
+                      ]
                     }
                   ]
                 }
@@ -94,6 +145,23 @@
                   "host": [
                     "sonarr.example.com"
                   ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "servanago_traffic",
+                  "site": "",
+                  "unknown": true
+                },
+                {
+                  "handler": "servanago_ban"
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": "404"
                 }
               ],
               "terminal": true

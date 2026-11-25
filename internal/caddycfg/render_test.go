@@ -316,7 +316,9 @@ func TestFrankenPHPBlocksDotfilesBeforeProxy(t *testing.T) {
 		case map[string]any:
 			if routes, ok := x["routes"].([]any); ok && len(routes) == 2 && strings.Contains(fmt.Sprint(routes[1]), "127.0.0.1:8100") && routes[1].(map[string]any)["match"] == nil {
 				first, _ := routes[0].(map[string]any)
-				return first["terminal"] == true && strings.Contains(fmt.Sprint(first["match"]), `(^|/)\.`) && strings.Contains(fmt.Sprint(first["handle"]), "404")
+				if strings.Contains(fmt.Sprint(first["match"]), `(^|/)\.`) { // the observer's own two-route wrapper is not the one under test
+					return first["terminal"] == true && strings.Contains(fmt.Sprint(first["handle"]), "404")
+				}
 			}
 			for _, c := range x {
 				if walk(c) {
@@ -434,6 +436,9 @@ func TestDisabledSiteServesMaintenance(t *testing.T) {
 	}
 	got := map[string]map[string]any{}
 	for _, r := range cfg.Apps.HTTP.Servers["srv0"].Routes {
+		if len(r.Match) == 0 { // the catch-all for unknown hosts
+			continue
+		}
 		got[r.Match[0].Host[0]] = r.Handle[0]
 	}
 	for _, h := range []string{"sonarr.example.com", "tv.example.com", "ml.sonarr.example.com"} {
@@ -462,6 +467,12 @@ func TestGeoLeadsTheChain(t *testing.T) {
 		switch x := v.(type) {
 		case map[string]any:
 			if routes, ok := x["routes"].([]any); ok && len(routes) >= 2 {
+				if lead, _ := routes[0].(map[string]any); strings.Contains(fmt.Sprint(lead["handle"]), "servanago_traffic") {
+					routes = routes[1:] // the observer leads every site; the order under test follows it
+				}
+				if len(routes) < 2 {
+					break
+				}
 				first, _ := routes[0].(map[string]any)
 				h0, _ := first["handle"].([]any)
 				if len(h0) == 1 && strings.Contains(fmt.Sprint(h0[0]), "servanago_geoip") &&

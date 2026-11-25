@@ -46,6 +46,23 @@
                     {
                       "handle": [
                         {
+                          "allow": [
+                            "2001:db8::/32",
+                            "fd00::/8",
+                            "192.168.0.0/16"
+                          ],
+                          "handler": "servanago_traffic",
+                          "site": ""
+                        }
+                      ]
+                    },
+                    {
+                      "handle": [
+                        {
+                          "handler": "vars",
+                          "sg_outcome": "blocked"
+                        },
+                        {
                           "handler": "static_response",
                           "status_code": "403"
                         }
@@ -87,6 +104,23 @@
                   "host": [
                     "sonarr.example.com"
                   ]
+                }
+              ],
+              "terminal": true
+            },
+            {
+              "handle": [
+                {
+                  "handler": "servanago_traffic",
+                  "site": "",
+                  "unknown": true
+                },
+                {
+                  "handler": "servanago_ban"
+                },
+                {
+                  "handler": "static_response",
+                  "status_code": "404"
                 }
               ],
               "terminal": true

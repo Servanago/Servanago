@@ -77,7 +77,7 @@ func (s *Server) unitState(ctx context.Context, rt store.Site) (string, error) {
 
 // folderErr is the check the edit page makes: Caddy (or the app's user) must be able to enter the folder.
 func folderErr(rt store.Site) error {
-	if rt.Kind == "proxy" || rt.Kind == "static" && rt.SiteUser != "" { // a user's static site is read by its own unit
+	if rt.Kind == "proxy" || rt.Kind == "page" || rt.Kind == "static" && rt.SiteUser != "" { // a user's static site is read by its own unit
 		return nil
 	}
 	return config.StaticRootReadable(rt.WebRoot())

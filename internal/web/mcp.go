@@ -63,7 +63,7 @@ func (s *Server) mcpHandler() http.Handler {
 // value on update and its default on create. Access controls (gate, basic auth, upload limit) are not
 // settable here and are preserved.
 type siteArgs struct {
-	Kind          string    `json:"kind,omitempty" jsonschema:"proxy | static | node | php | frankenphp | fastcgi | cgi"`
+	Kind          string    `json:"kind,omitempty" jsonschema:"proxy | static | node | php | frankenphp | fastcgi | cgi | page"`
 	Hostnames     []string  `json:"hostnames,omitempty" jsonschema:"the first is the main address"`
 	StaticRoot    string    `json:"static_root,omitempty" jsonschema:"absolute folder (static, node, php, frankenphp, fastcgi, cgi)"`
 	Scheme        string    `json:"scheme,omitempty" jsonschema:"proxy: http or https"`
@@ -91,6 +91,7 @@ type siteArgs struct {
 	RLWindow      *string   `json:"rl_window,omitempty" jsonschema:"rate limit window: 1m | 5m | 1h"`
 	RLPaths       *string   `json:"rl_paths,omitempty" jsonschema:"rate limit scope: one path prefix per line (/login); \"\" = the whole site; leaving it out keeps the stored ones"`
 	Notes         *string   `json:"notes,omitempty" jsonschema:"admin notes shown on the Reference page, plain text, at most 10,000 characters; \"\" clears them, leaving it out keeps the stored ones"`
+	guardArgs
 }
 
 // overlay writes the fields the client set over v.
@@ -114,6 +115,7 @@ func (a siteArgs) overlay(v url.Values) {
 			v.Del(k)
 		}
 	}
+	a.overlayGuard(v)
 	str("kind", a.Kind)
 	if len(a.Hostnames) > 0 {
 		v.Set("hostnames", strings.Join(a.Hostnames, "\n"))
@@ -228,6 +230,7 @@ func (s *Server) formOf(ctx context.Context, cur store.Site) url.Values {
 	v.Set("gate_smtp_port", strconv.Itoa(cur.GateSMTPPort))
 	v.Set("gate_smtp_user", cur.GateSMTPUser)
 	v.Set("basic_user", cur.BasicUser)
+	setProtectionForm(v, cur)
 	v.Set("record_ip", cur.RecordIP)
 	v.Set("record_ip6", cur.RecordIP6)
 	if cur.MaxBody > 0 {
@@ -292,33 +295,34 @@ func (s *Server) mcpAnswer(w *httptest.ResponseRecorder) (warnings []string, err
 }
 
 type siteView struct {
-	ID            int64     `json:"id"`
-	Slug          string    `json:"slug"`
-	Kind          string    `json:"kind"`
-	Hostnames     []string  `json:"hostnames"`
-	Enabled       bool      `json:"enabled"`
-	StaticRoot    string    `json:"static_root,omitempty"`
-	Upstream      string    `json:"upstream,omitempty"`
-	StartCommand  string    `json:"start_command,omitempty"`
-	FPMVersion    string    `json:"fpm_version,omitempty"`
-	Allowlist     string    `json:"allowlist,omitempty"`
-	CountryMode   string    `json:"country_mode,omitempty"`
-	Countries     string    `json:"countries,omitempty"`
-	Waf           string    `json:"waf,omitempty"`
-	WafMode       string    `json:"waf_mode,omitempty"`
-	WafDirectives string    `json:"waf_directives,omitempty"`
-	RLRequests    int64     `json:"rl_requests,omitempty"`
-	RLWindow      string    `json:"rl_window,omitempty"`
-	RLPaths       string    `json:"rl_paths,omitempty"`
-	GateMode      string    `json:"gate_mode,omitempty"`
-	BasicAuth     bool      `json:"basic_auth"`
-	Snippets      []string  `json:"snippets,omitempty"`
-	Notes         string    `json:"notes,omitempty"`
-	ExtraRoutes   string    `json:"extra_routes,omitempty"`
-	RecordIP      string    `json:"record_ip,omitempty"`
-	RecordIPv6    string    `json:"record_ip6,omitempty"`
-	DNS           []dnsView `json:"dns,omitempty"`
-	UpdatedAt     string    `json:"updated_at,omitempty"`
+	ID            int64           `json:"id"`
+	Slug          string          `json:"slug"`
+	Kind          string          `json:"kind"`
+	Hostnames     []string        `json:"hostnames"`
+	Enabled       bool            `json:"enabled"`
+	StaticRoot    string          `json:"static_root,omitempty"`
+	Upstream      string          `json:"upstream,omitempty"`
+	StartCommand  string          `json:"start_command,omitempty"`
+	FPMVersion    string          `json:"fpm_version,omitempty"`
+	Allowlist     string          `json:"allowlist,omitempty"`
+	CountryMode   string          `json:"country_mode,omitempty"`
+	Countries     string          `json:"countries,omitempty"`
+	Waf           string          `json:"waf,omitempty"`
+	WafMode       string          `json:"waf_mode,omitempty"`
+	WafDirectives string          `json:"waf_directives,omitempty"`
+	RLRequests    int64           `json:"rl_requests,omitempty"`
+	RLWindow      string          `json:"rl_window,omitempty"`
+	RLPaths       string          `json:"rl_paths,omitempty"`
+	GateMode      string          `json:"gate_mode,omitempty"`
+	BasicAuth     bool            `json:"basic_auth"`
+	Snippets      []string        `json:"snippets,omitempty"`
+	Notes         string          `json:"notes,omitempty"`
+	ExtraRoutes   string          `json:"extra_routes,omitempty"`
+	RecordIP      string          `json:"record_ip,omitempty"`
+	RecordIPv6    string          `json:"record_ip6,omitempty"`
+	DNS           []dnsView       `json:"dns,omitempty"`
+	Protection    *protectionView `json:"protection,omitempty"`
+	UpdatedAt     string          `json:"updated_at,omitempty"`
 }
 
 // dnsView is one DNS record's sync state: what the dashboard shows per hostname.
@@ -339,6 +343,7 @@ func viewOf(x store.Site) siteView {
 	v := siteView{ID: x.ID, Slug: x.Slug, Kind: x.Kind, Hostnames: x.Hostnames, Enabled: x.Enabled, StaticRoot: x.StaticRoot,
 		StartCommand: x.StartCommand, FPMVersion: x.FPMVersion, Allowlist: x.Allowlist, GateMode: x.GateMode, BasicAuth: x.BasicUser != "", Snippets: x.Snippets, Notes: x.Notes, ExtraRoutes: x.ExtraRoutes, RecordIP: x.RecordIP, RecordIPv6: x.RecordIP6, UpdatedAt: x.UpdatedAt,
 		CountryMode: x.CountryMode, Countries: x.Countries, Waf: x.Waf, WafMode: x.WafMode, WafDirectives: x.WafDirectives, RLRequests: x.RLRequests, RLWindow: x.RLWindow, RLPaths: x.RLPaths}
+	v.Protection = protectionOf(x)
 	switch {
 	case x.UpstreamPort != 0:
 		v.Upstream = net.JoinHostPort(x.UpstreamHost, strconv.Itoa(x.UpstreamPort))
@@ -971,6 +976,7 @@ func (s *Server) mcpServer(ip string) *mcp.Server {
 		})
 	s.addMailTools(srv, ip, ro)
 	s.addBackupTools(srv, ip, ro)
+	s.addGuardTools(srv, ip, ro)
 	s.addUpdateTools(srv, ip, ro)
 	return srv
 }

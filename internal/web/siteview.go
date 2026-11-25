@@ -27,11 +27,11 @@ import (
 // that called it (backOf in auth.go).
 
 // siteTabs are the tab paths under /sites/<id>/; the rail lists Settings first (that path redirects here).
-var siteTabs = []string{"dns", "ssl", "scan", "backups", "mail", "snippets", "runtime", "gate", "routes", "countries", "waf"}
+var siteTabs = []string{"dns", "ssl", "scan", "backups", "mail", "snippets", "runtime", "gate", "routes", "countries", "waf", "protection"}
 
 var siteTabTitle = map[string]string{
 	"dns": "DNS", "ssl": "SSL", "scan": "Virus scanning", "backups": "Backups", "mail": "Mail",
-	"snippets": "Snippets", "runtime": "Runtime", "gate": "Gate", "routes": "Routes", "countries": "Countries", "waf": "WAF",
+	"snippets": "Snippets", "runtime": "Runtime", "gate": "Gate", "routes": "Routes", "countries": "Countries", "waf": "WAF", "protection": "Protection",
 }
 
 // siteTabPage serves one tab of the site view.
@@ -91,6 +91,8 @@ type siteViewData struct {
 	WafEvents   []store.WafEvent     // the WAF tab's newest matches, newest first
 	WafAggs     []store.WafEventRule // per-rule counts of the last 24 hours, loudest first
 	WafExcl     []store.WafExclusion // the site's exclusion rows, removes before narrows
+	X402Text    string               // the protection tab: paywall rows as the textarea shows them
+	Dests       []destOpt            // alert destinations, with this site's picks ticked
 }
 
 func (s *Server) siteViewPage(w http.ResponseWriter, r *http.Request, rt store.Site, tab string) {
@@ -106,6 +108,10 @@ func (s *Server) siteViewPage(w http.ResponseWriter, r *http.Request, rt store.S
 		}
 		d.WafExcl = rt.Exclusions
 	}
+	if tab == "protection" {
+		d.X402Text = x402Text(rt.X402)
+		d.Dests = s.destOptions(r.Context(), rt.AlertDests)
+	}
 	if st, err := s.deps.Store.GetSettings(r.Context()); err == nil {
 		d.GeoOn, d.ScanOn = st.GeoDB != "", st.ScanSocket != ""
 	}
@@ -113,7 +119,7 @@ func (s *Server) siteViewPage(w http.ResponseWriter, r *http.Request, rt store.S
 		d.SetSched = set.Sched
 		if sb, err := s.deps.Store.GetSiteBackup(r.Context(), rt.ID); err == nil {
 			last, lastOK, _ := s.deps.Store.LastRuns(r.Context())
-			d.Backup = s.scopeOf(s.auth.now(), set, last, lastOK, rt.Slug, rt.Hostnames[0], rt.ID, sb, false, rt.Kind != "" && rt.Kind != "proxy")
+			d.Backup = s.scopeOf(s.auth.now(), set, last, lastOK, rt.Slug, rt.Hostnames[0], rt.ID, sb, false, rt.Kind != "" && rt.Kind != "proxy" && rt.Kind != "page")
 			d.BackHas = true
 		}
 		if rs, err := s.deps.Store.ListRuns(r.Context(), rt.Slug, 10); err == nil {

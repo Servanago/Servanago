@@ -63,6 +63,10 @@ func (m *Middleware) ServeHTTP(w http.ResponseWriter, r *http.Request, next cadd
 		}
 	}
 
+	if len(tx.MatchedRules()) > 0 { // a rule matched (detect mode or below the block threshold): the paywall reads this as a bot signal
+		caddyhttp.SetVar(r.Context(), "sg_waf_flagged", true)
+	}
+
 	ww, processResponse := wrap(w, r, tx)
 	err := next.ServeHTTP(ww, r)
 	if err == nil {
