@@ -71,9 +71,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request, next caddyht
 	return next.ServeHTTP(w, r)
 }
 
-// cloudflareRanges are the address ranges https://www.cloudflare.com/ips-v4 + ips-v6 publish.
+// CloudflareRanges are the address ranges https://www.cloudflare.com/ips-v4 + ips-v6 publish; the
+// rendered server also trusts them for client_ip (caddycfg).
 // ponytail: fixed list, refresh when Cloudflare announces new ranges.
-var cloudflareRanges = []string{
+var CloudflareRanges = []string{
 	"173.245.48.0/20", "103.21.244.0/22", "103.22.200.0/22", "103.31.4.0/22",
 	"141.101.64.0/18", "108.162.192.0/18", "190.93.240.0/20", "188.114.96.0/20",
 	"197.234.240.0/22", "198.41.128.0/17", "162.158.0.0/15", "104.16.0.0/13",
@@ -86,6 +87,14 @@ var cloudflareRanges = []string{
 // RFC1918/ULA or CGNAT (GeoLite2 has no entry for those) and a Cloudflare peer without the
 // header (its own address names a Cloudflare node, not a client).
 func clientOf(r *http.Request) (netip.Addr, bool) {
+	// Inside Caddy the server's trusted_proxies already resolved the visitor into client_ip; a
+	// Cloudflare node left there means no header arrived. The code below serves callers without it.
+	if v, ok := caddyhttp.GetVar(r.Context(), caddyhttp.ClientIPVarKey).(string); ok {
+		if ip, err := netip.ParseAddr(v); err == nil {
+			ok := !inCloudflare(ip) && !ip.IsLoopback() && !ip.IsPrivate() && !ip.IsLinkLocalUnicast() && !cfNat(ip) && ip.IsGlobalUnicast()
+			return ip, ok
+		}
+	}
 	remote, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return netip.Addr{}, false
@@ -118,7 +127,7 @@ func cfNat(ip netip.Addr) bool {
 }
 
 func inCloudflare(ip netip.Addr) bool {
-	for _, c := range cloudflareRanges {
+	for _, c := range CloudflareRanges {
 		if g, err := netip.ParsePrefix(c); err == nil && g.Contains(ip) {
 			return true
 		}

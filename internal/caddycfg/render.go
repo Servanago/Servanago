@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/servanago/servanago/internal/caddygeoip"
 	"github.com/servanago/servanago/internal/caddywaf"
 	"github.com/servanago/servanago/internal/config"
 	"github.com/servanago/servanago/internal/store"
@@ -139,7 +140,9 @@ func Render(st State, o Options) ([]byte, error) {
 	apps := m{
 		"http": m{
 			"http_port": o.HTTPPort, "https_port": o.HTTPSPort,
-			"servers": m{"srv0": m{"listen": []string{":" + strconv.Itoa(o.HTTPSPort)}, "routes": routes}},
+			// client_ip is the visitor for Cloudflare peers (CF-Connecting-IP) and the socket peer for everyone else
+			"servers": m{"srv0": m{"listen": []string{":" + strconv.Itoa(o.HTTPSPort)}, "routes": routes,
+				"trusted_proxies": m{"source": "static", "ranges": caddygeoip.CloudflareRanges}, "client_ip_headers": []string{"CF-Connecting-IP"}}},
 		},
 		"tls": m{"automation": m{"policies": policies}},
 	}
@@ -291,13 +294,13 @@ func siteHandler(host string, r store.Site, snip []any) (any, error) {
 	if r.GateMode != "" { // the gate leads the chain: a session must pass before anything else
 		gate := m{"handle": []any{m{"handler": "servanago_gate", "host": host, "mode": r.GateMode, "site_id": r.ID, "primary": r.Hostnames[0]}}}
 		if len(cidrs) > 0 { // either one gets in: an allowed address skips the gate, any other needs a link
-			gate["match"] = []any{m{"not": []any{m{"remote_ip": m{"ranges": cidrs}}}}}
+			gate["match"] = []any{m{"not": []any{m{"client_ip": m{"ranges": cidrs}}}}}
 		}
 		sub = append(sub, gate)
 	}
 	if len(cidrs) > 0 && r.GateMode == "" {
 		sub = append(sub, m{
-			"match":    []any{m{"not": []any{m{"remote_ip": m{"ranges": cidrs}}}}},
+			"match":    []any{m{"not": []any{m{"client_ip": m{"ranges": cidrs}}}}},
 			"handle":   []any{m{"handler": "static_response", "status_code": "403"}},
 			"terminal": true,
 		})

@@ -1,6 +1,7 @@
 package caddygeoip
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -129,6 +130,34 @@ func TestGeoHandlerCloudflareHeader(t *testing.T) {
 	w = httptest.NewRecorder()
 	if err := denyDE().ServeHTTP(w, geoReq("8.8.4.4", map[string]string{"CF-Connecting-IP": "203.0.113.9"}), next(w)); err != nil || !strings.Contains(w.Body.String(), "reached") {
 		t.Errorf("forged header decided: %d %q", w.Code, w.Body.String())
+	}
+}
+
+// withClientIP is what Caddy does per request once trusted_proxies is rendered: the client_ip var
+// already holds the visitor (the header is not needed) or, for a Cloudflare peer without it, the node.
+func withClientIP(r *http.Request, ip string) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), caddyhttp.VarsCtxKey, map[string]any{caddyhttp.ClientIPVarKey: ip}))
+}
+
+func TestGeoHandlerUsesCaddyClientIP(t *testing.T) {
+	restore := installLookup(false)
+	defer restore()
+	w := httptest.NewRecorder()
+	r := withClientIP(geoReq("108.162.192.6", nil), "203.0.113.9")
+	if err := denyDE().ServeHTTP(w, r, next(w)); err != nil || w.Code != 403 {
+		t.Errorf("client_ip DE under deny: %d %q (%v)", w.Code, w.Body.String(), err)
+	}
+	// client_ip left at a Cloudflare node (no header arrived): no client, pass
+	w = httptest.NewRecorder()
+	r = withClientIP(geoReq("108.162.192.6", nil), "108.162.192.6")
+	if err := denyDE().ServeHTTP(w, r, next(w)); err != nil || !strings.Contains(w.Body.String(), "reached") {
+		t.Errorf("client_ip is a CF node: %d %q", w.Code, w.Body.String())
+	}
+	// a private client_ip never decides
+	w = httptest.NewRecorder()
+	r = withClientIP(geoReq("108.162.192.6", nil), "192.168.0.5")
+	if err := denyDE().ServeHTTP(w, r, next(w)); err != nil || !strings.Contains(w.Body.String(), "reached") {
+		t.Errorf("private client_ip: %d %q", w.Code, w.Body.String())
 	}
 }
 
