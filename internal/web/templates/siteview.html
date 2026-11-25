@@ -401,7 +401,7 @@
 {{end}}
 </tbody>
 </table>
-{{else}}<p class="empty">No rule has matched on this site in the last 24 hours.</p>{{end}}
+{{else}}<p class="empty">No rule has matched in the last 24 hours. Events appear once the site serves requests through the WAF.</p>{{end}}
 {{if .WafEvents}}
 <h4>Newest matches</h4>
 <table>
@@ -413,7 +413,7 @@
 {{end}}
 </tbody>
 </table>
-{{else}}<p class="empty">Nothing recorded yet — the events appear once the site serves requests through the WAF.</p>{{end}}
+{{end}}
 {{template "wafexcl" .}}
 </div>
 </section>

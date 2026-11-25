@@ -13,7 +13,7 @@
   // A value is accepted only if the select has that option; anything else means the default.
   function pick(sel, v) {
     if (!sel) return '';
-    for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === v || sel.options[i].text === v) return sel.options[i].value || sel.options[i].text;
+    for (var i = 0; i < sel.options.length; i++) if (sel.options[i].value === v || sel.options[i].text === v) return sel.options[i].value;
     return '';
   }
 

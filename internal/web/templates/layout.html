@@ -17,18 +17,18 @@
 {{if .Bare}}<main class="container">{{else}}<header class="topbar"><div class="topbar-in">
 <a class="brand" href="/" aria-label="ServanaGo dashboard"><img src="/static/mark-64.png" alt="" width="30" height="30"><span class="wordmark">Servana<b>Go</b></span></a>
 <nav class="topnav" aria-label="Main">
-<a href="/"{{if eq .Nav "dashboard"}} aria-current="page"{{end}}>{{icon "globe"}}Sites</a>
-<a href="/dns"{{if eq .Nav "dns"}} aria-current="page"{{end}}>{{icon "globe"}}DNS</a>
-<a href="/domains"{{if eq .Nav "domains"}} aria-current="page"{{end}}>{{icon "domains"}}Domains</a>
-<a href="/php"{{if eq .Nav "php"}} aria-current="page"{{end}}>{{icon "code"}}PHP</a>
-<a href="/snippets"{{if eq .Nav "snippets"}} aria-current="page"{{end}}>{{icon "braces"}}Snippets</a>
-<a href="/backups"{{if eq .Nav "backups"}} aria-current="page"{{end}}>{{icon "archive"}}Backups</a>
-<a href="/scan"{{if eq .Nav "scan"}} aria-current="page"{{end}}>{{icon "shield"}}Scan</a>
-<a href="/mail"{{if eq .Nav "mail"}} aria-current="page"{{end}}>{{icon "mail"}}Mail</a>
-<a href="/traffic"{{if eq .Nav "traffic"}} aria-current="page"{{end}}>{{icon "list"}}Traffic</a>
-<a href="/bans"{{if eq .Nav "bans"}} aria-current="page"{{end}}>{{icon "shield"}}Bans</a>
-<a href="/alerts"{{if eq .Nav "alerts"}} aria-current="page"{{end}}>{{icon "mail"}}Alerts</a>
-<a href="/logs"{{if eq .Nav "logs"}} aria-current="page"{{end}}>{{icon "list"}}Logs</a>
+<a href="/"{{if eq .Nav "dashboard"}} aria-current="page"{{end}}>Sites</a>
+<a href="/dns"{{if eq .Nav "dns"}} aria-current="page"{{end}}>DNS</a>
+<a href="/domains"{{if eq .Nav "domains"}} aria-current="page"{{end}}>Domains</a>
+<a href="/php"{{if eq .Nav "php"}} aria-current="page"{{end}}>PHP</a>
+<a href="/snippets"{{if eq .Nav "snippets"}} aria-current="page"{{end}}>Snippets</a>
+<a href="/backups"{{if eq .Nav "backups"}} aria-current="page"{{end}}>Backups</a>
+<a href="/scan"{{if eq .Nav "scan"}} aria-current="page"{{end}}>Scan</a>
+<a href="/mail"{{if eq .Nav "mail"}} aria-current="page"{{end}}>Mail</a>
+<a href="/traffic"{{if eq .Nav "traffic"}} aria-current="page"{{end}}>Traffic</a>
+<a href="/bans"{{if eq .Nav "bans"}} aria-current="page"{{end}}>Bans</a>
+<a href="/alerts"{{if eq .Nav "alerts"}} aria-current="page"{{end}}>Alerts</a>
+<a href="/logs"{{if eq .Nav "logs"}} aria-current="page"{{end}}>Logs</a>
 </nav>
 {{if .LoggedIn}}<details class="usermenu">
 <summary aria-label="Account menu">Menu</summary>
@@ -102,7 +102,7 @@ document.addEventListener('htmx:afterSwap', function (e) {
 <span class="chip">{{if .Site.Kind}}{{.Site.Kind}}{{else}}proxy{{end}}</span>
 {{if .Site.SiteUser}}<span class="chip">runs as {{.Site.SiteUser}}</span>{{end}}
 {{with .Site.MLHost}}<span class="chip">gate host {{.}}</span>{{end}}
-{{if $id}}<span class="chip">unit servanago-{{.Site.Slug}}.service</span>{{end}}
+{{if and $id .Site.IsRuntime}}<span class="chip">unit servanago-{{.Site.Slug}}.service</span>{{end}}
 </div>
 </div>
 {{if $id}}<a class="mini" href="https://{{$h}}" target="_blank" rel="noopener">Open site</a>{{end}}
@@ -112,6 +112,6 @@ document.addEventListener('htmx:afterSwap', function (e) {
 {{else if .Site.IsRuntime}}<span class="pill dim"><span class="dot"></span>state unknown</span>{{end}}
 {{with .Unit}}{{if not .Err}}{{if .Running}}<span class="pill ok"><span class="dot"></span>unit running{{else}}<span class="pill warn"><span class="dot"></span>unit stopped{{end}}{{if .PID}} · pid {{.PID}}{{end}}</span>{{end}}{{end}}
 </p>{{end}}
-{{if $id}}<div class="hostchips">{{range .Site.Hostnames}}<span class="chip">{{.}}</span>{{end}}</div>
+{{if and $id (gt (len .Site.Hostnames) 1)}}<div class="hostchips">{{range .Site.Hostnames}}<span class="chip">{{.}}</span>{{end}}</div>
 {{end}}{{end}}
 

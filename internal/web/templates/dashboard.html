@@ -28,8 +28,6 @@
 <a class="host" href="/sites/{{.ID}}">{{.Host}}{{range .Aliases}}<small class="alias">{{.}}</small>{{end}}</a>
 <span class="chip">{{.KindLabel}}</span>
 {{if .IsRuntime}}<span class="chip unit-{{.UnitState}}">{{if eq .UnitState "unknown"}}state unknown{{else}}{{.UnitState}}{{end}}</span>{{else}}<span class="chip dim">no unit</span>{{end}}
-{{if .Probed}}<span class="chip cert-{{.Cert.State}}" title="Certificate state{{if not .Cert.NotAfter.IsZero}} — expires {{.Cert.NotAfter.Format "2006-01-02"}}{{end}}">{{if .CertSoon}}TLS expiring{{else}}{{.Cert.State}}{{end}}</span>{{end}}
-{{if and .DNSOn .DNSState}}<span class="chip dns-{{.DNSState}}">DNS {{.DNSState}}</span>{{end}}
 {{if .GateMode}}<span class="chip" title="A magic link is required before this site is served">gated</span>{{end}}
 {{if .ScanOn}}{{if ne .Scan.StartedAt 0}}<span class="chip" title="Newest scan run{{if .Scan.FinishedAt}} ({{unixts .Scan.FinishedAt}}){{end}}">{{if .ScanHits}}{{printf "%d hit" .ScanHits}}{{if ne .ScanHits 1}}s{{end}}{{else if eq .Scan.State "running"}}scan running{{else if eq .Scan.State "error"}}scan error{{else if .Scan.FinishedAt}}scan clean{{end}}</span>{{end}}{{end}}{{if .BackText}}<span class="chip{{if not .BackOK}} chip-warn{{end}}" title="Newest backup run of this site">backup {{.BackText}}</span>{{end}}
 <span class="state state-{{$h.Level}}">{{$h.Label}}</span>
@@ -89,7 +87,7 @@
 </article>
 {{end}}
 <div class="ref-controls" id="sitefilter">
-<input type="search" id="site-q" placeholder="Search hostnames…" aria-label="Search sites">
+<input type="search" id="site-q" placeholder="Search" aria-label="Search sites">
 <select id="site-fk" aria-label="Filter by kind">
 <option value="">All kinds</option>
 <option>Static</option><option>Proxy</option><option>Node</option><option>PHP</option><option>FrankenPHP</option><option>FastCGI</option><option>CGI</option>

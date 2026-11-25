@@ -1,0 +1,384 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ServanaGo UI flow</title>
+<style>
+:root {
+  --bg: #f7f8f7; --panel: #ffffff; --ink: #1b2420; --muted: #5b6761; --line: #b9c4be;
+  --step: #eef3f0; --dec: #fff6df; --dec-line: #c99a1c;
+  --ok: #e3f4ea; --ok-line: #08764b; --bad: #fbe6e4; --bad-line: #b3261e;
+  --ext: #e8eefb; --ext-line: #3b5fb0; --root: #f3e8fb; --root-line: #7a3fa6;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121714; --panel: #1a211d; --ink: #e8efeb; --muted: #9fada6; --line: #3b4741;
+    --step: #222b26; --dec: #34290d; --dec-line: #d9ac3a;
+    --ok: #123324; --ok-line: #3fbf86; --bad: #3a1a18; --bad-line: #ef7b72;
+    --ext: #1b2640; --ext-line: #7f9de0; --root: #2b1b3a; --root-line: #c08be6;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink); font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; }
+main { max-width: 1180px; margin: 0 auto; padding: 24px 16px 64px; }
+h1 { font-size: 1.8rem; margin: 0 0 4px; }
+h2 { font-size: 1.3rem; margin: 48px 0 6px; padding-top: 12px; border-top: 1px solid var(--line); }
+h3 { font-size: 1.05rem; margin: 26px 0 4px; }
+p, li { color: var(--muted); }
+p.lead { max-width: 75ch; }
+code { background: var(--step); padding: 1px 5px; border-radius: 4px; font-size: .86em; color: var(--ink); }
+a { color: var(--ext-line); }
+nav.toc ol { columns: 2 280px; padding-left: 0; list-style: none; }
+nav.toc a { color: var(--ink); }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; margin: 12px 0 0; font-size: .9rem; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.legend i { width: 18px; height: 14px; border: 2px solid; border-radius: 4px; display: inline-block; }
+
+/* map */
+.mapwrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
+svg#navmap { display: block; min-width: 1120px; width: 100%; height: auto; font: 12px system-ui, sans-serif; }
+svg .grp rect { fill: none; stroke: var(--line); stroke-dasharray: 5 4; rx: 10; }
+svg .grp text { fill: var(--muted); font-weight: 700; font-size: 12px; }
+svg .nd rect { fill: var(--step); stroke: var(--line); stroke-width: 2; rx: 7; }
+svg .nd text { fill: var(--ink); }
+svg .nd .sub { fill: var(--muted); font-size: 10px; }
+svg .nd.hub rect { fill: var(--ok); stroke: var(--ok-line); }
+svg .nd.auth rect { fill: var(--ext); stroke: var(--ext-line); }
+svg .nd.act rect { fill: var(--dec); stroke: var(--dec-line); }
+svg .nd.sens rect { fill: var(--root); stroke: var(--root-line); }
+svg a:hover rect { stroke-width: 3; }
+svg .ed { stroke: var(--muted); stroke-width: 1.5; fill: none; }
+svg .ed.dash { stroke-dasharray: 5 4; }
+svg .edl { fill: var(--muted); font-size: 10px; }
+svg marker path { fill: var(--muted); }
+
+/* flows */
+.flow { display: flex; flex-direction: column; align-items: center; gap: 26px; margin: 22px 0; }
+.n { position: relative; width: min(100%, 520px); padding: 10px 14px; border: 2px solid var(--line); border-radius: 8px; background: var(--step); text-align: center; color: var(--ink); }
+.n small { display: block; color: var(--muted); font-size: .82rem; margin-top: 2px; }
+.flow > .n:not(:first-child)::before, .col > .flow > .n:first-child::before {
+  content: "↓"; position: absolute; top: -24px; left: 50%; transform: translateX(-50%); color: var(--muted); font-size: 1.1rem; line-height: 1;
+}
+.col > .flow { margin-top: 30px; }
+.n.start { border-radius: 999px; background: var(--ext); border-color: var(--ext-line); }
+.n.dec { background: var(--dec); border-color: var(--dec-line); border-radius: 4px 22px 4px 22px; font-weight: 600; }
+.n.root { background: var(--root); border-color: var(--root-line); }
+.n.ok { background: var(--ok); border-color: var(--ok-line); border-radius: 999px; }
+.n.bad { background: var(--bad); border-color: var(--bad-line); border-radius: 999px; }
+.br { display: flex; flex-wrap: wrap; gap: 16px; justify-content: center; align-items: flex-start; width: 100%; }
+.col { position: relative; flex: 1 1 250px; max-width: 560px; border: 1px dashed var(--line); border-radius: 10px; padding: 14px 10px 6px; background: var(--panel); }
+.lbl { position: absolute; top: -12px; left: 12px; background: var(--bg); padding: 0 8px; font-weight: 700; font-size: .85rem; border-radius: 4px; border: 1px solid var(--line); }
+.lbl.y { color: var(--ok-line); border-color: var(--ok-line); }
+.lbl.no { color: var(--bad-line); border-color: var(--bad-line); }
+
+/* tables */
+table { width: 100%; border-collapse: collapse; font-size: .92rem; margin: 10px 0 0; background: var(--panel); border: 1px solid var(--line); }
+th, td { text-align: left; vertical-align: top; padding: 6px 10px; border-bottom: 1px solid var(--line); color: var(--ink); }
+th { background: var(--step); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+td:first-child { white-space: nowrap; }
+.tblwrap { overflow-x: auto; }
+.tag { display: inline-block; font-size: .7rem; font-weight: 700; padding: 0 6px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); margin-right: 4px; color: var(--muted); }
+.tag.re { color: var(--root-line); border-color: var(--root-line); }
+.tag.hx { color: var(--ext-line); border-color: var(--ext-line); }
+.tag.ap { color: var(--ok-line); border-color: var(--ok-line); }
+</style>
+</head>
+<body>
+<main>
+<h1>ServanaGo web UI flow</h1>
+<p class="lead">Every page, tab and mutating action of the cookie-authenticated panel, with what each action does in the backend. Built from <code>internal/web/web.go</code> (the route table), the page templates and the handlers. UI only: <code>/mcp</code>, the mail webhooks and the public gate are not drawn. Version context: main after 0.22.1.</p>
+
+<nav class="toc"><ol>
+<li><a href="#legend">Legend</a></li>
+<li><a href="#map">1. Navigation map</a></li>
+<li><a href="#mw">2. Request pipeline</a></li>
+<li><a href="#auth">3. Sign-in and enrolment</a></li>
+<li><a href="#apply">4. Site save: the apply path</a></li>
+<li><a href="#delete">5. Site delete and toggle</a></li>
+<li><a href="#runtime">6. Runtime unit actions</a></li>
+<li><a href="#tabs">7. Site tabs: actions and effects</a></li>
+<li><a href="#pages">8. Other pages: actions and effects</a></li>
+<li><a href="#account">9. Account menu pages</a></li>
+<li><a href="#htmx">10. htmx response conventions</a></li>
+</ol></nav>
+
+<h2 id="legend">Legend</h2>
+<div class="legend">
+<span><i style="background:var(--ok);border-color:var(--ok-line)"></i>hub / result</span>
+<span><i style="background:var(--ext);border-color:var(--ext-line)"></i>sign-in, entry</span>
+<span><i style="background:var(--step);border-color:var(--line)"></i>page</span>
+<span><i style="background:var(--dec);border-color:var(--dec-line)"></i>decision</span>
+<span><i style="background:var(--root);border-color:var(--root-line)"></i>sensitive (password re-confirm)</span>
+<span><i style="background:var(--bad);border-color:var(--bad-line)"></i>failure / rollback</span>
+<span><span class="tag re">REAUTH</span>password (and code) re-confirm</span>
+<span><span class="tag hx">HX</span>htmx request, CSRF header required</span>
+<span><span class="tag ap">APPLY</span>goes through <code>Apply.Mutate</code></span>
+</div>
+
+<h2 id="map">1. Navigation map</h2>
+<p>Click a node to jump to its section. Solid lines are links; dashed lines are redirects (enrol, and back to <code>/</code> after a create or delete). Sub-pages (<code>/dns/zones/{zid}</code>, <code>/scan/runs/{id}</code>, WAF rules) sit under their parent. Sign-in rules: password with TOTP goes via <code>/login/totp</code>; REQUIRE_2FA without a factor goes to the enrolment page. The top bar (every signed-in page) holds the 12 working pages; the Menu holds account and system pages.</p>
+<div class="mapwrap"><svg id="navmap" viewBox="0 0 1120 700" role="img" aria-label="ServanaGo navigation map"></svg></div>
+
+<h2 id="mw">2. Request pipeline</h2>
+<p>Every UI request enters <code>top</code> mux, passes <code>geoGuard</code> (country filter for the panel), then <code>csrf</code>, then the route. <code>protected</code> routes need a full session; <code>security</code> routes also work in the limited enrolment session.</p>
+<div class="flow">
+<div class="n start">Browser request<small>cookie <code>expiry:level:uid:epoch</code></small></div>
+<div class="n root"><code>geoGuard</code><small>panel country rule (Settings, Country filter); 403 when blocked</small></div>
+<div class="n dec"><code>csrf</code>: non-GET with no <code>HX-Request</code> header, or <code>Origin</code> host mismatch?<small>yes → 403, nothing runs</small></div>
+<div class="n dec"><code>gate</code>: auth enabled (any user exists)?</div>
+<div class="br">
+<div class="col"><span class="lbl y">yes</span><div class="flow">
+<div class="n dec">session level<small>none → <code>/login</code> (401 for htmx) · enroll level on a protected route → <code>/security</code> (403) · full → handler</small></div>
+</div></div>
+<div class="col"><span class="lbl no">no (open mode)</span><div class="flow">
+<div class="n dec">peer is loopback?<small>no → 403 "No administrator exists yet"</small></div>
+<div class="n">handler runs unauthenticated<small>red banner "UI is open" on every page</small></div>
+</div></div>
+</div>
+<div class="n ok">Handler → <code>render()</code> buffers the page, template error → 500, never a truncated 200</div>
+</div>
+
+<h2 id="auth">3. Sign-in and enrolment</h2>
+<p>Login throttle: 5 failures per client IP per 15 minutes (in memory; a restart clears it). Turnstile guards the password form when configured. A user with a passkey cannot sign in by password alone: same answer as a wrong password, audited as <code>login.failed</code>.</p>
+<div class="flow">
+<div class="n start"><code>GET /login</code><small>Turnstile widget if configured; passkey button if the host is a valid WebAuthn origin</small></div>
+<div class="n dec">Sign-in method</div>
+<div class="br">
+<div class="col"><span class="lbl">password</span><div class="flow">
+<div class="n"><code>POST /login</code><small>throttle, Turnstile, bcrypt check</small></div>
+<div class="n dec">user state?</div>
+<div class="n"><b>TOTP enabled</b> → pending cookie → <code>HX-Redirect /login/totp</code><small><code>POST /login/totp</code>: TOTP code or backup code (single use, step advance blocks replay) → full session</small></div>
+<div class="n"><b>passkey enrolled</b> → rejected + audit <code>login.failed</code></div>
+<div class="n"><b>no factor, REQUIRE_2FA on</b> → enrol-level session → <code>/security</code></div>
+<div class="n"><b>no factor, REQUIRE_2FA off</b> → full session → <code>/</code></div>
+</div></div>
+<div class="col"><span class="lbl">passkey</span><div class="flow">
+<div class="n"><code>POST /login/passkey/begin</code><small>WebAuthn challenge, discoverable credential</small></div>
+<div class="n"><code>POST /login/passkey/finish</code><small>verify assertion, <code>TouchPasskey</code>, <code>TouchLogin</code></small></div>
+<div class="n ok">full session → <code>/</code></div>
+</div></div>
+</div>
+<div class="n root"><code>/security</code> (works with the limited session)<small>TOTP begin/confirm, backup codes, passkey begin/finish: all <span class="tag re">REAUTH</span>. Gate identities list with revoke. Once a factor exists the session upgrades and the rest of the UI opens.</small></div>
+<div class="n">Sign out: <code>POST /logout</code> → cookie cleared → <code>/login</code></div>
+</div>
+<div class="tblwrap"><table>
+<tr><th>Route</th><th>Effect</th><th>Audit</th></tr>
+<tr><td><code>POST /security/totp/begin</code></td><td>generate sealed seed (needs <code>SERVANAGO_SECRET_KEY</code>), show QR</td><td>-</td></tr>
+<tr><td><code>POST /security/totp/confirm</code></td><td>verify first code, <code>EnableTOTP</code>, issue backup codes, upgrade enrol session</td><td><code>totp.enabled</code></td></tr>
+<tr><td><code>POST /security/totp/disable</code></td><td><span class="tag re">REAUTH</span> delete TOTP (blocked if it would leave no factor under REQUIRE_2FA)</td><td><code>totp.disabled</code></td></tr>
+<tr><td><code>POST /security/backup-codes</code></td><td><span class="tag re">REAUTH</span> replace all backup codes</td><td><code>backup_codes.regenerated</code></td></tr>
+<tr><td><code>POST /security/passkeys/begin|finish</code></td><td><span class="tag re">REAUTH</span> register a credential, bound to <code>SERVANAGO_HOST</code></td><td><code>passkey.added</code></td></tr>
+<tr><td><code>DELETE /security/passkeys/{id}</code></td><td><span class="tag re">REAUTH</span> remove</td><td><code>passkey.removed</code></td></tr>
+<tr><td><code>POST /security/gate/revoke</code></td><td>delete a magic-link gate identity (visitor session)</td><td><code>gate.revoked</code></td></tr>
+</table></div>
+
+<h2 id="apply">4. Site save: the apply path</h2>
+<p><code>POST /sites</code> (create form at <code>/sites/new</code>) and <code>PUT /sites/{id}</code> (edit at <code>/sites/{id}</code>) share one path. SQLite is the desired state; Caddy is rendered whole from it and loaded before the transaction commits.</p>
+<div class="flow">
+<div class="n start">Site form submit <span class="tag hx">HX</span><small>create: 204 + <code>HX-Redirect /</code> · update: 200 "Saved and applied." in place</small></div>
+<div class="n"><code>ParseForm</code> → <code>readSiteForm</code><small>validators in <code>internal/config</code>: hostnames, roots, ports, kind-specific fields. Error → <code>fail()</code> 4xx, page unchanged</small></div>
+<div class="n"><code>newDomainFor</code><small>first hostname in a Cloudflare zone not yet in <code>domains</code> → domain row queued for creation</small></div>
+<div class="n root"><code>Apply.Mutate</code> <span class="tag ap">APPLY</span> (global mutex, one SQLite tx)<small>addDomainIfNew → checkHostnames (unique, not owned by another site) → CreateSite/UpdateSite → ReplaceGrants (skipped when the form has no <code>gate_acl</code>)</small></div>
+<div class="n"><code>render</code> full Caddy JSON from domains + sites + snippets → <code>loadCfg</code><small>byte-identical to live config → skip load</small></div>
+<div class="n dec">Caddy accepts?</div>
+<div class="br">
+<div class="col"><span class="lbl y">yes</span><div class="flow">
+<div class="n">tx commits; save <code>caddy-last-good.json</code> (0600)</div>
+<div class="n">audit <code>config.changed</code> (system) then <code>site.created|updated</code> (user)</div>
+<div class="n"><code>runtimeApply</code><small>node / php / frankenphp / cgi kinds: helper <code>user-add</code>, <code>unit-install</code>, start. Failure only flashes a banner, the DB row stays</small></div>
+<div class="n"><code>reconcile</code> DNS, detached 30 s context<small>A/AAAA per hostname in Cloudflare; adds new, removes owned records of hostnames that left. Async: rows settle after the response</small></div>
+</div></div>
+<div class="col"><span class="lbl no">no</span><div class="flow">
+<div class="n bad">tx rolls back, previous config stays live</div>
+<div class="n bad">audit <code>config.rejected</code>; user sees the Caddy error text via <code>failErr</code></div>
+</div></div>
+</div>
+</div>
+<p><b>Startup:</b> if the DB-rendered config will not load, <code>restoreLKG</code> loads the last-good file (banner + <code>config.restored</code>); failing that, the bootstrap-only config (<code>config.bootstrapped</code>). Runtime site units are not re-applied at startup: open the site and save it after a restore.</p>
+
+<h2 id="delete">5. Site delete and toggle</h2>
+<div class="br">
+<div class="col"><span class="lbl">DELETE /sites/{id}</span><div class="flow">
+<div class="n start">Delete dialog<small><code>deletedlg.html</code>, optional "also delete DNS records" (<code>delete_dns</code>)</small></div>
+<div class="n root"><code>Apply.Mutate</code>: capture site + <code>dnsTargetOf</code> rows, <code>DeleteSite</code>, render, load</div>
+<div class="n">audit <code>site.deleted</code></div>
+<div class="n">traffic data of the slug pruned (bans stay)</div>
+<div class="n">runtime kinds: <code>runtimeRemove</code> (helper unit-remove, user-remove)</div>
+<div class="n dec"><code>delete_dns</code> set?<small>yes → <code>removeRecord</code> (owned records only; failures flash)</small></div>
+<div class="n ok">204 + <code>HX-Redirect /</code>; webroot untouched</div>
+</div></div>
+<div class="col"><span class="lbl">POST /sites/{id}/toggle</span><div class="flow">
+<div class="n start">Enable / Disable button on dashboard row <span class="tag hx">HX</span></div>
+<div class="n root"><code>Apply.Mutate</code> flips <code>enabled</code>, render, load</div>
+<div class="n"><code>runtimeApply</code> starts or stops the unit</div>
+<div class="n">audit <code>site.toggled</code>; DNS record kept</div>
+<div class="n ok">row refreshed by <code>GET /status</code> poll (10 s)</div>
+</div></div>
+</div>
+
+<h2 id="runtime">6. Runtime unit actions</h2>
+<p><code>POST /sites/{id}/runtime/{do}</code> on the Runtime tab. The web process never runs as root: each action is a typed call over the helper Unix socket (<code>SO_PEERCRED</code>), re-validated by the helper.</p>
+<div class="tblwrap"><table>
+<tr><th>do</th><th>Helper action</th><th>Result</th></tr>
+<tr><td>start</td><td><code>unit-start</code></td><td>unit panel refreshed, audit <code>site.unit_start</code></td></tr>
+<tr><td>stop</td><td><code>unit-stop</code></td><td>audit <code>site.unit_stop</code></td></tr>
+<tr><td>restart</td><td>stop + start</td><td>audit <code>site.unit_restart</code></td></tr>
+<tr><td>(panel load)</td><td><code>unit-status</code>, <code>unit-logs</code></td><td>pid, active state, journal tail; helper down → panel shows error, page still renders</td></tr>
+<tr><td>save with runtime kind</td><td><code>user-add</code>, <code>unit-install</code> (php: also <code>php-user-default</code>)</td><td>from <a href="#apply">apply path</a></td></tr>
+</table></div>
+
+<h2 id="tabs">7. Site tabs: actions and effects</h2>
+<p>View <code>GET /sites/{id}/{tab}</code> (tab rail in <code>layout.html</code>); <code>/sites/{id}/settings</code> redirects to <code>/sites/{id}</code> (the edit form). Tab saves answer 200 with a message that is also raised as a toast.</p>
+<div class="tblwrap"><table>
+<tr><th>Tab</th><th>Mutating routes</th><th>Backend effect</th></tr>
+<tr><td>Settings</td><td><code>PUT /sites/{id}</code>, <code>DELETE /sites/{id}</code>, <code>POST /sites/check</code></td><td>apply path; <code>check</code> = <code>CheckUpstream</code> TCP/TLS probe of the upstream, no write</td></tr>
+<tr><td>DNS</td><td><code>POST /sites/{id}/dns-ip</code>, <code>dns/resync</code>, <code>dns/takeover</code></td><td>per-site record IP override via <code>Mutate</code> + reconcile; resync re-checks Cloudflare; takeover overwrites a foreign record (confirm dialog)</td></tr>
+<tr><td>SSL</td><td>none</td><td>cert facts per hostname from <code>Probe.Cert</code></td></tr>
+<tr><td>Scan</td><td><code>POST /sites/{id}/scan</code></td><td>clamd sweep of the site folder, run + hits stored, audit <code>scan.started</code></td></tr>
+<tr><td>Backups</td><td><code>POST /backups/sites/{id}</code>, <code>/profiles</code>, <code>/profiles/delete</code>, <code>/volumes</code>, <code>/volumes/delete</code></td><td>per-site backup scope in SQLite; audit <code>backup.site|profile.*|volume.*</code></td></tr>
+<tr><td>Mail</td><td><code>POST /sites/{id}/mail</code></td><td>per-site gate mail provider (SMTP / Postmark), sealed secret; <code>Mutate</code></td></tr>
+<tr><td>Snippets</td><td><code>POST /sites/{id}/snippets</code></td><td>attach named Caddyfile snippets (alphabetical); <code>Mutate</code></td></tr>
+<tr><td>Runtime</td><td><code>POST /sites/{id}/runtime/{do}</code></td><td>see <a href="#runtime">section 6</a></td></tr>
+<tr><td>Gate</td><td><code>POST /sites/{id}/gate</code>, <code>/access</code>, <code>/gate/grants</code>, <code>/gate/grants/delete</code>, <code>/gate/test</code></td><td>magic-link gate settings, basic auth / IP allowlist, access rows; test sends a mail. Gate + allowlist are alternatives. Audit <code>gate.grant.added|removed</code>, <code>gate.mail.tested</code></td></tr>
+<tr><td>Routes</td><td><code>POST /sites/{id}/routes</code></td><td>extra <code>path=dial</code> routes; <code>Mutate</code></td></tr>
+<tr><td>Countries</td><td><code>POST /sites/{id}/geo</code></td><td>per-site country allow/deny (needs the GeoIP DB); <code>Mutate</code></td></tr>
+<tr><td>WAF</td><td><code>POST /sites/{id}/waf</code>, <code>/waf/excl</code>, <code>/waf/excl/delete</code>; view <code>GET /sites/{id}/waf/rules</code></td><td>preset, engine mode, rate limit; rule exclusions. Preset tail validated by <code>wafval</code> here and again by the engine at load. Events and aggregates read from the store. Audit <code>site.waf.exclusion[.undo]</code></td></tr>
+<tr><td>Protection</td><td><code>POST /sites/{id}/protection</code>, <code>/underattack</code>, <code>/queue/release</code></td><td>per-site ban/challenge/queue/x402/alert picks; under-attack toggle; release waiting-room queue via <code>Guard.ReleaseQueue</code>. Audit <code>queue.release</code></td></tr>
+</table></div>
+
+<h2 id="pages">8. Other pages: actions and effects</h2>
+<div class="tblwrap"><table>
+<tr><th>Page</th><th>Routes</th><th>Backend effect</th></tr>
+<tr><td id="dashboard">Sites <code>/</code></td><td><code>GET /status</code> (10 s), <code>GET /hoststats</code> (30 s), <code>POST /host/dns/resync|takeover</code>, per-row toggle / DNS / scan buttons</td><td><code>buildRows</code>: DB rows + cert probe + helper <code>unit-status</code> in parallel (5 s cap). Host-name record sync for the panel itself. Links to <code>/sites/new</code>, <code>/sites/{id}</code></td></tr>
+<tr><td id="dns">DNS <code>/dns</code></td><td><code>GET /dns/zones/{zid}</code>, <code>/form</code>; <code>POST|PUT|DELETE …/records[/{rid}]</code></td><td>Cloudflare record CRUD by raw envelope decode (priority/data preserved). Audit <code>dns_record.created|updated|deleted</code>. Only with a token</td></tr>
+<tr><td id="domains">Domains <code>/domains</code></td><td><code>POST /domains</code>, <code>PUT|DELETE /domains/{id}</code></td><td><code>Mutate</code> + Cloudflare <code>ZoneID</code> lookup; cert mode wildcard vs HTTP-01. Audit <code>domain.*</code></td></tr>
+<tr><td id="php">PHP <code>/php</code></td><td><code>GET /php/job</code> (poll), <code>POST /php/builds</code>, <code>/builds/install</code>, <code>/builds/{label}/delete</code>, <code>/switch</code>, <code>/defaults</code>, <code>/check</code>, <code>/composer</code></td><td>helper <code>php-build</code> (job unit, ~9 min compile), <code>php-install</code>, <code>php-prune</code>, <code>php-user-default</code>, <code>composer</code>, <code>php-status</code>. Switch re-applies the site unit and health-checks the path, rolls back on failure. Several actions use <code>confirm()</code> (<span class="tag re">REAUTH</span>). Audit <code>php.*</code></td></tr>
+<tr><td id="snippets">Snippets <code>/snippets</code></td><td><code>POST /snippets</code>, <code>PUT|DELETE /snippets/{id}</code></td><td><code>AdaptSnippet</code> handler allowlist, <code>Mutate</code> re-renders every site that uses it. Delete refused while in use. Audit <code>snippet.*</code></td></tr>
+<tr><td id="backups">Backups <code>/backups</code></td><td><code>POST /backups/settings</code>, <code>/run</code>, <code>/download</code>, <code>/restore</code>; <code>GET /backups/file/{token}</code></td><td>helper <code>backup-enable|start|status|restore</code>; run history in SQLite; passphrase sealed; one-use download token (<code>sync.Map</code>). Stale/failed runs raise the banner on every page. Audit <code>backup.*</code></td></tr>
+<tr><td id="scan">Scan <code>/scan</code></td><td><code>GET /scan/runs/{id}</code>, <code>POST /scan/sites/{id}</code>, <code>POST /scan/hits/{hid}/{do}</code></td><td>clamd over socket (stream protocol), hits stored; action on a hit: quarantine / restore / ignore (<code>SetScanHitAction</code>). Nightly sweep <code>RunScans</code></td></tr>
+<tr><td id="mail">Mail <code>/mail</code></td><td><code>POST /mail/provision</code>, <code>/mail/domains/{name}/verify|lmtp|delete</code></td><td>Postmark admin API + Cloudflare record writes (MX, SPF, DKIM, return-path; never deletes foreign records), verify watch in background, LMTP target per domain. Audit <code>mail.*</code></td></tr>
+<tr><td id="traffic">Traffic <code>/traffic</code></td><td><code>GET /traffic/snapshot</code>, <code>/rows</code>, <code>/export</code></td><td>reads <code>traffic.db</code> via <code>Traffic.List|RollupsSince</code>; no writes</td></tr>
+<tr><td id="bans">Bans <code>/bans</code></td><td><code>POST /bans</code>, <code>POST /bans/delete</code></td><td><code>Guard.Ban|Unban</code>, manual bans written before answering. Audit <code>ban.create|delete</code></td></tr>
+<tr><td id="alerts">Alerts <code>/alerts</code></td><td><code>POST /alerts</code>, <code>/{id}/toggle|test|delete</code></td><td>alert destinations in SQLite (secret sealed); test sends a message. Audit <code>alert.*</code></td></tr>
+<tr><td id="logs">Logs <code>/logs</code></td><td><code>GET /logs/rows</code></td><td>log rows fragment polled by the page; read only</td></tr>
+</table></div>
+
+<h2 id="account">9. Account menu pages</h2>
+<div class="tblwrap"><table>
+<tr><th>Page</th><th>Routes</th><th>Backend effect</th></tr>
+<tr><td id="settings">Settings <code>/settings</code></td><td>redirects to <code>/settings/email</code>. Tabs: <b>email</b>, <b>scan</b>, <b>notify</b>, <b>guard</b>, <b>geo</b>, <b>mail</b>. Saves: <code>POST /settings/smtp|scan|geo|mail|guard</code></td><td>single <code>settings</code> row; SMTP and mail secrets <code>secretbox</code>-sealed (blank keeps stored). <code>guard</code> save calls <code>Guard.Reload</code> and the Caddy re-render. Audit <code>settings.*</code></td></tr>
+<tr><td id="users">Users <code>/users</code></td><td><code>POST /users</code>, <code>/users/{id}/password|reset-2fa|delete</code></td><td>all <span class="tag re">REAUTH</span>. 2FA reset clears the target's factors and bumps their session epoch (signs them out); resetting your own is refused (use Security). Audit <code>user.*</code></td></tr>
+<tr><td id="security">Security <code>/security</code></td><td>see <a href="#auth">section 3</a></td><td>own TOTP, backup codes, passkeys, gate identities</td></tr>
+<tr><td id="audit">Audit trail <code>/audit</code></td><td><code>GET /audit</code></td><td>read of <code>audit_log</code> (capped at 10000). Records UI, MCP ("mcp token") and system actors. No undo yet</td></tr>
+<tr><td id="updates">Updates <code>/updates</code></td><td><code>POST /updates/check</code>, <code>POST /updates/upgrade</code></td><td>fetch signed manifest (<code>latest.json</code> + Ed25519 sig), then helper <code>update-start</code> launches the root upgrade job with rollback. Audit <code>update.start</code></td></tr>
+<tr><td id="reference">Reference <code>/reference</code></td><td><code>GET</code></td><td>static reference tables</td></tr>
+<tr><td id="help">Help <code>/help</code></td><td><code>GET</code></td><td>topics from <code>help.go</code>; <code>helplink</code> hints across every page</td></tr>
+</table></div>
+
+<h2 id="htmx">10. htmx response conventions</h2>
+<div class="tblwrap"><table>
+<tr><th>Case</th><th>Response</th></tr>
+<tr><td>Mutation succeeded, leave the page</td><td>204 + <code>HX-Redirect</code> (create site, delete, domains, snippets, bans, alerts, users)</td></tr>
+<tr><td>Mutation succeeded, stay on the form</td><td>200 plain text swapped into the message target, also a toast (<code>updateSite</code>, every tab save)</td></tr>
+<tr><td>Validation or Caddy error</td><td><code>fail()</code>: escaped HTML body, 4xx, swapped as an error; page not reloaded</td></tr>
+<tr><td>Session lost</td><td>401 + <code>HX-Redirect /login</code> for htmx, 303 otherwise</td></tr>
+<tr><td>Background work</td><td>polls: <code>/status</code> 10 s, <code>/hoststats</code> 30 s, <code>/php/job</code>, <code>/traffic/rows</code>; one-time notices via <code>flash()</code> on the next render</td></tr>
+</table></div>
+</main>
+
+<script>
+(function () {
+  var W = 156, H = 34, NS = 'http://www.w3.org/2000/svg';
+  // id: [x, y, title, sub, cls, href]
+  var N = {
+    login:   [20, 40, '/login', 'password or passkey', 'auth', '#auth'],
+    totp:    [20, 100, '/login/totp', 'TOTP or backup code', 'auth', '#auth'],
+    enroll:  [20, 160, '/security (enrol)', 'limited session', 'sens', '#auth'],
+    dash:    [230, 40, '/  Sites', 'status poll 10 s', 'hub', '#dashboard'],
+    newsite: [230, 100, '/sites/new', 'POST /sites', 'act', '#apply'],
+    edit:    [230, 160, '/sites/{id}', 'PUT, DELETE', 'act', '#apply'],
+    del:     [230, 220, 'delete dialog', 'DELETE /sites/{id}', 'act', '#delete'],
+
+    dns:     [440, 30, '/dns', 'zones', '', '#dns'],
+    zone:    [440, 70, '/dns/zones/{zid}', 'record CRUD', 'act', '#dns'],
+    domains: [440, 110, '/domains', 'add, edit, delete', 'act', '#domains'],
+    php:     [440, 150, '/php', 'builds, switch', 'act', '#php'],
+    snip:    [440, 190, '/snippets', 'Caddyfile snippets', 'act', '#snippets'],
+    backups: [440, 230, '/backups', 'run, restore', 'act', '#backups'],
+    scan:    [440, 270, '/scan', 'sweeps', 'act', '#scan'],
+    scanrun: [440, 310, '/scan/runs/{id}', 'hits', 'act', '#scan'],
+    mail:    [440, 350, '/mail', 'Postmark bridge', 'act', '#mail'],
+    traffic: [440, 390, '/traffic', 'snapshot, rows', '', '#traffic'],
+    bans:    [440, 430, '/bans', 'create, delete', 'act', '#bans'],
+    alerts:  [440, 470, '/alerts', 'destinations', 'act', '#alerts'],
+    logs:    [440, 510, '/logs', 'rows poll', '', '#logs'],
+
+    t_set:   [650, 30, 'Settings', '/sites/{id}', 'hub', '#tabs'],
+    t_dns:   [650, 68, 'DNS', 'dns-ip, resync', 'act', '#tabs'],
+    t_ssl:   [650, 106, 'SSL', 'cert probe', '', '#tabs'],
+    t_scan:  [650, 144, 'Scan', 'scan now', 'act', '#tabs'],
+    t_bak:   [650, 182, 'Backups', 'scope, profiles', 'act', '#tabs'],
+    t_mail:  [650, 220, 'Mail', 'gate provider', 'act', '#tabs'],
+    t_snip:  [650, 258, 'Snippets', 'attach', 'act', '#tabs'],
+    t_run:   [650, 296, 'Runtime', 'start, stop, logs', 'act', '#runtime'],
+    t_gate:  [650, 334, 'Gate', 'magic link, grants', 'act', '#tabs'],
+    t_route: [650, 372, 'Routes', 'extra path=dial', 'act', '#tabs'],
+    t_geo:   [650, 410, 'Countries', 'allow / deny', 'act', '#tabs'],
+    t_waf:   [650, 448, 'WAF', 'preset, exclusions', 'act', '#tabs'],
+    t_prot:  [650, 486, 'Protection', 'ban, queue, x402', 'act', '#tabs'],
+    wafr:    [650, 528, '/sites/{id}/waf/rules', 'rules browser', '', '#tabs'],
+
+    m_set:   [880, 30, '/settings/{tab}', 'email scan notify guard geo mail', 'act', '#settings'],
+    m_users: [880, 76, '/users', 'REAUTH', 'sens', '#users'],
+    m_sec:   [880, 122, '/security', 'TOTP, passkeys', 'sens', '#security'],
+    m_audit: [880, 168, '/audit', 'read only', '', '#audit'],
+    m_upd:   [880, 214, '/updates', 'check, upgrade', 'act', '#updates'],
+    m_ref:   [880, 260, '/reference', '', '', '#reference'],
+    m_help:  [880, 306, '/help', '', '', '#help']
+  };
+  var G = [
+    [10, 14, 190, 218, 'Sign-in'],
+    [220, 14, 190, 246, 'Home and site editor'],
+    [430, 4, 196, 546, 'Top bar (every page)'],
+    [640, 4, 196, 598, 'Site tabs (/sites/{id}/{tab})'],
+    [870, 4, 220, 340, 'Menu (account, system)']
+  ];
+  var E = [
+    ['login', 'totp', ''], ['login', 'dash', ''], ['totp', 'dash', ''], ['login', 'enroll', '', 1], ['enroll', 'dash', '', 1],
+    ['dash', 'newsite', ''], ['dash', 'edit', ''], ['edit', 'del', ''], ['newsite', 'dash', '', 1], ['del', 'dash', '', 1],
+    ['edit', 't_set', '']
+  ];
+  var svg = document.getElementById('navmap');
+  svg.innerHTML = '<defs><marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0 0L10 5L0 10z"/></marker></defs>';
+  function el(n, a, t) { var e = document.createElementNS(NS, n); for (var k in a) e.setAttribute(k, a[k]); if (t != null) e.textContent = t; return e; }
+  G.forEach(function (g) {
+    var o = el('g', { 'class': 'grp' });
+    o.appendChild(el('rect', { x: g[0], y: g[1], width: g[2], height: g[3] }));
+    o.appendChild(el('text', { x: g[0] + 10, y: g[1] + 14 }, g[4]));
+    svg.appendChild(o);
+  });
+  function mid(id, side) { var n = N[id]; return side === 'r' ? [n[0] + W, n[1] + H / 2] : side === 'l' ? [n[0], n[1] + H / 2] : [n[0] + W / 2, n[1] + H]; }
+  E.forEach(function (e) {
+    var a = N[e[0]], b = N[e[1]], p, q, d;
+    if (a[0] === b[0]) { // same column: vertical
+      var down = b[1] > a[1];
+      p = [a[0] + W / 2 + (e[3] ? 40 : 0), a[1] + (down ? H : 0)]; q = [b[0] + W / 2 + (e[3] ? 40 : 0), b[1] + (down ? 0 : H)];
+      d = 'M' + p + 'L' + q;
+    } else if (b[0] > a[0]) { p = mid(e[0], 'r'); q = mid(e[1], 'l'); d = 'M' + p + 'C' + (p[0] + 30) + ',' + p[1] + ' ' + (q[0] - 30) + ',' + q[1] + ' ' + q;
+    } else { p = mid(e[0], 'l'); q = mid(e[1], 'r'); d = 'M' + p + 'C' + (p[0] - 30) + ',' + (p[1] - 20) + ' ' + (q[0] + 30) + ',' + (q[1] - 20) + ' ' + q; }
+    var path = el('path', { d: d, 'class': 'ed' + (e[3] ? ' dash' : ''), 'marker-end': 'url(#ar)' });
+    svg.appendChild(path);
+    if (e[2]) svg.appendChild(el('text', { x: (p[0] + q[0]) / 2 + 4, y: (p[1] + q[1]) / 2 - 3, 'class': 'edl' }, e[2]));
+  });
+  Object.keys(N).forEach(function (id) {
+    var n = N[id], a = el('a', { href: n[5] }), g = el('g', { 'class': 'nd ' + n[4] });
+    g.appendChild(el('rect', { x: n[0], y: n[1], width: W, height: H }));
+    g.appendChild(el('text', { x: n[0] + 8, y: n[1] + 15, 'font-weight': 600 }, n[2]));
+    if (n[3]) g.appendChild(el('text', { x: n[0] + 8, y: n[1] + 28, 'class': 'sub' }, n[3]));
+    a.appendChild(g); svg.appendChild(a);
+  });
+})();
+</script>
+</body>
+</html>

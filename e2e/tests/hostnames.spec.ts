@@ -25,7 +25,7 @@ test('a domain can be edited, and a site can have several hostnames with a chang
 
   const row = await openRow(siteRow(page, /www\.multi\.example\.net/));
   await expect(row).toContainText('shop.multi.example.net'); // the alias sits under the main name
-  await expect(row.getByText('synced')).toHaveCount(3); // summary chip + one detail line per hostname (A and AAAA)
+  await expect(row.getByText('synced')).toHaveCount(2); // one detail line per hostname (A and AAAA); the summary row carries no DNS chip
   await row.getByRole('link', { name: 'Edit' }).click();
   await expect(page.getByRole('heading', { name: /www\.multi\.example\.net/ })).toBeVisible();
 

@@ -1,7 +1,7 @@
 {{define "content"}}
 <h1>Alerts {{helplink "alerts"}}</h1>
 {{$d := .Data}}
-<p>ServanaGo tells you about under-attack mode, bans, a full waiting room, a backend going down, x402 payment trouble, virus scans and failed backups. Each destination chooses the events it hears; one attempt is made per message.</p>
+<p>Messages about under-attack mode, bans, a full waiting room, a backend going down, x402 payment trouble, virus scans and failed backups. Each destination picks the events it hears; every message is tried once.</p>
 {{if not $d.HasKey}}<div class="banner warn">Destinations are stored sealed: set SERVANAGO_SECRET_KEY (at least 32 characters) in the environment file first.</div>{{end}}
 <article>
 {{if $d.Dests}}
@@ -11,9 +11,9 @@
 {{range $d.Dests}}<tr>
 <td>{{.Name}}{{if not .Enabled}} <small>(off)</small>{{end}}</td><td>{{.Kind}}</td><td>{{range .EventList}}<code>{{.}}</code> {{end}}</td>
 <td>{{if .LastError}}<span class="explain" role="alert">{{.LastError}}</span> <small>{{unixts .LastErrorAt}}</small>{{else}}<small>no error recorded</small>{{end}}</td>
-<td><button type="button" class="secondary" hx-post="/alerts/{{.ID}}/test" hx-target="#msg">Test</button>
-<button type="button" class="outline" hx-post="/alerts/{{.ID}}/toggle">{{if .Enabled}}Turn off{{else}}Turn on{{end}}</button>
-<button type="button" class="outline danger" hx-post="/alerts/{{.ID}}/delete" hx-confirm="Delete {{.Name}}?">Delete</button></td></tr>
+<td><div class="acts"><button type="button" class="mini" hx-post="/alerts/{{.ID}}/test" hx-target="#msg">Test</button>
+<button type="button" class="mini" hx-post="/alerts/{{.ID}}/toggle">{{if .Enabled}}Turn off{{else}}Turn on{{end}}</button>
+<button type="button" class="mini danger" hx-post="/alerts/{{.ID}}/delete" hx-confirm="Delete {{.Name}}?">Delete</button></div></td></tr>
 {{end}}
 </tbody>
 </table>
@@ -35,8 +35,8 @@
 <label>Secret (token, signing key, application token or SID:auth token) <input type="password" name="secret" autocomplete="new-password"></label>
 {{hint "alert_kinds"}}
 <fieldset><legend>Events (leave all unticked for the kind's default)</legend>
-{{range $d.Events}}<label><input type="checkbox" name="event" value="{{.}}"> {{.}}</label>
-{{end}}</fieldset>
+<div class="extgrid">{{range $d.Events}}<label><input type="checkbox" name="event" value="{{.}}"> {{.}}</label>
+{{end}}</div></fieldset>
 <button type="submit">Add</button>
 </form>
 </article>

@@ -37,7 +37,7 @@ Native-host manager, not a multi-tenant control panel: systemd supervises runtim
 ## Brand Commitments
 
 - Name: ServanaGo. Dark theme with the `--sg-*` token pack (brand greens on dark slate surfaces) is the committed identity; primary action fill is green-800 `#08764B`, accent green-400.
-- Avoid side-stripe borders and glow shadows. Logo uses processed `original-concept` PNGs until the SVG mark is re-traced.
+- Side-stripe borders are allowed (one colored edge to mark a banner or row state); avoid glow shadows. Logo uses processed `original-concept` PNGs until the SVG mark is re-traced.
 - No AI attribution anywhere in commits, docs, or UI copy.
 
 ## Evidence on Hand
