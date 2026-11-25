@@ -118,7 +118,6 @@ func TestBansCreateRefusesOwnAddressAndUnban(t *testing.T) {
 	if !g.Banned("203.0.113.9") {
 		t.Fatal("not banned in the registry")
 	}
-	time.Sleep(100 * time.Millisecond) // the row is written off the request path
 	page := s.do(req{path: "/bans"}).Body.String()
 	if !strings.Contains(page, "203.0.113.9") || !strings.Contains(page, "scanner") || !strings.Contains(page, "</table>") {
 		t.Errorf("bans page: %s", page)
@@ -425,7 +424,6 @@ func TestMCPGuardToolsAndFieldsSurviveUpdates(t *testing.T) {
 	if err := call(t, sess, "create_ban", map[string]any{"client": "203.0.113.50", "hours": 1, "reason": "test"}, nil); err != nil {
 		t.Fatal(err)
 	}
-	time.Sleep(100 * time.Millisecond)
 	var bans struct{ Bans []banOut }
 	if err := call(t, sess, "list_bans", nil, &bans); err != nil || len(bans.Bans) != 1 || !bans.Bans[0].Active || !g.Banned("203.0.113.50") {
 		t.Fatalf("list_bans: %+v %v", bans, err)

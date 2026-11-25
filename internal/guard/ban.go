@@ -126,13 +126,18 @@ func (s *Service) ban(key, slug, source, reason, by string, d time.Duration) sto
 	s.history.Store(key, info)
 	b := store.Ban{Client: key, SiteSlug: slug, Source: source, Level: level, Reason: reason, CreatedAt: now.Unix(), Until: info.until, CreatedBy: by}
 	if s.bans != nil {
-		go func() {
+		write := func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 			defer cancel()
 			if err := s.bans.UpsertBan(ctx, b); err != nil {
 				slog.Warn("ban write failed", "client", key, "error", err)
 			}
-		}()
+		}
+		if source == "manual" { // the panel lists the row right after this returns
+			write()
+		} else { // an automatic ban is already enforced in memory; the row follows off the request path
+			go write()
+		}
 	}
 	if source == "auto" {
 		s.audit("ban.created", key)
