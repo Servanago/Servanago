@@ -30,7 +30,7 @@ import (
 var siteTabs = []string{"dns", "ssl", "scan", "backups", "mail", "snippets", "runtime", "gate", "routes", "countries", "waf", "protection"}
 
 var siteTabTitle = map[string]string{
-	"dns": "DNS", "ssl": "SSL", "scan": "Virus scanning", "backups": "Backups", "mail": "Mail",
+	"dns": "DNS", "ssl": "SSL", "scan": "Virus scanning", "backups": "Backups", "mail": "Gate mail",
 	"snippets": "Snippets", "runtime": "Runtime", "gate": "Gate", "routes": "Routes", "countries": "Countries", "waf": "WAF", "protection": "Protection",
 }
 

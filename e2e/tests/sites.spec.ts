@@ -37,16 +37,27 @@ test('Add site will not submit without a valid port and creates nothing', async 
   await expect(page.getByRole('cell', { name: 'sitesflow2.example.net' })).toHaveCount(0);
 });
 
-test('topbar holds the navigation over a bounded content column', async ({ page }) => {
+test('a left sidebar holds the navigation beside content that fills the window', async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 800 });
   await login(page);
-  const bar = await page.locator('header.topbar').boundingBox();
-  const brand = await page.locator('header.topbar .brand').boundingBox();
+  const side = await page.locator('aside.sidebar').boundingBox();
+  const brand = await page.locator('aside.sidebar .brand').boundingBox();
   const main = await page.locator('main').boundingBox();
-  expect(bar!.y).toBe(0); // full-width control bar at the top
-  expect(bar!.width).toBe(1500);
-  expect(brand!.y).toBeGreaterThanOrEqual(0);
+  expect(side!.x).toBe(0); // pinned to the left edge
+  expect(side!.width).toBe(240);
   expect(brand!.x).toBeGreaterThanOrEqual(8); // padded, not flush with the edge
-  expect(main!.width).toBeLessThan(1300); // page content stays bounded
-  await expect(page.locator('aside.sidebar')).toHaveCount(0);
+  expect(main!.x).toBeGreaterThanOrEqual(240); // content sits beside it, not under it
+  expect(main!.width).toBeGreaterThan(1100); // and uses the rest of the window
+  await expect(page.locator('aside.sidebar').getByRole('link', { name: 'Domains' })).toBeVisible();
+  await expect(page.locator('.usermenu summary')).toBeVisible(); // the account menu stays in the header
+});
+
+test('below 860px the sidebar is a drawer opened from the Menu button', async ({ page }) => {
+  await page.setViewportSize({ width: 600, height: 800 });
+  await login(page);
+  await expect(page.locator('aside.sidebar')).not.toBeInViewport();
+  await page.locator('.navtoggle').click();
+  await expect(page.locator('aside.sidebar')).toBeInViewport();
+  await page.keyboard.press('Escape');
+  await expect(page.locator('aside.sidebar')).not.toBeInViewport();
 });

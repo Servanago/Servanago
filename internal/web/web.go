@@ -335,17 +335,44 @@ type page struct {
 	Flash      []string
 	LoggedIn   bool
 	Bare       bool   // sign-in pages: brand only, no app navigation
-	Nav        string // sidebar entry to mark current: the page name, with the site editor under "dashboard"
+	Nav        string // nav entry to mark current (see navFor)
+	ShowDNS    bool   // Cloudflare is configured: the DNS and Mail bridge entries appear
+	ShowScan   bool   // a clamd socket is set: the Scan entry appears
+	InMenu     bool   // the current page lives under the Menu button, not in the top bar
 	BackupWarn string
 	Data       any
+}
+
+// topNav is the set of nav entries shown in the top bar; every other page is reached through the Menu button.
+var topNav = map[string]bool{"dashboard": true, "traffic": true, "scan": true, "bans": true, "alerts": true}
+
+// navFor maps a page template to the nav entry that owns it: a site's editor, tabs and rules browser sit
+// under Sites, a scan report under Scan, a DNS zone under DNS; every other page is its own entry.
+func navFor(name string) string {
+	switch name {
+	case "siteedit", "siteview", "wafrules":
+		return "dashboard"
+	case "scanrun":
+		return "scan"
+	case "dnszone":
+		return "dns"
+	}
+	return name
 }
 
 func (s *Server) render(w http.ResponseWriter, name string, status int, p page) {
 	p.Open = !s.auth.enabled()
 	p.LoggedIn = s.auth.enabled()
 	p.Bare = name == "login" || name == "login_totp"
-	if p.Nav = name; name == "siteedit" {
-		p.Nav = "dashboard"
+	p.Nav = navFor(name)
+	p.InMenu = !p.Bare && !topNav[p.Nav]
+	if !p.Bare {
+		p.ShowDNS = s.dnsOn()
+		if s.deps.Store != nil {
+			if st, err := s.deps.Store.GetSettings(context.Background()); err == nil {
+				p.ShowScan = st.ScanSocket != ""
+			}
+		}
 	}
 	p.Flash = s.takeFlashes()
 	if !p.Bare {

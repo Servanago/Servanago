@@ -254,29 +254,36 @@ pre.notes { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 9rem; ov
 .view-list .site[data-open] .ref-detail { display: block; }
 .view-list .site:hover { background: var(--sg-surface-raised); }
 
-/* ---- App shell: top control bar + content -------------------------------------------------------- */
-body.app { min-height: 100vh; }
-.topbar { position: sticky; top: 0; z-index: 20; background: var(--sg-surface); border-bottom: 1px solid var(--sg-border); padding: 0 var(--sp-6); }
-.topbar-in { max-width: 74rem; margin: 0 auto; display: flex; align-items: center; gap: var(--sp-4); min-height: 56px; }
-.brand { display: inline-flex; align-items: center; gap: var(--sp-2); color: var(--sg-text); text-decoration: none; white-space: nowrap; flex: none; }
+/* ---- App shell: left sidebar, slim header, content ------------------------------------------------ */
+body.app { min-height: 100vh; display: grid; grid-template-columns: 240px minmax(0, 1fr); }
+.sidebar { position: sticky; top: 0; align-self: start; height: 100vh; overflow-y: auto; display: flex; flex-direction: column; gap: var(--sp-4); padding: var(--sp-4) var(--sp-3); background: var(--sg-surface); border-right: 1px solid var(--sg-border); }
+.brand { display: inline-flex; align-items: center; gap: var(--sp-2); padding: 0 var(--sp-2); color: var(--sg-text); text-decoration: none; white-space: nowrap; flex: none; }
 .brand img { height: 28px; width: auto; display: block; }
-.topnav { display: flex; gap: var(--sp-1); overflow-x: auto; scrollbar-width: none; min-width: 0; align-items: center; }
-.topnav::-webkit-scrollbar { display: none; }
-.topnav a { display: inline-flex; align-items: center; height: 32px; padding: 0 var(--sp-3); border-radius: var(--sg-radius-sm); color: var(--sg-text-secondary); white-space: nowrap; font-size: 0.88rem; text-decoration: none; }
-.topnav a:hover { background: var(--sg-surface-raised); color: var(--sg-text); }
-.topnav a[aria-current="page"] { background: var(--sg-surface-raised); color: var(--sg-text); box-shadow: inset 0 0 0 1px var(--sg-hair); }
-.usermenu { position: relative; margin-left: auto; flex: none; }
+.sidenav { display: flex; flex-direction: column; gap: 2px; }
+.sidenav a { display: flex; align-items: center; height: 36px; padding: 0 var(--sp-3); border-radius: var(--sg-radius-sm); color: var(--sg-text-secondary); font-size: 0.9rem; text-decoration: none; }
+.sidenav a:hover { background: var(--sg-surface-raised); color: var(--sg-text); }
+.sidenav a[aria-current="page"] { background: var(--sg-surface-raised); color: var(--sg-text); box-shadow: inset 0 0 0 1px var(--sg-hair); }
+.nav-label { margin: var(--sp-6) var(--sp-3) var(--sp-1); font-size: 0.78rem; color: var(--sg-text-muted); }
+.shell { min-width: 0; display: flex; flex-direction: column; }
+.topbar { position: sticky; top: 0; z-index: 20; display: flex; align-items: center; justify-content: flex-end; gap: var(--sp-3); height: 48px; padding: 0 clamp(16px, 3vw, 40px); background: var(--sg-bg); border-bottom: 1px solid var(--sg-border); }
+.navtoggle { display: none; margin: 0 auto 0 0; height: 32px; padding: 0 var(--sp-3); width: auto; border: 1px solid var(--sg-border); border-radius: var(--sg-radius-md); background: transparent; color: var(--sg-text-secondary); font-size: 0.85rem; }
+.scrim { display: none; }
+.usermenu { position: relative; flex: none; margin: 0; } /* Pico gives details a bottom margin that pushed the button out of the header */
 .usermenu > summary { list-style: none; cursor: pointer; display: inline-flex; align-items: center; gap: var(--sp-1); height: 32px; margin: 0; padding: 0 var(--sp-3); border: 1px solid var(--sg-border); border-radius: var(--sg-radius-md); background: transparent; color: var(--sg-text-secondary); font-size: 0.85rem; }
 .usermenu > summary::-webkit-details-marker, .usermenu > summary::marker { display: none; content: ""; }
 .usermenu[open] > summary, .usermenu > summary:hover { border-color: var(--sg-text-muted); color: var(--sg-text); }
 .usermenu-body { position: absolute; right: 0; top: calc(100% + var(--sp-2)); z-index: 30; display: flex; flex-direction: column; min-width: 168px; padding: var(--sp-1); border: 1px solid var(--sg-border); border-radius: var(--sg-radius-md); background: var(--sg-surface-raised); box-shadow: var(--sg-shadow-panel); }
+.usermenu > summary[data-current] { border-color: var(--sg-text-muted); color: var(--sg-text); }
 .usermenu-body a { padding: var(--sp-2) var(--sp-3); border-radius: var(--sg-radius-sm); color: var(--sg-text-secondary); font-size: 0.87rem; text-decoration: none; }
 .usermenu-body a:hover { background: var(--sg-surface); color: var(--sg-text); }
 .usermenu-body a[aria-current="page"] { color: var(--sg-text); font-weight: 500; }
 .usermenu-body .signout { text-align: left; padding: var(--sp-2) var(--sp-3); border-radius: var(--sg-radius-sm); background: none; border: 0; color: var(--sg-text-secondary); font-size: 0.87rem; cursor: pointer; margin: var(--sp-1) 0 0; border-top: 1px solid var(--sg-border); border-radius: 0 0 var(--sg-radius-sm) var(--sg-radius-sm); }
 .usermenu-body .signout:hover { background: rgba(240, 122, 129, 0.14); color: #F7A1A6; }
-.topfoot { color: var(--sg-text-secondary); font-size: 0.85rem; margin-left: 0; white-space: nowrap; flex: none; }
-main.content { width: 100%; max-width: 74rem; padding: var(--sp-8) clamp(16px, 3.5vw, 40px) 64px; margin: 0 auto; }
+/* Content fills the window beside the sidebar and stops growing at 100rem. Cards sit in a grid: forms side by
+   side, tables, help and everything that is not a card on a full row. */
+main.content { width: 100%; max-width: 100rem; padding: var(--sp-8) clamp(16px, 3vw, 40px) 64px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 30rem), 1fr)); gap: 0 var(--sp-5); align-content: start; }
+main.content > *:not(article) { grid-column: 1 / -1; }
+main.content > article:has(table), main.content > article[id], main.content > article:has(form > fieldset ~ fieldset) { grid-column: 1 / -1; }
 
 /* ---- Dashboard: page head, site rows, status strip ------------------------------------------------ */
 .page-head { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-4); flex-wrap: wrap; margin-bottom: var(--sp-2); }
@@ -339,7 +346,7 @@ ul.attn li a:hover { text-decoration: underline; }
 .toc { position: sticky; top: var(--sp-8); display: flex; flex-direction: column; gap: var(--sp-1); }
 .toc a { padding: var(--sp-1) var(--sp-3); border-radius: var(--sg-radius-sm); color: var(--sg-text-muted); font-size: 0.9rem; text-decoration: none; }
 .toc a:hover { color: var(--sg-text); background: var(--sg-surface); }
-.editor-main { max-width: 44rem; }
+.editor-main { max-width: 64rem; }
 .editor-main form { margin: 0; }
 .sect { margin: 0 0 var(--sp-8); padding: 0 0 var(--sp-6); border-bottom: 1px solid var(--sg-border); scroll-margin-top: var(--sp-6); }
 .sect:last-child { border-bottom: 0; margin-bottom: 0; padding-bottom: 0; }
@@ -367,10 +374,14 @@ details.feature[open] > summary { color: var(--sg-text); border-bottom: 1px soli
   .srow-body { padding-left: var(--sp-5); }
 }
 @media (max-width: 860px) {
+  body.app { grid-template-columns: minmax(0, 1fr); }
+  .sidebar { position: fixed; z-index: 50; top: 0; bottom: 0; left: 0; width: 260px; transform: translateX(-100%); transition: transform 0.2s var(--sg-ease); }
+  body.nav-open .sidebar { transform: none; }
+  .scrim { position: fixed; z-index: 40; inset: 0; background: rgba(0, 0, 0, 0.5); }
+  body.nav-open .scrim { display: block; }
+  .navtoggle { display: inline-flex; align-items: center; }
   .topbar { padding: 0 var(--sp-4); }
-  .topbar-in { gap: var(--sp-3); height: 52px; }
   .usermenu-body { position: fixed; right: var(--sp-2); left: var(--sp-2); }
-  .topfoot { display: none; }
 }
 
 /* Scan runs: on a phone the numeric columns (files, skipped) hide — the run's report carries them. */
@@ -390,7 +401,6 @@ main.content > h2 { margin: var(--sp-8) 0 var(--sp-3); font-size: 1.2rem; }
 main.content > h1 + article { margin-top: var(--sp-5); }
 /* Cards are flat panels: no drop shadow, a quiet title row, and a reading width when they hold a form. */
 main.content article { margin: 0 0 var(--sp-5); box-shadow: none; }
-main.content article:not(:has(table)) { max-width: 48rem; }
 main.content article > header { background: transparent; color: var(--sg-text); font-size: 1rem; }
 main.content article > h2:first-child, main.content article > h3:first-child { margin-bottom: var(--sp-4); font-size: 1.15rem; }
 /* Pico stretches every button to the card; actions size to their label. */
@@ -398,7 +408,7 @@ main.content button:not(.icon-btn), main.content [role="button"], main.content i
 main.content article form > label, main.content article form > input:not([type="checkbox"]):not([type="radio"]), main.content article form > select, main.content article form > textarea, main.content article form > fieldset { max-width: 38rem; }
 main.content article > .explain, main.content form .explain { max-width: 62ch; font-size: 0.88rem; }
 /* Help is a reading page: a wider measure, tight contents list, and table cells that do not squeeze their text. */
-main.content article[id] { max-width: 56rem; }
+main.content article[id] > :where(p, ul, ol, dl) { max-width: 75ch; } /* prose keeps a reading measure; tables use the row */
 main.content article[id] td small { display: inline; width: auto; overflow: visible; }
 .help-toc ul { gap: var(--sp-1) var(--sp-5); }
 .help-toc li { margin: 0; padding: 0; list-style: none; }
@@ -423,6 +433,11 @@ form ul:has(input[type="checkbox"]) li label { margin: 0; }
 /* Help tables are prose: the last column wraps and the middle one keeps a readable measure. */
 main.content article[id] td:last-child { white-space: normal; }
 main.content article[id] td:nth-child(2) { min-width: 20rem; }
+/* A form made of several fieldsets (Protection, WAF, Settings) lays them out in columns when there is room;
+   everything that is not a fieldset takes a full row. */
+:where(.tabs ~ .sect, main.content > article) form:has(> fieldset ~ fieldset) { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 26rem), 1fr)); gap: 0 var(--sp-5); align-items: start; }
+:where(.tabs ~ .sect, main.content > article) form:has(> fieldset ~ fieldset) > :not(fieldset) { grid-column: 1 / -1; }
+:where(.tabs ~ .sect, main.content > article) form:has(> fieldset ~ fieldset) > fieldset { max-width: none; }
 /* Reference: cards in a grid, each card's facts as label/value pairs; the control row lines up on one baseline. */
 .view-cards #ref-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr)); gap: var(--sp-4); align-items: start; }
 .view-cards article.site { max-width: none; margin: 0; }
@@ -438,7 +453,7 @@ main.content article[id] td:nth-child(2) { min-width: 20rem; }
 /* Site tab panels: fields keep the reading width the page cards use, and the title clears what follows. */
 .tabs ~ .sect form > :where(label, fieldset, input, select, textarea) { max-width: 38rem; }
 .tabs ~ .sect form fieldset > :where(label, input, select, textarea) { max-width: 32rem; }
-.tabs ~ .sect form input[type="number"] { max-width: 12rem; }
+.tabs ~ .sect form input[type="number"] { display: block; max-width: 12rem; }
 .tabs ~ .sect > h2 { margin-bottom: var(--sp-3); }
 /* A lone select above a table (Logs minimum level) is as wide as its options, not the page. */
 main.content > label > select, main.content > form > label > select { width: auto; min-width: 12rem; }

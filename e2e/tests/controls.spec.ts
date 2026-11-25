@@ -29,7 +29,7 @@ test('toggle a site and edit allowlist and basic auth', async ({ page }) => {
   await expect(row.locator('.state')).not.toHaveText('Disabled');
 
   await row.getByRole('link', { name: 'Edit' }).click();
-  await page.locator('nav[aria-label="Site sections"]').getByRole('link', { name: 'Gate' }).click();
+  await page.locator('nav[aria-label="Site sections"]').getByRole('link', { name: 'Gate', exact: true }).click(); // "Gate mail" is the next tab
   await expect(page).toHaveURL(/\/sites\/\d+\/gate$/);
   await expect(page.getByLabel('Allowed sources')).toHaveValue('192.168.0.0/16');
   await expect(page.getByLabel('Basic authentication user')).toHaveValue('alice');

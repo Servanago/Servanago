@@ -254,7 +254,7 @@
 <section class="sect" id="panel-gate">
 <h2>Gate and access</h2>
 {{if .MailOK}}
-<p class="sect-note">The magic-link gate and its access list. Enabling needs a mail provider on the <a href="/sites/{{$id}}/mail">Mail tab</a>; links open on <code>ml.{{$h}}</code>. With "any email address", the access list is not consulted: its rows stay set for when you switch back.</p>
+<p class="sect-note">The magic-link gate and its access list. Enabling needs a mail provider on the <a href="/sites/{{$id}}/mail">Gate mail tab</a>; links open on <code>ml.{{$h}}</code>. With "any email address", the access list is not consulted: its rows stay set for when you switch back.</p>
 <form hx-post="/sites/{{$id}}/gate" hx-target="#msg">
 <label>Gate mode
 <select name="gate_mode" aria-describedby="hint-gate_mode">

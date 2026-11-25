@@ -117,7 +117,7 @@ td:first-child { white-space: nowrap; }
 </div>
 
 <h2 id="map">1. Navigation map</h2>
-<p>Click a node to jump to its section. Solid lines are links; dashed lines are redirects (enrol, and back to <code>/</code> after a create or delete). Sub-pages (<code>/dns/zones/{zid}</code>, <code>/scan/runs/{id}</code>, WAF rules) sit under their parent. Sign-in rules: password with TOTP goes via <code>/login/totp</code>; REQUIRE_2FA without a factor goes to the enrolment page. The top bar (every signed-in page) holds the 12 working pages; the Menu holds account and system pages.</p>
+<p>Click a node to jump to its section. Solid lines are links; dashed lines are redirects (enrol, and back to <code>/</code> after a create or delete). Sub-pages (<code>/dns/zones/{zid}</code>, <code>/scan/runs/{id}</code>, WAF rules) sit under their parent. Sign-in rules: password with TOTP goes via <code>/login/totp</code>; REQUIRE_2FA without a factor goes to the enrolment page. The left sidebar (every signed-in page) holds the work pages in three groups: Sites; Protection (Traffic, Scan, Bans, Alerts); System (DNS, Domains, PHP, Snippets, Backups, Mail bridge, Logs). DNS, Mail bridge and Scan appear only once Cloudflare or clamd is set up. The Account menu in the header holds Settings, Users, Security, Audit trail, Updates, Reference, Help and Sign out. Below 860px the sidebar is a slide-in drawer.</p>
 <div class="mapwrap"><svg id="navmap" viewBox="0 0 1120 700" role="img" aria-label="ServanaGo navigation map"></svg></div>
 
 <h2 id="mw">2. Request pipeline</h2>
@@ -340,9 +340,9 @@ td:first-child { white-space: nowrap; }
   var G = [
     [10, 14, 190, 218, 'Sign-in'],
     [220, 14, 190, 246, 'Home and site editor'],
-    [430, 4, 196, 546, 'Top bar (every page)'],
+    [430, 4, 196, 546, 'Sidebar (every page; DNS, Mail bridge, Scan only when set up)'],
     [640, 4, 196, 598, 'Site tabs (/sites/{id}/{tab})'],
-    [870, 4, 220, 340, 'Menu (account, system)']
+    [870, 4, 220, 340, 'Account menu (header)']
   ];
   var E = [
     ['login', 'totp', ''], ['login', 'dash', ''], ['totp', 'dash', ''], ['login', 'enroll', '', 1], ['enroll', 'dash', '', 1],
