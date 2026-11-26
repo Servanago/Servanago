@@ -61,3 +61,14 @@ test('below 860px the sidebar is a drawer opened from the Menu button', async ({
   await page.keyboard.press('Escape');
   await expect(page.locator('aside.sidebar')).not.toBeInViewport();
 });
+
+test('the Account menu opens on a phone', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 800 });
+  await login(page);
+  await page.locator('.usermenu summary').click();
+  const out = page.locator('.usermenu-body').getByRole('button', { name: 'Sign out' });
+  await expect(out).toBeVisible();
+  const box = await out.boundingBox();
+  expect(box!.y + box!.height).toBeLessThanOrEqual(800); // the whole menu fits on screen, not below the fold
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+});

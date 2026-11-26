@@ -381,7 +381,7 @@ details.feature[open] > summary { color: var(--sg-text); border-bottom: 1px soli
   body.nav-open .scrim { display: block; }
   .navtoggle { display: inline-flex; align-items: center; }
   .topbar { padding: 0 var(--sp-4); }
-  .usermenu-body { position: fixed; right: var(--sp-2); left: var(--sp-2); }
+  .usermenu-body { max-width: calc(100vw - var(--sp-4)); } /* stays under its button; fixed here put it below the viewport */
 }
 
 /* Scan runs: on a phone the numeric columns (files, skipped) hide — the run's report carries them. */
